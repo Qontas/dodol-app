@@ -16,7 +16,7 @@
 
 - **PHP 8.2.12** (sudah terinstall via XAMPP)
 - **Laravel 11.x** (LTS, latest stable)
-- **Livewire 3.x** + **Alpine.js** (untuk reactivity tanpa React/Vue)
+- **Livewire 3.x (via Breeze, includes Volt)** + **Alpine.js** (untuk reactivity tanpa React/Vue)
 - **Tailwind CSS 3.x** (utility-first styling)
 - **MySQL via MariaDB 10.4.32** (default XAMPP)
 - **Leaflet.js + OpenStreetMap** (untuk maps — GRATIS, jangan pakai Google Maps API)

@@ -515,7 +515,7 @@ MVP dibagi 3 fase, masing-masing 1 minggu. Setiap fase harus selesai dan diuji s
 
 **Hari 1: Project Setup**
 - [ ] `composer create-project laravel/laravel . "11.*"`
-- [ ] Install Livewire 3: `composer require livewire/livewire`
+- [ ] Install Livewire 3 + Breeze + Volt (auto via breeze:install)
 - [ ] Setup Tailwind CSS via Vite
 - [ ] Setup auth scaffolding (Laravel Breeze + Livewire stack)
 - [ ] Konfigurasi `.env`: database name `cemilan_qontas_db`
