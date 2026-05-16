@@ -1,0 +1,40 @@
+<?php
+
+namespace App\Observers;
+
+use App\Models\Settlement;
+use InvalidArgumentException;
+
+class SettlementObserver
+{
+    public function creating(Settlement $settlement): void
+    {
+        $this->validateQtySum($settlement);
+    }
+
+    public function updating(Settlement $settlement): void
+    {
+        $this->validateQtySum($settlement);
+    }
+
+    private function validateQtySum(Settlement $settlement): void
+    {
+        $delivery = $settlement->delivery()->first();
+
+        if (! $delivery) {
+            return;
+        }
+
+        $actualSum = (int) $settlement->qty_sold
+            + (int) $settlement->qty_returned_fresh
+            + (int) $settlement->qty_returned_expired;
+
+        $expected = (int) $delivery->qty_delivered;
+
+        if ($actualSum !== $expected) {
+            throw new InvalidArgumentException(
+                "Settlement qty mismatch for delivery #{$delivery->id}: sum {$actualSum}, expected {$expected}"
+            );
+        }
+    }
+}
