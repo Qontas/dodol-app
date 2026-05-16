@@ -1,30 +1,28 @@
-# Next Session Notes — Day 3 Plan
+# Next Session Notes — Day 4 Plan
 
-_Ditulis: 16 May 2026, jam 20:37_
+_Day 3 closed: 17 May 2026, 01:03_
 
-## Status Day 2: CLOSED ✅
+## Status Day 3: CLOSED ✅
 
-- 16 migration ran successfully
-- Schema lengkap (16 tabel + 1 view v_warehouse_stock)
-- ERD documented di docs/erd-v1.dbml + docs/erd-v1.png
-- All commits di branch main
+- Sesi 1: 14 Eloquent models (commit a8edb96)
+- Sesi 2: 2 Observers + 7 unit tests + 9 factories (commit d8abe1d)
+- 33 test passing, 88 assertions
+- Branch: main, working tree clean
 
-## Decision Strategis (Confirmed)
+## Day 4 Plan
 
-- Platform: Mobile Web App (Laravel + Tailwind responsive)
-- Hosting: Localhost dulu sampai Day 30, baru deploy ke internet
-- Multi-tenant: NOT YET — single user (gua sendiri) sampai validasi market
-- Native App: NO untuk Phase 1-2
+### Sesi 1 (30-45 menit) — Warm-up:
 
-## Day 3 Plan
+- SettlementObserver auto-status logic
+- Logic: kalau amount_paid >= amount_due → status='paid' + paid_at=now()
+- 2 unit test (partial payment, full payment)
 
-- Eloquent models untuk 16 tabel (Claude Code generate)
-- Observer untuk business rules:
-    - Settlement constraint: qty_sold + qty_returned_fresh + qty_returned_expired = delivery.qty_delivered
-    - Delivery source_type constraint
-- Factory + minimal seeder
+### Sesi 2 (60-90 menit) — Seeder + Smoke Test:
 
-## Trigger Sentence untuk Buka Claude Besok
+- DatabaseSeeder: 1 supplier (Aidil), 8 clusters, 5 kiosks, 1 product+variant, 1 batch, 1 trip+visits+deliveries+settlement
+- Verify v_warehouse_stock view
 
-"Bg, gua udah istirahat. Day 2 closed dengan 16 tabel migrated.
-Sekarang lanjut Day 3: Eloquent models. Path B Fase 1. Gas."
+## Trigger Sentence untuk Day 4
+
+"Bg, gua udah istirahat. Day 3 closed dengan 33 test passing.
+Sekarang lanjut Day 4 Sesi 1: SettlementObserver auto-status logic."
