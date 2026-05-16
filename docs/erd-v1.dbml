@@ -1,0 +1,486 @@
+// ============================================================
+// CEMILAN QONTAS - DISTRIBUSI DODOL KONSINYASI
+// Schema v1 - 16 May 2026
+// Owner: Ismi Qontas Lubis
+// Stack: Laravel 11.52 + MariaDB 10.4 + Livewire 3.8
+// ============================================================
+// Paste this file content to https://dbdiagram.io/d to visualize.
+// Export PNG → commit ke docs/erd-v1.png di repo.
+// ============================================================
+
+Project cemilan_qontas {
+  database_type: 'MySQL'
+  Note: '''
+    Sistem manajemen distribusi dodol konsinyasi murni.
+    
+    Core decisions:
+    - Konsinyasi murni: settlement per-visit, status pending/paid.
+    - Unit transaksi: MIKA (1 mika = 15 dodol untuk variant default).
+    - Inventory: derived via VIEW (v_warehouse_stock), bukan ledger.
+    - Cost tracking: per procurement_batch (bukan static cost_price).
+    - Visit ≠ Delivery: tabel kiosk_visits jadi source of truth kunjungan.
+    - Commission: 1 tabel, reconciliation via report query.
+  '''
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+Enum user_role {
+  owner
+  operator
+}
+
+Enum supplier_relationship {
+  direct_supplier
+  aggregator
+  middleman
+}
+
+Enum product_category {
+  dodol
+  kripik
+  opak
+  other
+}
+
+Enum delivery_type {
+  consignment
+  cash_sale
+}
+
+Enum delivery_source {
+  new_procurement
+  fresh_return_redeploy
+}
+
+Enum visit_action {
+  drop_and_settle
+  drop_only
+  check_only
+  settle_only
+}
+
+Enum settlement_status {
+  pending
+  paid
+}
+
+Enum commission_status {
+  pending
+  paid
+}
+
+// ============================================================
+// AUTH (Breeze extended)
+// ============================================================
+
+Table users {
+  id bigint [pk, increment]
+  name varchar(255) [not null]
+  email varchar(255) [unique, not null]
+  email_verified_at timestamp [null]
+  password varchar(255) [not null]
+  remember_token varchar(100) [null]
+  role user_role [not null, default: 'owner']
+  commission_rate decimal(5,4) [null, note: 'NULL untuk owner; 0.2000 untuk operator']
+  is_active boolean [not null, default: true]
+  created_at timestamp
+  updated_at timestamp
+  
+  Note: 'Extend Breeze scaffolding. Owner: lo. Operator: anggota (kakak/adik).'
+}
+
+// ============================================================
+// MASTER DATA
+// ============================================================
+
+Table clusters {
+  id bigint [pk, increment]
+  name varchar(100) [unique, not null]
+  notes text [null]
+  is_active boolean [not null, default: true]
+  created_at timestamp
+  updated_at timestamp
+  
+  Note: '''
+    Geographic grouping untuk route planning.
+    Seed:
+    1. KARYA / HELVETIA
+    2. JOHOR / PADANG BULAN
+    3. SM RAJA / SUKARAMAI
+    4. MARELAN
+    5. TEMBUNG
+    6. DELI TUA / PATUMBAK
+    7. BINJAI / MENCIRIM
+    8. UNCATEGORIZED (default kiosks baru)
+  '''
+}
+
+Table suppliers {
+  id bigint [pk, increment]
+  name varchar(255) [not null]
+  phone varchar(20) [null]
+  relationship_type supplier_relationship [not null, default: 'direct_supplier']
+  is_active boolean [not null, default: true]
+  notes text [null]
+  created_at timestamp
+  updated_at timestamp
+  
+  Note: 'Seed: 1 supplier "Aidil (Abg)" relationship_type=aggregator.'
+}
+
+Table kiosks {
+  id bigint [pk, increment]
+  name varchar(255) [not null]
+  owner_name varchar(255) [null]
+  phone varchar(20) [null]
+  cluster_id bigint [ref: > clusters.id, null]
+  
+  target_visit_interval_days smallint [not null, default: 14]
+  warning_visit_interval_days smallint [not null, default: 10]
+  
+  location_description text [null, note: 'Naratif untuk operator, e.g., "samping Masjid Al-Ikhlas"']
+  latitude decimal(10,7) [null]
+  longitude decimal(10,7) [null]
+  photo_path varchar(500) [null]
+  
+  default_qty_mika smallint [null, note: 'MANUAL OVERRIDE only. UI tampilkan side-by-side dengan velocity recommendation.']
+  first_titip_date date [null]
+  
+  is_active boolean [not null, default: true]
+  notes text [null]
+  created_at timestamp
+  updated_at timestamp
+  
+  Indexes {
+    cluster_id
+    is_active
+    (latitude, longitude) [name: 'idx_kiosks_geo']
+  }
+  
+  Note: 'maps_url generated via Laravel accessor dari latitude+longitude — bukan kolom DB.'
+}
+
+// ============================================================
+// PRODUCT CATALOG
+// ============================================================
+
+Table products {
+  id bigint [pk, increment]
+  name varchar(255) [not null]
+  category product_category [not null, default: 'dodol']
+  is_active boolean [not null, default: true]
+  notes text [null]
+  created_at timestamp
+  updated_at timestamp
+  
+  Note: 'Seed: 1 product "Dodol Coklat Susu" category=dodol.'
+}
+
+Table product_variants {
+  id bigint [pk, increment]
+  product_id bigint [ref: > products.id, not null]
+  name varchar(255) [not null, default: 'Standard']
+  units_per_pack smallint [not null, default: 15, note: 'e.g., 15 dodol per mika']
+  sale_price_per_pack decimal(12,2) [not null, note: 'e.g., 12000.00']
+  sku varchar(100) [unique, null]
+  is_active boolean [not null, default: true]
+  created_at timestamp
+  updated_at timestamp
+  
+  Indexes {
+    product_id
+    sku
+  }
+  
+  Note: 'Seed: variant "Mika 15 biji" sale_price=12000 sku="DDL-CSU-MK15".'
+}
+
+// ============================================================
+// PROCUREMENT
+// ============================================================
+
+Table procurement_batches {
+  id bigint [pk, increment]
+  product_variant_id bigint [ref: > product_variants.id, not null]
+  supplier_id bigint [ref: > suppliers.id, not null]
+  
+  purchase_date date [not null]
+  qty_kg_raw decimal(10,2) [not null, note: 'Berat mentah, e.g., 20.00 kg']
+  qty_packs smallint [not null, note: 'Output mika setelah packing, e.g., 72']
+  
+  cost_raw_material decimal(12,2) [not null]
+  cost_packing decimal(12,2) [not null, default: 0]
+  cost_packaging decimal(12,2) [not null, default: 0]
+  cost_other decimal(12,2) [not null, default: 0]
+  
+  total_cost decimal(12,2) [note: 'GENERATED ALWAYS AS (cost_raw_material + cost_packing + cost_packaging + cost_other) STORED']
+  cost_per_pack decimal(12,2) [note: 'GENERATED ALWAYS AS (total_cost / NULLIF(qty_packs, 0)) STORED']
+  price_per_kg_raw decimal(12,2) [note: 'GENERATED ALWAYS AS (cost_raw_material / NULLIF(qty_kg_raw, 0)) STORED — track tren harga supplier']
+  
+  expiry_date date [not null, note: 'Default: purchase_date + 21 hari (editable per batch)']
+  notes text [null]
+  created_at timestamp
+  updated_at timestamp
+  
+  Indexes {
+    purchase_date
+    expiry_date
+    supplier_id
+    product_variant_id
+  }
+}
+
+// ============================================================
+// OPERATIONS: TRIPS, VISITS, DELIVERIES, SETTLEMENTS
+// ============================================================
+
+Table trips {
+  id bigint [pk, increment]
+  trip_date date [not null]
+  trip_number_of_day smallint [not null, default: 1, note: '1=trip pertama hari itu, 2=kedua']
+  operator_id bigint [ref: > users.id, not null]
+  
+  started_at timestamp [null]
+  ended_at timestamp [null]
+  qty_carried_total smallint [not null, default: 0, note: 'Total mika dibawa saat berangkat (60-75 standar)']
+  
+  notes text [null]
+  created_at timestamp
+  updated_at timestamp
+  
+  Indexes {
+    trip_date
+    operator_id
+    (trip_date, trip_number_of_day) [unique, name: 'idx_trip_date_number']
+  }
+}
+
+Table deliveries {
+  id bigint [pk, increment]
+  kiosk_id bigint [ref: > kiosks.id, not null, note: 'Denormalized dari kiosk_visits untuk query speed; enforced consistent via observer']
+  trip_id bigint [ref: > trips.id, not null, note: 'Denormalized; konsisten dengan kiosk_visits.trip_id']
+  product_variant_id bigint [ref: > product_variants.id, not null]
+  procurement_batch_id bigint [ref: > procurement_batches.id, null, note: 'NULL → UI WARNING "profit incomplete — link to batch"']
+  
+  source_type delivery_source [not null, default: 'new_procurement']
+  origin_settlement_id bigint [ref: > settlements.id, null, note: 'Required jika source_type=fresh_return_redeploy']
+  
+  delivery_type delivery_type [not null, default: 'consignment']
+  qty_delivered smallint [not null]
+  unit_price decimal(12,2) [not null, note: 'Snapshot dari product_variants.sale_price_per_pack saat delivery dibikin']
+  cost_snapshot decimal(12,2) [null, note: 'Snapshot dari procurement_batches.cost_per_pack saat delivery dibikin']
+  
+  notes text [null]
+  created_at timestamp
+  updated_at timestamp
+  
+  Indexes {
+    kiosk_id
+    trip_id
+    procurement_batch_id
+    source_type
+    (kiosk_id, created_at) [name: 'idx_kiosk_recent_deliveries']
+  }
+  
+  Note: '''
+    Business rules (enforced via Laravel observer):
+    1. source_type=new_procurement → procurement_batch_id NOT NULL
+    2. source_type=fresh_return_redeploy → origin_settlement_id NOT NULL
+    3. delivery_type=cash_sale → tidak butuh settlement record (settled immediately)
+    4. delivery_type=consignment → wajib ada 1 settlement record (eventual)
+  '''
+}
+
+Table kiosk_visits {
+  id bigint [pk, increment]
+  trip_id bigint [ref: > trips.id, not null]
+  kiosk_id bigint [ref: > kiosks.id, not null]
+  
+  visited_at timestamp [not null]
+  visit_action visit_action [not null]
+  
+  new_delivery_id bigint [ref: > deliveries.id, null, note: 'Diisi kalau visit_action include drop']
+  settled_delivery_id bigint [ref: > deliveries.id, null, note: 'Reference ke delivery sebelumnya yang di-settle pada visit ini']
+  
+  extension_granted boolean [not null, default: false, note: 'true kalau visit_action=check_only dan kasih extension 1 minggu']
+  notes text [null]
+  created_at timestamp
+  updated_at timestamp
+  
+  Indexes {
+    trip_id
+    kiosk_id
+    visited_at
+    (kiosk_id, visited_at) [name: 'idx_kiosk_last_visit']
+  }
+  
+  Note: '''
+    Source of truth untuk "kapan terakhir kios X dikunjungi":
+    SELECT MAX(visited_at) FROM kiosk_visits WHERE kiosk_id = X;
+    
+    Warning logic:
+    - days_since_last_visit > kiosks.warning_visit_interval_days → alert "udah harus dikunjungi"
+    - days_since_last_visit > kiosks.target_visit_interval_days → alert "overdue"
+  '''
+}
+
+Table settlements {
+  id bigint [pk, increment]
+  delivery_id bigint [ref: > deliveries.id, not null, unique, note: '1 delivery → max 1 settlement']
+  visit_date date [not null]
+  
+  qty_sold smallint [not null]
+  qty_returned_fresh smallint [not null, default: 0, note: 'Sisa bagus — bisa di-redeploy via deliveries.source_type=fresh_return_redeploy']
+  qty_returned_expired smallint [not null, default: 0, note: 'LOSS — KPI #1 sistem']
+  
+  amount_due decimal(12,2) [not null, note: 'qty_sold × delivery.unit_price — filled by Laravel observer saat save']
+  amount_paid decimal(12,2) [not null, default: 0]
+  paid_at timestamp [null]
+  
+  status settlement_status [not null, default: 'pending']
+  notes text [null]
+  created_at timestamp
+  updated_at timestamp
+  
+  Indexes {
+    visit_date
+    status
+    delivery_id [unique]
+  }
+  
+  Note: '''
+    Observer constraint:
+    qty_sold + qty_returned_fresh + qty_returned_expired = deliveries.qty_delivered
+    (DB CHECK gak bisa cross-table di MariaDB)
+    
+    Payment scenarios:
+    - paid_at=now, amount_paid=amount_due, status=paid → bayar tunai di tempat (majority)
+    - paid_at=null, amount_paid=0, status=pending → kios minta bayar nanti
+    - Update kemudian via observer saat amount_paid=amount_due → auto status=paid + paid_at=now
+  '''
+}
+
+// ============================================================
+// FINANCIAL: FUEL & COMMISSIONS
+// ============================================================
+
+Table fuel_logs {
+  id bigint [pk, increment]
+  week_start date [not null]
+  week_end date [not null]
+  total_fuel_cost decimal(12,2) [not null]
+  trip_count_snapshot smallint [not null, note: 'Snapshot count(trips) WHERE trip_date BETWEEN week_start AND week_end']
+  cost_per_trip decimal(12,2) [note: 'GENERATED ALWAYS AS (total_fuel_cost / NULLIF(trip_count_snapshot, 0)) STORED']
+  operator_id bigint [ref: > users.id, null]
+  notes text [null]
+  created_at timestamp
+  updated_at timestamp
+  
+  Indexes {
+    (week_start, week_end) [unique, name: 'idx_fuel_week']
+  }
+  
+  Note: 'Batched weekly input. Equal split allocation per trip dalam minggu itu.'
+}
+
+Table commissions {
+  id bigint [pk, increment]
+  trip_id bigint [ref: > trips.id, not null]
+  operator_id bigint [ref: > users.id, not null]
+  
+  cash_collected_reported decimal(12,2) [not null, note: 'Self-reported anggota saat pulang trip']
+  margin_rate_assumed decimal(5,4) [not null, default: 0.3000, note: 'Gross margin estimate snapshot — calibrate via reconciliation report']
+  commission_rate decimal(5,4) [not null, default: 0.2000]
+  commission_amount decimal(12,2) [note: 'GENERATED ALWAYS AS (cash_collected_reported * margin_rate_assumed * commission_rate) STORED']
+  
+  status commission_status [not null, default: 'paid', note: 'Default paid karena bayar same-day']
+  paid_at timestamp [not null]
+  notes text [null]
+  created_at timestamp
+  updated_at timestamp
+  
+  Indexes {
+    trip_id
+    operator_id
+    paid_at
+  }
+  
+  Note: '''
+    Same-day cash flow ke anggota — bayar pakai estimasi.
+    Reconciliation untuk audit accuracy lewat report query (bukan tabel terpisah):
+    
+    SELECT t.id AS trip_id, c.commission_amount AS paid,
+           SUM(s.qty_sold * (d.unit_price - d.cost_snapshot)) * c.commission_rate AS real_commission,
+           (real_commission - paid) AS variance
+    FROM trips t
+    JOIN commissions c ON c.trip_id = t.id
+    JOIN kiosk_visits kv ON kv.trip_id = t.id
+    JOIN deliveries d ON d.id = kv.new_delivery_id
+    LEFT JOIN settlements s ON s.delivery_id = d.id
+    WHERE t.id = X AND s.id IS NOT NULL
+    GROUP BY t.id, c.commission_amount, c.commission_rate;
+  '''
+}
+
+// ============================================================
+// CONFIGURATION
+// ============================================================
+
+Table settings {
+  id bigint [pk, increment]
+  key varchar(100) [unique, not null]
+  value text [null]
+  notes text [null]
+  created_at timestamp
+  updated_at timestamp
+  
+  Note: '''
+    Seed minimal:
+    - business_name = "Cemilan Qontas"
+    - default_expiry_days = "21"
+    - default_warning_threshold_days = "10"
+    - default_target_interval_days = "14"
+    - default_margin_assumption = "0.3000"
+    - default_commission_rate = "0.2000"
+    - whatsapp_owner = "+62 896 1353 1255"
+  '''
+}
+
+// ============================================================
+// VIEW: WAREHOUSE STOCK (DERIVED, NOT A TABLE)
+// ============================================================
+// 
+// Bukan tabel — dibikin via DB::statement di migration setelah semua tabel ready.
+// 
+// CREATE OR REPLACE VIEW v_warehouse_stock AS
+// SELECT 
+//     pv.id AS product_variant_id,
+//     pv.name AS variant_name,
+//     COALESCE((
+//       SELECT SUM(pb.qty_packs) 
+//       FROM procurement_batches pb 
+//       WHERE pb.product_variant_id = pv.id
+//     ), 0)
+//   + COALESCE((
+//       SELECT SUM(s.qty_returned_fresh) 
+//       FROM settlements s 
+//       JOIN deliveries d ON s.delivery_id = d.id 
+//       WHERE d.product_variant_id = pv.id
+//     ), 0)
+//   - COALESCE((
+//       SELECT SUM(d.qty_delivered) 
+//       FROM deliveries d 
+//       WHERE d.product_variant_id = pv.id
+//     ), 0) AS qty_in_warehouse
+// FROM product_variants pv
+// WHERE pv.is_active = true;
+//
+// Access dari Laravel: DB::table('v_warehouse_stock')->get();
+//
+// Untuk historical stock at timestamp T, parameterized query (bukan view):
+// Tambah WHERE clause di setiap subquery: created_at <= ?
+//
+// ============================================================
