@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -21,6 +22,9 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role',
+        'commission_rate',
+        'is_active',
     ];
 
     /**
@@ -43,6 +47,24 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'role' => 'string',
+            'commission_rate' => 'decimal:4',
+            'is_active' => 'boolean',
         ];
+    }
+
+    public function operatedTrips(): HasMany
+    {
+        return $this->hasMany(Trip::class, 'operator_id');
+    }
+
+    public function commissions(): HasMany
+    {
+        return $this->hasMany(Commission::class, 'operator_id');
+    }
+
+    public function fuelLogs(): HasMany
+    {
+        return $this->hasMany(FuelLog::class, 'operator_id');
     }
 }
