@@ -61,4 +61,76 @@ class SettlementObserverTest extends TestCase
 
         $this->assertDatabaseCount('settlements', 1);
     }
+
+    public function test_settlement_full_payment_auto_sets_status_paid(): void
+    {
+        $delivery = Delivery::factory()->create([
+            'qty_delivered' => 10,
+            'unit_price' => 12000,
+        ]);
+
+        $settlement = Settlement::factory()->create([
+            'delivery_id' => $delivery->id,
+            'qty_sold' => 10,
+            'qty_returned_fresh' => 0,
+            'qty_returned_expired' => 0,
+            'amount_due' => 120000,
+            'amount_paid' => 120000,
+            'status' => 'pending',
+            'paid_at' => null,
+        ]);
+
+        $settlement->refresh();
+
+        $this->assertSame('paid', $settlement->status);
+        $this->assertNotNull($settlement->paid_at);
+    }
+
+    public function test_settlement_partial_payment_stays_pending(): void
+    {
+        $delivery = Delivery::factory()->create([
+            'qty_delivered' => 10,
+            'unit_price' => 12000,
+        ]);
+
+        $settlement = Settlement::factory()->create([
+            'delivery_id' => $delivery->id,
+            'qty_sold' => 10,
+            'qty_returned_fresh' => 0,
+            'qty_returned_expired' => 0,
+            'amount_due' => 120000,
+            'amount_paid' => 50000,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $settlement->refresh();
+
+        $this->assertSame('pending', $settlement->status);
+        $this->assertNull($settlement->paid_at);
+    }
+
+    public function test_settlement_overpayment_marked_paid(): void
+    {
+        $delivery = Delivery::factory()->create([
+            'qty_delivered' => 10,
+            'unit_price' => 12000,
+        ]);
+
+        $settlement = Settlement::factory()->create([
+            'delivery_id' => $delivery->id,
+            'qty_sold' => 10,
+            'qty_returned_fresh' => 0,
+            'qty_returned_expired' => 0,
+            'amount_due' => 120000,
+            'amount_paid' => 150000,
+            'status' => 'pending',
+            'paid_at' => null,
+        ]);
+
+        $settlement->refresh();
+
+        $this->assertSame('paid', $settlement->status);
+        $this->assertNotNull($settlement->paid_at);
+    }
 }

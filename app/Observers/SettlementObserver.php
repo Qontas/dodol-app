@@ -17,6 +17,17 @@ class SettlementObserver
         $this->validateQtySum($settlement);
     }
 
+    public function saving(Settlement $settlement): void
+    {
+        if ($settlement->amount_paid >= $settlement->amount_due) {
+            $settlement->status = 'paid';
+            $settlement->paid_at = $settlement->paid_at ?? now();
+        } else {
+            $settlement->status = 'pending';
+            $settlement->paid_at = null;
+        }
+    }
+
     private function validateQtySum(Settlement $settlement): void
     {
         $delivery = $settlement->delivery()->first();
