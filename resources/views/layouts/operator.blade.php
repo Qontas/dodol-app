@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', 'Operator') &mdash; Cemilan Qontas</title>
+    <title>{{ $title ?? 'Operator' }} &mdash; Cemilan Qontas</title>
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -25,7 +25,7 @@
     </header>
 
     <main class="flex-1 p-4 pb-24">
-        @yield('content')
+        {{ $slot }}
     </main>
 
     {{-- Bottom navigation --}}
@@ -33,7 +33,7 @@
         @php
             $items = [
                 ['label' => 'Beranda', 'route' => 'operator.dashboard', 'active' => request()->routeIs('operator.dashboard')],
-                ['label' => 'Mulai Trip', 'route' => null, 'active' => false],
+                ['label' => 'Mulai Trip', 'route' => 'operator.trip.start', 'active' => request()->routeIs('operator.trip.*')],
                 ['label' => 'Kios Baru', 'route' => null, 'active' => false],
                 ['label' => 'Profil', 'route' => 'profile', 'active' => request()->routeIs('profile')],
             ];
