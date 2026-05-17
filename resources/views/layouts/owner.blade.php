@@ -26,6 +26,7 @@
             @php
                 $nav = [
                     ['label' => 'Dashboard', 'route' => 'owner.dashboard', 'active' => request()->routeIs('owner.dashboard')],
+                    ['label' => '🗂️ Admin Panel', 'route' => 'filament.admin.pages.dashboard', 'active' => false],
                     ['label' => 'Manajemen Kios', 'route' => null, 'active' => false],
                     ['label' => 'Manajemen Cluster', 'route' => null, 'active' => false],
                     ['label' => 'Manajemen Supplier', 'route' => null, 'active' => false],

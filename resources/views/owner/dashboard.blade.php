@@ -32,5 +32,12 @@
                 Database masih kosong. Mulai dengan input cluster &amp; kios dari menu sidebar.
             </div>
         @endif
+
+        <div class="mt-6">
+            <a href="{{ route('filament.admin.pages.dashboard') }}"
+               class="inline-block bg-amber-600 text-white px-6 py-3 rounded-lg hover:bg-amber-700 font-medium">
+                Buka Admin Panel (Manajemen Data)
+            </a>
+        </div>
     </div>
 @endsection
