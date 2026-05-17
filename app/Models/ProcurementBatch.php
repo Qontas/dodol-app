@@ -52,4 +52,17 @@ class ProcurementBatch extends Model
     {
         return $this->hasMany(Delivery::class);
     }
+
+    public function getBatchNumberAttribute(): string
+    {
+        if (! $this->created_at || ! $this->id) {
+            return '—';
+        }
+
+        $counter = self::whereDate('created_at', $this->created_at->toDateString())
+            ->where('id', '<=', $this->id)
+            ->count();
+
+        return sprintf('BATCH-%s-%03d', $this->created_at->format('Y-m-d'), $counter);
+    }
 }
