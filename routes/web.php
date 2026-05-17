@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\OperatorDashboardController;
 use App\Http\Controllers\OwnerDashboardController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -35,8 +34,9 @@ Route::middleware(['auth', 'verified', 'role:operator'])
     ->prefix('operator')
     ->name('operator.')
     ->group(function () {
-        Route::get('/dashboard', [OperatorDashboardController::class, 'index'])
-            ->name('dashboard');
+        Route::get('/dashboard', \App\Livewire\Operator\Dashboard::class)->name('dashboard');
+        Route::get('/trip/start', \App\Livewire\Operator\StartTrip::class)->name('trip.start');
+        Route::get('/trip/{tripId}', \App\Livewire\Operator\ActiveTrip::class)->name('trip.active');
     });
 
 Route::view('profile', 'profile')
