@@ -32,9 +32,32 @@ _Day 4 closed: 17 May 2026, sore_
 
 ### Input Flow
 
-- Trip-Based Flow (Mulai Trip → Cluster → Kios → Input → Selesai Trip)
-- Kios sort: Nearest Neighbor (geographic flow) + urgency indicator
-- Smart recommendation: activate after 3+ visits per kios
+### Input Flow & Route Optimization
+
+- Trip-Based Flow (Mulai Trip → Pilih Cluster → Pilih Kios → Input → Selesai Trip)
+- Cluster sort: by urgency score (jumlah kios overdue/warning)
+- Kios sort: Nearest Neighbor algorithm (geographic flow) + urgency indicator
+- Smart recommendation: activate after 3+ visits per kios (velocity reliable)
+
+### Route Optimization Strategy
+
+- Phase 1 (Day 5-45): **Cara A — Nearest Neighbor algorithm**
+    - Simple geometric calculation pakai Haversine formula (GPS to GPS distance)
+    - No external API, works offline
+    - Cukup akurat untuk 5-15 kios per cluster
+    - Implementation target: Day 18-22
+
+- Phase 2 (Day 60+): **Cara B — Google Maps Directions API**
+    - Real-world route accuracy (consider jalan satu arah, traffic, dll)
+    - Cost: ~Rp 0 untuk volume bisnis lo (free tier $200/bulan credit)
+    - Better ETA per kios
+    - Upgrade dari Cara A tanpa rewrite logic
+
+### Fallback Logic
+
+- Kios tanpa GPS coordinates → fallback ke sort by urgency
+- Operator nggak izinin GPS HP → fallback ke gudang sebagai starting point
+- Offline mode → urutan dari last cached calculation
 
 ### Phases
 
