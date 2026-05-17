@@ -187,6 +187,138 @@ Phase 1 still on track."
 - Estimated finish Day 6 Sesi 1: 30-45 menit setelah start
 - Setelah test selesai, gas Sesi 2 (Trip Flow List Kios + Nearest Neighbor)
 
+## Issues Reported During Day 5 Manual Test (TONIGHT)
+
+Owner reported 3 UX/Performance issues during manual test 23:30 WIB:
+
+### Issue #1: GPS Lat/Lng Manual Input Inefisien (Priority: HIGH)
+
+**Problem:**
+
+- Saat input kios via Filament Resource, lat/lng field cuma TextInput number
+- Owner harus open Google Maps separately, copy koordinat, paste manual ke form
+- Time waste ~30+ detik per kios vs 3 detik kalau pakai map picker
+- Impact bulk input 200+ kios = ~1.5+ jam just for GPS input
+
+**Fix Plan Day 6 (Sesi 0 — before manual test):**
+
+1. Install Filament Map Picker plugin:
+    - Option A: `dotswan/filament-map-picker` (Leaflet-based, free, lighter)
+    - Option B: `cheesegrits/filament-google-maps` (Google Maps, lebih familiar, butuh API key)
+    - Decision: pilih saat Day 6 morning based on availability + dependencies
+
+2. Update KioskResource form Section "Lokasi":
+    - Replace 2 TextInput (latitude + longitude) dengan single Map component
+    - Klik titik di peta → auto-fill lat + lng
+    - Atau search address → auto-pick koordinat
+
+3. Test dengan 2-3 kios sebelum bulk input
+
+**Effort estimate:** 30-45 menit (install + integrate + test)
+
+### Issue #2: Form Stay di Edit Page After Save (Priority: MEDIUM)
+
+**Problem:**
+
+- Setelah klik Save di Create form, Filament default redirect ke Edit page
+- Owner expect redirect ke List page untuk continue input data baru
+- Slow workflow saat bulk input (extra clicks per record)
+
+**Fix Plan Day 6 (Sesi 0):**
+
+1. Override getRedirectUrl() di Create page semua Resource:
+
+```php
+protected function getRedirectUrl(): string
+{
+    return $this->getResource()::getUrl('index');
+}
+```
+
+2. Affected files (7 Resources):
+    - CreateCluster.php
+    - CreateSupplier.php
+    - CreateKiosk.php
+    - CreateProduct.php
+    - CreateProductVariant.php
+    - CreateUser.php
+    - CreateProcurementBatch.php
+
+3. Optional: tambah di Edit page juga kalau owner mau redirect after edit
+
+**Effort estimate:** 15-20 menit (1-line method per file, 7 files)
+
+### Issue #3: Web Buffering Slow (Priority: MEDIUM-HIGH)
+
+**Problem:**
+
+- Owner observe loading time slow di Filament pages
+- Suspect `php artisan serve` built-in PHP dev server bottleneck
+- Atau Vite HMR processing
+- Atau MariaDB query slow
+
+**Diagnose Plan Day 6 (Sesi 0):**
+
+1. Check current setup:
+    - Apakah pakai `php artisan serve` (port 8000)?
+    - Apakah Vite running di background (port 5173)?
+    - Apakah XAMPP Apache running (port 80)?
+
+2. Benchmark page load:
+    - Open DevTools → Network tab
+    - Reload /admin/kiosks
+    - Catat: Time to First Byte (TTFB), DOM Content Loaded, Load Complete
+    - Compare dengan time threshold acceptable (<2s untuk dev)
+
+3. Possible solutions (apply based on diagnose result):
+    - Switch dari `php artisan serve` ke XAMPP Apache (better performance)
+    - Enable OPcache di PHP
+    - Optimize Filament autoloading (cache views, routes, config)
+    - Setup MariaDB indexing kalau ada slow query
+    - Disable Vite HMR kalau tidak development (production-like local)
+
+4. Optimize Filament specifically:
+
+```bash
+php artisan filament:optimize
+php artisan view:cache
+php artisan route:cache
+php artisan config:cache
+```
+
+**Effort estimate:** 30-60 menit (diagnose + fix + test)
+
+---
+
+## Day 6 Sesi 0 — UX/Performance Fixes (BEFORE Manual Test)
+
+**Order of execution Day 6 morning:**
+
+1. **Sesi 0a: Performance Diagnose & Fix** (30-60 menit)
+    - Identify bottleneck
+    - Apply optimization
+    - Verify improvement
+
+2. **Sesi 0b: Form Redirect Fix** (15-20 menit)
+    - Override getRedirectUrl() di 7 Create pages
+    - Test save flow
+
+3. **Sesi 0c: Map Picker Plugin** (30-45 menit)
+    - Install plugin
+    - Integrate ke KioskResource
+    - Test with sample kios
+
+4. **Sesi 1: Manual Test + Real Data Input** (30-45 menit)
+    - Sekarang dengan UX improved + performance OK
+    - Input real data: Supplier, Cluster, Kios (5-10 dengan map picker), Anggota
+
+5. **Sesi 2: Trip Flow B3 Sesi 2** (1.5-2 jam)
+    - List kios + Nearest Neighbor + drag-drop
+
+**Total Day 6 estimate:** 4-5 jam (lebih panjang dari Day 6 plan original karena ada Sesi 0 fixes)
+
+---
+
 ## Honest Reflection Day 5
 
 **Yang Berhasil:**
