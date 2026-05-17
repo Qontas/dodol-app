@@ -288,34 +288,99 @@ php artisan config:cache
 
 **Effort estimate:** 30-60 menit (diagnose + fix + test)
 
+### Issue #4: Unified Login Page (Priority: HIGH)
+
+**Problem:**
+
+- Filament default punya `/admin/login` terpisah dari main app `/login`
+- Logout dari Filament admin → redirect ke `/admin/login` (stuck di sini)
+- Operator credential ditolak di `/admin/login` (role mismatch)
+- User confuse: harus manual edit URL untuk pindah dari `/admin/login` ke `/login`
+- UX inconsistent untuk multi-role app
+
+**Expected Behavior:**
+
+- Single `/login` page untuk semua user (owner + operator)
+- Sistem auto-detect role setelah login berhasil:
+    - role='owner' → redirect `/owner/dashboard` (+ akses `/admin` via tombol)
+    - role='operator' → redirect `/operator/dashboard`
+- Logout dari mana pun (admin panel, owner dashboard, operator dashboard) → kembali ke `/login` (single source)
+- `/admin/login` di-disable atau di-redirect ke `/login`
+
+**Fix Plan Day 6 (Sesi 0):**
+
+1. **Disable Filament admin/login page:**
+    - Customize AdminPanelProvider:
+        - Hapus `->login()` method dari panel registration
+        - Atau pakai `->login(false)` jika Filament v3 support
+    - Filament akan force redirect unauthenticated user ke `/login`
+
+2. **Customize Breeze logout redirect:**
+    - File: `routes/auth.php` atau `LogoutController`
+    - After logout, redirect ke `/login` (sudah default, verify aja)
+
+3. **Role-based redirect after login:**
+    - File: `app/Http/Controllers/Auth/AuthenticatedSessionController.php`
+    - Method: `store()` atau via LoginResponse:
+
+```php
+   protected function redirectTo(): string
+   {
+       $user = auth()->user();
+       return $user->role === 'owner'
+           ? route('owner.dashboard')
+           : route('operator.dashboard');
+   }
+```
+
+4. **Verify Filament canAccessPanel() integration:**
+    - User udah login → akses /admin → cek role='owner'
+    - Kalau bukan owner → 403 forbidden (sudah handled)
+
+**Effort estimate:** 30-45 menit
+
+**Test scenarios Day 6:**
+
+- Owner login via `/login` → `/owner/dashboard` ✅
+- Operator login via `/login` → `/operator/dashboard` ✅
+- Akses `/admin/login` → redirect ke `/login` (atau 404) ✅
+- Owner logout dari `/admin` → `/login` ✅
+- Operator logout dari `/operator/dashboard` → `/login` ✅
+- Akses `/admin` tanpa login → redirect ke `/login` (bukan `/admin/login`) ✅
+
 ---
 
 ## Day 6 Sesi 0 — UX/Performance Fixes (BEFORE Manual Test)
 
 **Order of execution Day 6 morning:**
 
-1. **Sesi 0a: Performance Diagnose & Fix** (30-60 menit)
-    - Identify bottleneck
-    - Apply optimization
+1. **Sesi 0a: Unified Login Page** (30-45 menit) ← NEW HIGH PRIORITY
+    - Disable Filament `/admin/login`
+    - Role-based redirect setelah login via `/login`
+    - All logout redirect ke `/login`
+
+2. **Sesi 0b: Performance Diagnose & Fix** (30-60 menit)
+    - Identify bottleneck (`php artisan serve` vs Apache, MariaDB, OPcache)
+    - Apply Filament optimization commands
     - Verify improvement
 
-2. **Sesi 0b: Form Redirect Fix** (15-20 menit)
+3. **Sesi 0c: Form Redirect After Save Fix** (15-20 menit)
     - Override getRedirectUrl() di 7 Create pages
-    - Test save flow
+    - Test save flow → redirect ke list
 
-3. **Sesi 0c: Map Picker Plugin** (30-45 menit)
-    - Install plugin
+4. **Sesi 0d: Map Picker Plugin** (30-45 menit)
+    - Install plugin (dotswan or cheesegrits)
     - Integrate ke KioskResource
     - Test with sample kios
 
-4. **Sesi 1: Manual Test + Real Data Input** (30-45 menit)
-    - Sekarang dengan UX improved + performance OK
-    - Input real data: Supplier, Cluster, Kios (5-10 dengan map picker), Anggota
+5. **Sesi 1: Manual Test + Real Data Input** (30-45 menit)
+    - Sekarang dengan UX improved (unified login + redirect + map picker)
+    - Input real data: Supplier, Cluster, Kios (dengan map picker), Anggota
 
-5. **Sesi 2: Trip Flow B3 Sesi 2** (1.5-2 jam)
+6. **Sesi 2: Trip Flow B3 Sesi 2** (1.5-2 jam)
     - List kios + Nearest Neighbor + drag-drop
 
-**Total Day 6 estimate:** 4-5 jam (lebih panjang dari Day 6 plan original karena ada Sesi 0 fixes)
+**Total Day 6 estimate:** 4.5-5.5 jam
 
 ---
 
