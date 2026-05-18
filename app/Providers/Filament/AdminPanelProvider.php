@@ -27,7 +27,6 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->brandName('Cemilan Qontas')
-            ->login()
             ->colors([
                 'primary' => Color::Amber,
             ])
