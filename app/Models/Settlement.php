@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Settlement extends Model
 {
@@ -37,8 +37,9 @@ class Settlement extends Model
         return $this->belongsTo(Delivery::class);
     }
 
-    public function redeployedDeliveries(): HasMany
+    public function redeployedDeliveries(): BelongsToMany
     {
-        return $this->hasMany(Delivery::class, 'origin_settlement_id');
+        return $this->belongsToMany(Delivery::class, 'delivery_origins')
+            ->withPivot('biji_count');
     }
 }
