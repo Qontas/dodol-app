@@ -9,21 +9,26 @@ class DeliveryObserver
 {
     public function creating(Delivery $delivery): void
     {
-        $this->validateSourceTypeConsistency($delivery);
+        $this->validateFields($delivery);
     }
 
     public function updating(Delivery $delivery): void
     {
-        $this->validateSourceTypeConsistency($delivery);
+        $this->validateFields($delivery);
     }
 
-    private function validateSourceTypeConsistency(Delivery $delivery): void
+    public function updated(Delivery $delivery): void
+    {
+        $delivery->validateOrigins();
+    }
+
+    private function validateFields(Delivery $delivery): void
     {
         $id = $delivery->id ?? 'new';
 
         match ($delivery->source_type) {
             'new_procurement' => $this->requireProcurementBatch($delivery, $id),
-            'fresh_return_redeploy' => $this->requireOriginSettlement($delivery, $id),
+            'fresh_return_redeploy' => $this->forbidProcurementBatch($delivery, $id),
             default => null,
         };
     }
@@ -37,11 +42,11 @@ class DeliveryObserver
         }
     }
 
-    private function requireOriginSettlement(Delivery $delivery, string|int $id): void
+    private function forbidProcurementBatch(Delivery $delivery, string|int $id): void
     {
-        if (is_null($delivery->origin_settlement_id)) {
+        if (! is_null($delivery->procurement_batch_id)) {
             throw new InvalidArgumentException(
-                "Delivery source_type=fresh_return_redeploy requires origin_settlement_id (delivery id: {$id})"
+                "Delivery source_type=fresh_return_redeploy must not have procurement_batch_id (delivery id: {$id})"
             );
         }
     }

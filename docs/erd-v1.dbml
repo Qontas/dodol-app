@@ -266,8 +266,8 @@ Table deliveries {
   procurement_batch_id bigint [ref: > procurement_batches.id, null, note: 'NULL → UI WARNING "profit incomplete — link to batch"']
   
   source_type delivery_source [not null, default: 'new_procurement']
-  origin_settlement_id bigint [ref: > settlements.id, null, note: 'Required jika source_type=fresh_return_redeploy']
-  
+  // origin tracking moved to delivery_origins pivot (Rule B: per-biji accounting)
+
   delivery_type delivery_type [not null, default: 'consignment']
   qty_delivered smallint [not null]
   unit_price decimal(12,2) [not null, note: 'Snapshot dari product_variants.sale_price_per_pack saat delivery dibikin']
@@ -287,10 +287,28 @@ Table deliveries {
   
   Note: '''
     Business rules (enforced via Laravel observer):
-    1. source_type=new_procurement → procurement_batch_id NOT NULL
-    2. source_type=fresh_return_redeploy → origin_settlement_id NOT NULL
+    1. source_type=new_procurement → procurement_batch_id NOT NULL, ZERO rows di delivery_origins
+    2. source_type=fresh_return_redeploy → procurement_batch_id NULL, ≥1 row di delivery_origins,
+       AND sum(delivery_origins.biji_count) == qty_delivered * 15 (Rule B strict per-biji accounting)
     3. delivery_type=cash_sale → tidak butuh settlement record (settled immediately)
     4. delivery_type=consignment → wajib ada 1 settlement record (eventual)
+  '''
+}
+
+Table delivery_origins {
+  id bigint [pk, increment]
+  delivery_id bigint [ref: > deliveries.id, not null, note: 'cascadeOnDelete']
+  settlement_id bigint [ref: > settlements.id, not null, note: 'cascadeOnDelete; sumber biji bonus dari settlement ini']
+  biji_count integer [not null, note: 'Jumlah biji dari settlement ini yang di-redeploy ke delivery target']
+
+  Indexes {
+    (delivery_id, settlement_id) [unique]
+  }
+
+  Note: '''
+    Pivot table untuk source_type=fresh_return_redeploy. Setiap biji bonus
+    ter-trace ke asal settlement (no phantom inventory).
+    Rule B: sum(biji_count) per delivery_id HARUS = deliveries.qty_delivered * 15.
   '''
 }
 
