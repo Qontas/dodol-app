@@ -1,3 +1,20 @@
+## PRIORITAS SESI BERIKUTNYA — REFACTOR TRIP MODEL
+
+### Perubahan: Operasional Bebas (Tanpa FIFO Block)
+
+Owner request: operator tidak di-block oleh stok batch. Batch = catatan owner saja.
+
+Perubahan yang dibutuhkan:
+
+1. trips: tambah qty_carried (mika dibawa saat berangkat) — input di StartTrip
+2. saveVisit: hapus FIFO resolver + hapus guard stok — delivery.procurement_batch_id = nullable
+3. DeliveryObserver: relax constraint new_procurement (procurement_batch_id nullable OK)
+4. StartTrip: tambah input qty_carried sebelum "Mulai Trip Sekarang"
+5. End trip: summary update → dibawa X mika, drop Y mika, sisa Z mika
+6. Test update: factory + observer test sesuaikan nullable batch
+
+Target: operator tinggal input berapa dibawa, berapa di-drop, sistem catat sisa otomatis.
+
 # Next Session Notes — Day 6 Plan
 
 _Day 5 closed: 17 May 2026, ~23:30 WIB_
