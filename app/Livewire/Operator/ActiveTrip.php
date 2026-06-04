@@ -20,6 +20,9 @@ class ActiveTrip extends Component
     public const BIJI_PER_MIKA = 15;
     public const HARGA_PER_BIJI = 800;
 
+    // Alasan valid untuk mengakhiri trip
+    public const VALID_END_REASONS = ['stock_habis', 'target_done', 'sakit', 'urgent_personal', 'other'];
+
     // --- STATE DASAR ---
     public $trip;
     public $kiosks = [];
@@ -39,6 +42,15 @@ class ActiveTrip extends Component
     // Kalkulasi Sistem
     public $terjual = 0;
     public $tagihan = 0;
+
+    // --- STATE END TRIP ---
+    public bool $isEndTripModalOpen = false;
+    public string $endReason = '';
+    public array $tripSummary = [
+        'kios_visited' => 0,
+        'total_mika_drop' => 0,
+        'total_uang_diterima' => 0,
+    ];
 
     public function mount()
     {
@@ -294,13 +306,51 @@ class ActiveTrip extends Component
         session()->flash('visit_saved', 'Kunjungan berhasil disimpan.');
     }
 
-    public function finishTrip()
+    // --- END TRIP FLOW ---
+    public function openEndTripModal()
     {
-        if ($this->trip) {
+        $this->tripSummary = [
+            'kios_visited' => KioskVisit::where('trip_id', $this->trip->id)->count(),
+            'total_mika_drop' => (int) Delivery::where('trip_id', $this->trip->id)->sum('qty_delivered'),
+            'total_uang_diterima' => (int) Settlement::whereHas(
+                'delivery',
+                fn ($q) => $q->where('trip_id', $this->trip->id)
+            )->sum('amount_paid'),
+        ];
+
+        $this->endReason = '';
+        $this->resetErrorBag('endReason');
+        $this->isEndTripModalOpen = true;
+    }
+
+    public function closeEndTripModal()
+    {
+        $this->isEndTripModalOpen = false;
+        $this->endReason = '';
+    }
+
+    public function confirmEndTrip()
+    {
+        // Validasi: alasan wajib + harus salah satu nilai valid
+        if (!in_array($this->endReason, self::VALID_END_REASONS, true)) {
+            $this->addError('endReason', 'Pilih alasan mengakhiri trip.');
+            return;
+        }
+
+        // Trip harus masih aktif
+        if (!$this->trip || $this->trip->ended_at !== null) {
+            $this->addError('endReason', 'Trip sudah diakhiri.');
+            return;
+        }
+
+        DB::transaction(function () {
             $this->trip->update([
                 'ended_at' => now(),
+                'ended_reason' => $this->endReason,
             ]);
-        }
+        });
+
+        session()->flash('trip_ended', 'Trip berhasil diakhiri.');
 
         return redirect()->route('operator.dashboard');
     }
