@@ -18,6 +18,7 @@ class Trip extends Model
         'started_at',
         'ended_at',
         'qty_carried_total',
+        'starting_cluster_id',
         'notes',
     ];
 
@@ -30,6 +31,11 @@ class Trip extends Model
     public function operator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'operator_id');
+    }
+
+    public function startingCluster(): BelongsTo
+    {
+        return $this->belongsTo(Cluster::class, 'starting_cluster_id');
     }
 
     public function deliveries(): HasMany

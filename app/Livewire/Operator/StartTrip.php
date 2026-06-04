@@ -31,12 +31,11 @@ class StartTrip extends Component
     {
         return Cluster::query()
             ->where('is_active', true)
-            ->withCount(['kiosks' => fn ($q) => $q->where('is_active', true)])
+            ->withCount(['kiosks' => fn($q) => $q->where('is_active', true)])
             ->orderBy('name')
             ->get()
             ->map(function ($cluster) {
                 $cluster->urgency_data = $this->calculateUrgency($cluster->id);
-
                 return $cluster;
             });
     }
@@ -125,22 +124,44 @@ class StartTrip extends Component
             'selectedClusterId.exists' => 'Cluster tidak valid',
         ]);
 
+        // Proteksi 1: Intersepsi PHP
+        $activeTrip = Trip::where('operator_id', auth()->id())
+            ->whereNull('ended_at')
+            ->first();
+
+        if ($activeTrip) {
+            return $this->redirect(route('operator.trip.active', $activeTrip->id), navigate: true);
+        }
+
         $maxNumber = Trip::where('operator_id', auth()->id())
             ->whereDate('trip_date', today())
             ->max('trip_number_of_day');
 
         $nextNumber = ($maxNumber ?? 0) + 1;
 
-        $trip = Trip::create([
-            'operator_id' => auth()->id(),
-            'trip_date' => today(),
-            'trip_number_of_day' => $nextNumber,
-            'started_at' => now(),
-            'qty_carried_total' => 0,
-            'notes' => "Cluster awal: cluster_id={$this->selectedClusterId}",
-        ]);
+        // Proteksi 2: Jaring Throwable Total (Menangkap segala jenis error database)
+        try {
+            $trip = Trip::create([
+                'operator_id' => auth()->id(),
+                'trip_date' => today(),
+                'trip_number_of_day' => $nextNumber,
+                'starting_cluster_id' => $this->selectedClusterId,
+                'started_at' => now(),
+                'qty_carried_total' => 0,
+                'notes' => "Cluster awal: cluster_id={$this->selectedClusterId}",
+            ]);
+        } catch (\Throwable $e) {
+            // Segala macam ledakan duplikasi data diserap di sini.
+            // Ambil trip sah yang berhasil dibuat oleh request milidetik pertama.
+            $trip = Trip::where('operator_id', auth()->id())
+                ->whereNull('ended_at')
+                ->first();
+        }
 
-        session()->put("trip_{$trip->id}_starting_cluster", $this->selectedClusterId);
+        // Pengaman jika trip gagal dibuat dan gagal diambil (fallback mutlak)
+        if (!$trip) {
+            return redirect()->route('operator.dashboard');
+        }
 
         return $this->redirect(route('operator.trip.active', $trip->id), navigate: true);
     }
