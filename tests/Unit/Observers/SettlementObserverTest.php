@@ -14,7 +14,8 @@ class SettlementObserverTest extends TestCase
 
     public function test_settlement_valid_qty_sum_passes(): void
     {
-        $delivery = Delivery::factory()->create(['qty_delivered' => 15]);
+        // qty_delivered=1 mika = 15 biji; settlement qty dalam biji harus berjumlah 15
+        $delivery = Delivery::factory()->create(['qty_delivered' => 1]);
 
         $settlement = Settlement::factory()->create([
             'delivery_id' => $delivery->id,
@@ -48,7 +49,8 @@ class SettlementObserverTest extends TestCase
 
     public function test_settlement_all_zero_returns_passes(): void
     {
-        $delivery = Delivery::factory()->create(['qty_delivered' => 15]);
+        // qty_delivered=1 mika = 15 biji, semua terjual (retur 0)
+        $delivery = Delivery::factory()->create(['qty_delivered' => 1]);
 
         Settlement::factory()->create([
             'delivery_id' => $delivery->id,
@@ -65,13 +67,13 @@ class SettlementObserverTest extends TestCase
     public function test_settlement_full_payment_auto_sets_status_paid(): void
     {
         $delivery = Delivery::factory()->create([
-            'qty_delivered' => 10,
+            'qty_delivered' => 1,
             'unit_price' => 12000,
         ]);
 
         $settlement = Settlement::factory()->create([
             'delivery_id' => $delivery->id,
-            'qty_sold' => 10,
+            'qty_sold' => 15,
             'qty_returned_fresh' => 0,
             'qty_returned_expired' => 0,
             'amount_due' => 120000,
@@ -89,13 +91,13 @@ class SettlementObserverTest extends TestCase
     public function test_settlement_partial_payment_stays_pending(): void
     {
         $delivery = Delivery::factory()->create([
-            'qty_delivered' => 10,
+            'qty_delivered' => 1,
             'unit_price' => 12000,
         ]);
 
         $settlement = Settlement::factory()->create([
             'delivery_id' => $delivery->id,
-            'qty_sold' => 10,
+            'qty_sold' => 15,
             'qty_returned_fresh' => 0,
             'qty_returned_expired' => 0,
             'amount_due' => 120000,
@@ -113,13 +115,13 @@ class SettlementObserverTest extends TestCase
     public function test_settlement_overpayment_marked_paid(): void
     {
         $delivery = Delivery::factory()->create([
-            'qty_delivered' => 10,
+            'qty_delivered' => 1,
             'unit_price' => 12000,
         ]);
 
         $settlement = Settlement::factory()->create([
             'delivery_id' => $delivery->id,
-            'qty_sold' => 10,
+            'qty_sold' => 15,
             'qty_returned_fresh' => 0,
             'qty_returned_expired' => 0,
             'amount_due' => 120000,
