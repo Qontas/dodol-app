@@ -43,6 +43,10 @@ class ActiveTrip extends Component
     public $terjual = 0;
     public $tagihan = 0;
 
+    // --- STATE EXTENSION (tunda settle) ---
+    public bool $extensionGranted = false;
+    public int $extensionCount = 0;
+
     // --- STATE END TRIP ---
     public bool $isEndTripModalOpen = false;
     public string $endReason = '';
@@ -86,6 +90,16 @@ class ActiveTrip extends Component
             ->doesntHave('settlement')
             ->latest('id')
             ->first();
+
+        // Hitung berapa kali titipan ini sudah diperpanjang
+        $this->extensionGranted = false;
+        if ($this->pendingDelivery) {
+            $this->extensionCount = KioskVisit::where('settled_delivery_id', $this->pendingDelivery->id)
+                ->where('extension_granted', true)
+                ->count();
+        } else {
+            $this->extensionCount = 0;
+        }
 
         // Reset form
         $this->returnFresh = 0;
@@ -216,15 +230,20 @@ class ActiveTrip extends Component
         $expired = (int) $this->returnExpired;
         $hasPending = (bool) $this->pendingDelivery;
         $action = $this->resolveVisitAction();
-        $isSettle = in_array($action, ['drop_and_settle', 'settle_only'], true);
+        $isSettleAction = in_array($action, ['drop_and_settle', 'settle_only'], true);
         $isDrop = in_array($action, ['drop_and_settle', 'drop_only'], true);
+
+        // Extension hanya berlaku untuk aksi yang seharusnya settle + ada titipan lama.
+        // Kalau granted: settle DITUNDA (tidak buat row settlements), drop tetap jalan.
+        $extension = $this->extensionGranted && $hasPending && $isSettleAction;
+        $createSettlement = $isSettleAction && !$extension;
 
         // --- Hitung ulang terjual & tagihan dari server (jangan percaya client),
         //     TANPA menimpa uangDiterima yang diinput operator ---
-        if ($hasPending) {
+        if ($createSettlement) {
             $totalBiji = (int) $this->pendingDelivery->qty_delivered * self::BIJI_PER_MIKA;
 
-            if ($isSettle && ($fresh + $expired) > $totalBiji) {
+            if (($fresh + $expired) > $totalBiji) {
                 $this->addError('general', 'Total retur melebihi jumlah titipan sebelumnya.');
                 return;
             }
@@ -248,12 +267,18 @@ class ActiveTrip extends Component
         }
 
         try {
-            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettle, $isDrop, $variant, $batch) {
+            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $batch) {
                 $newDeliveryId = null;
                 $settledDeliveryId = null;
 
-                // 1. Settle titipan lama
-                if ($isSettle) {
+                // Aksi settle-type selalu menandai delivery lama (agar extension count
+                // & jejak kunjungan terhitung), meski settlement-nya ditunda.
+                if ($isSettleAction) {
+                    $settledDeliveryId = $this->pendingDelivery->id;
+                }
+
+                // 1. Settle titipan lama (dilewati kalau extension/tunda bayar)
+                if ($createSettlement) {
                     Settlement::create([
                         'delivery_id' => $this->pendingDelivery->id,
                         'visit_date' => today(),
@@ -264,7 +289,6 @@ class ActiveTrip extends Component
                         'amount_paid' => (int) $this->uangDiterima,
                         // status & paid_at di-set otomatis oleh SettlementObserver
                     ]);
-                    $settledDeliveryId = $this->pendingDelivery->id;
                 }
 
                 // 2. Drop titipan baru (new_procurement, FIFO batch)
@@ -291,7 +315,7 @@ class ActiveTrip extends Component
                     'visit_action' => $action,
                     'new_delivery_id' => $newDeliveryId,
                     'settled_delivery_id' => $settledDeliveryId,
-                    'extension_granted' => false,
+                    'extension_granted' => $extension,
                 ]);
             });
         } catch (\Throwable $e) {
