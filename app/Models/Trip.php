@@ -17,6 +17,7 @@ class Trip extends Model
         'operator_id',
         'started_at',
         'ended_at',
+        'ended_reason',
         'qty_carried_total',
         'starting_cluster_id',
         'notes',

@@ -50,13 +50,71 @@
         @endforelse
     </div>
 
-    {{-- Tombol End Trip Fix di Bawah --}}
+    {{-- Tombol Akhiri Trip Fix di Bawah --}}
     <div class="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 max-w-md mx-auto">
-        <button type="button" wire:click="finishTrip" wire:loading.attr="disabled" wire:target="finishTrip" class="w-full bg-red-600 text-white font-bold text-lg py-3 rounded-xl shadow-sm active:bg-red-700">
-            <span wire:loading.remove wire:target="finishTrip">Selesaikan Trip</span>
-            <span wire:loading wire:target="finishTrip">Menyelesaikan...</span>
+        <button type="button" wire:click="openEndTripModal" wire:loading.attr="disabled" wire:target="openEndTripModal" class="w-full bg-red-600 text-white font-bold text-lg py-3 rounded-xl shadow-sm active:bg-red-700">
+            <span wire:loading.remove wire:target="openEndTripModal">Akhiri Trip</span>
+            <span wire:loading wire:target="openEndTripModal">Memuat...</span>
         </button>
     </div>
+
+    {{-- MODAL AKHIRI TRIP --}}
+    @if($isEndTripModalOpen)
+    <div class="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+        <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" wire:click="closeEndTripModal"></div>
+
+        <div class="relative bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div class="px-5 py-4 border-b border-slate-100">
+                <h3 class="font-bold text-lg text-slate-900">Akhiri Trip</h3>
+                <p class="text-xs text-slate-500">Pastikan ringkasan di bawah sudah sesuai.</p>
+            </div>
+
+            <div class="p-5 space-y-5">
+                {{-- Ringkasan Trip --}}
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-600">Kios Dikunjungi</span>
+                        <span class="font-bold text-slate-900">{{ $tripSummary['kios_visited'] }}</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-600">Total Drop</span>
+                        <span class="font-bold text-slate-900">{{ $tripSummary['total_mika_drop'] }} mika</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-600">Total Uang Diterima</span>
+                        <span class="font-bold text-green-700">Rp {{ number_format($tripSummary['total_uang_diterima'], 0, ',', '.') }}</span>
+                    </div>
+                </div>
+
+                {{-- Pilih Alasan --}}
+                <div>
+                    <label class="block text-sm font-bold text-slate-900 mb-2">Alasan Mengakhiri</label>
+                    <div class="space-y-2">
+                        @foreach (['stock_habis' => 'Stok Habis', 'target_done' => 'Target Tercapai', 'sakit' => 'Sakit', 'urgent_personal' => 'Keperluan Mendadak', 'other' => 'Lainnya'] as $value => $label)
+                            <label class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer {{ $endReason === $value ? 'border-amber-500 bg-amber-50' : 'border-slate-200' }}">
+                                <input type="radio" wire:model.live="endReason" value="{{ $value }}" class="text-amber-600 focus:ring-amber-500">
+                                <span class="text-sm font-medium text-slate-800">{{ $label }}</span>
+                            </label>
+                        @endforeach
+                    </div>
+                    @error('endReason')
+                        <p class="text-xs text-red-600 mt-2">{{ $message }}</p>
+                    @enderror
+                </div>
+            </div>
+
+            <div class="sticky bottom-0 bg-white border-t border-slate-100 p-4 grid grid-cols-2 gap-3">
+                <button type="button" wire:click="closeEndTripModal" class="w-full bg-slate-100 text-slate-700 font-bold py-3 rounded-xl border border-slate-200 active:bg-slate-200">
+                    Batal
+                </button>
+                <button type="button" wire:click="confirmEndTrip" wire:loading.attr="disabled" wire:target="confirmEndTrip" @disabled($endReason === '') class="w-full bg-red-600 text-white font-bold py-3 rounded-xl shadow-sm active:bg-red-700 disabled:opacity-50">
+                    <span wire:loading.remove wire:target="confirmEndTrip">Konfirmasi Akhiri Trip</span>
+                    <span wire:loading wire:target="confirmEndTrip">Mengakhiri...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    @endif
     {{-- MODAL KUNJUNGAN (SETTLE & DROP) --}}
     @if($isVisitModalOpen && $selectedKiosk)
     <div class="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
