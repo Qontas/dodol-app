@@ -152,42 +152,68 @@
                 </div>
 
                 @if($pendingDelivery)
+                    {{-- Peringatan jumlah perpanjangan --}}
+                    @if($extensionCount >= 2)
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 font-medium">
+                            ⚠️ Sudah 2x perpanjangan — Pertimbangkan Cut Off
+                        </div>
+                    @elseif($extensionCount === 1)
+                        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
+                            Perpanjangan ke-1 dari 2
+                        </div>
+                    @endif
+
                     {{-- AREA SETTLEMENT (Jika ada titipan lama) --}}
                     <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
                         <div class="flex justify-between items-center mb-4">
                             <span class="text-xs font-bold text-amber-800 uppercase tracking-wider">Titipan Sebelumnya</span>
                             <span class="text-sm font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} Mika ({{ $pendingDelivery->qty_delivered * 15 }} Biji)</span>
                         </div>
-                        
-                        <div class="grid grid-cols-2 gap-4 mb-4">
-                            <div>
-                                <label class="block text-xs font-medium text-slate-700 mb-1">Sisa Bagus (Biji)</label>
-                                <input type="number" wire:model.live="returnFresh" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold" min="0">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-700 mb-1">Sisa Basi/BS (Biji)</label>
-                                <input type="number" wire:model.live="returnExpired" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold text-red-600" min="0">
-                            </div>
-                        </div>
 
-                        <div class="border-t border-amber-200 pt-3">
-                            <div class="flex justify-between items-center text-sm mb-1">
-                                <span class="text-slate-600">Terjual:</span>
-                                <span class="font-bold text-slate-900">{{ $terjual }} Biji</span>
+                        @if(!$extensionGranted)
+                            <div class="grid grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1">Sisa Bagus (Biji)</label>
+                                    <input type="number" wire:model.live="returnFresh" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold" min="0">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1">Sisa Basi/BS (Biji)</label>
+                                    <input type="number" wire:model.live="returnExpired" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold text-red-600" min="0">
+                                </div>
                             </div>
-                            <div class="flex justify-between items-center text-sm">
-                                <span class="text-slate-600">Total Tagihan:</span>
-                                <span class="font-bold text-slate-900">Rp {{ number_format($tagihan, 0, ',', '.') }}</span>
-                            </div>
-                        </div>
 
-                        <div class="mt-4">
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Uang Diterima (Rp)</label>
-                            <input type="number" wire:model="uangDiterima" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-xl font-bold text-green-700 bg-white" min="0">
-                            @error('uangDiterima')
-                                <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
-                            @enderror
-                        </div>
+                            <div class="border-t border-amber-200 pt-3">
+                                <div class="flex justify-between items-center text-sm mb-1">
+                                    <span class="text-slate-600">Terjual:</span>
+                                    <span class="font-bold text-slate-900">{{ $terjual }} Biji</span>
+                                </div>
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-slate-600">Total Tagihan:</span>
+                                    <span class="font-bold text-slate-900">Rp {{ number_format($tagihan, 0, ',', '.') }}</span>
+                                </div>
+                            </div>
+
+                            <div class="mt-4">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Uang Diterima (Rp)</label>
+                                <input type="number" wire:model="uangDiterima" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-xl font-bold text-green-700 bg-white" min="0">
+                                @error('uangDiterima')
+                                    <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        @else
+                            <div class="text-sm text-amber-800 bg-white/60 rounded-lg p-3">
+                                Settle ditunda. BS &amp; pembayaran diambil di kunjungan berikutnya — titipan ini tetap tercatat sebagai tunggakan.
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- Toggle perpanjangan (tunda settle) --}}
+                    <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                        <input type="checkbox" wire:model.live="extensionGranted" id="extensionToggle"
+                            class="rounded border-slate-300 text-amber-600 focus:ring-amber-500">
+                        <label for="extensionToggle" class="text-sm font-medium text-slate-700 cursor-pointer">
+                            Tunda bayar &amp; ambil BS (perpanjangan)
+                        </label>
                     </div>
                 @else
                     {{-- TAMPILAN KIOS BARU --}}
