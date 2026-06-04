@@ -4,9 +4,11 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\KioskResource\Pages;
 use App\Models\Kiosk;
+use Dotswan\MapPicker\Fields\Map;
 use Filament\Forms;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Form;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
@@ -90,23 +92,38 @@ class KioskResource extends Resource
                             ->placeholder('Contoh: Jl. Persatuan No. 33, Medan')
                             ->columnSpan(2),
 
-                        Forms\Components\TextInput::make('latitude')
-                            ->label('Latitude')
-                            ->numeric()
-                            ->minValue(-90)
-                            ->maxValue(90)
-                            ->step(0.0000001)
-                            ->placeholder('3.5952')
-                            ->helperText('Optional. Format: decimal (contoh: 3.5952)'),
+                        Map::make('location')
+                            ->label('Lokasi Kios (klik titik di peta)')
+                            ->columnSpanFull()
+                            ->defaultLocation(latitude: 3.5952, longitude: 98.6722)
+                            ->draggable()
+                            ->clickable()
+                            ->afterStateUpdated(function (Set $set, ?array $state): void {
+                                $set('latitude', $state['lat'] ?? null);
+                                $set('longitude', $state['lng'] ?? null);
+                            })
+                            ->afterStateHydrated(function ($state, $record, Set $set): void {
+                                $set('location', [
+                                    'lat' => $record?->latitude ?? 3.5952,
+                                    'lng' => $record?->longitude ?? 98.6722,
+                                ]);
+                            })
+                            ->liveLocation()
+                            ->showMarker()
+                            ->markerColor('#FBBF24')
+                            ->showFullscreenControl()
+                            ->showZoomControl()
+                            ->tilesUrl('https://tile.openstreetmap.org/{z}/{x}/{y}.png')
+                            ->zoom(13)
+                            ->detectRetina()
+                            ->showMyLocationButton()
+                            ->extraTileControl([])
+                            ->extraControl(['zoomDelta' => 1, 'zoomSnap' => 2])
+                            ->dehydrated(false),
 
-                        Forms\Components\TextInput::make('longitude')
-                            ->label('Longitude')
-                            ->numeric()
-                            ->minValue(-180)
-                            ->maxValue(180)
-                            ->step(0.0000001)
-                            ->placeholder('98.6722')
-                            ->helperText('Optional. Format: decimal (contoh: 98.6722)'),
+                        // Kolom asli tetap disimpan ke DB lewat hidden field
+                        Forms\Components\Hidden::make('latitude'),
+                        Forms\Components\Hidden::make('longitude'),
                     ]),
 
                 Section::make('Foto & Konfigurasi')
