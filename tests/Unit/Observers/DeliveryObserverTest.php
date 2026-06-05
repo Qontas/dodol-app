@@ -25,12 +25,17 @@ class DeliveryObserverTest extends TestCase
         $this->assertNotNull($delivery->procurement_batch_id);
     }
 
-    public function test_new_procurement_without_batch_throws(): void
+    public function test_new_procurement_without_batch_passes(): void
     {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/procurement_batch_id/');
+        // Operasional bebas: operator tidak wajib link ke batch.
+        // Batch = catatan owner saja, procurement_batch_id boleh null.
+        $delivery = Delivery::factory()->create([
+            'source_type' => 'new_procurement',
+            'procurement_batch_id' => null,
+        ]);
 
-        Delivery::factory()->create([
+        $this->assertDatabaseHas('deliveries', [
+            'id' => $delivery->id,
             'source_type' => 'new_procurement',
             'procurement_batch_id' => null,
         ]);
