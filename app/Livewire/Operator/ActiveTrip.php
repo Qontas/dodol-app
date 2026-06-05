@@ -9,7 +9,6 @@ use App\Models\Delivery;
 use App\Models\Settlement;
 use App\Models\KioskVisit;
 use App\Models\ProductVariant;
-use App\Models\ProcurementBatch;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 
@@ -54,6 +53,8 @@ class ActiveTrip extends Component
         'kios_visited' => 0,
         'total_mika_drop' => 0,
         'total_uang_diterima' => 0,
+        'qty_carried' => 0,
+        'total_mika_sisa' => 0,
     ];
 
     public function mount()
@@ -189,26 +190,6 @@ class ActiveTrip extends Component
         return $variant;
     }
 
-    /**
-     * FIFO: ambil batch tertua yang sisa stoknya cukup untuk $qtyMika.
-     * Stok terpakai = sum(deliveries.qty_delivered) per batch (dalam mika).
-     */
-    private function resolveFifoBatch(int $qtyMika): ProcurementBatch
-    {
-        $batches = ProcurementBatch::orderBy('created_at')->get();
-
-        foreach ($batches as $batch) {
-            $used = (int) Delivery::where('procurement_batch_id', $batch->id)->sum('qty_delivered');
-            $remaining = (int) $batch->qty_packs - $used;
-
-            if ($remaining >= $qtyMika) {
-                return $batch;
-            }
-        }
-
-        throw new \RuntimeException("Stok tidak cukup untuk drop {$qtyMika} mika.");
-    }
-
     public function saveVisit()
     {
         $this->validate([
@@ -257,17 +238,16 @@ class ActiveTrip extends Component
             return;
         }
 
-        // --- Resolve varian + batch FIFO SEBELUM transaksi (validasi stok dulu) ---
+        // --- Resolve varian aktif SEBELUM transaksi (tidak ada block stok batch) ---
         try {
             $variant = $isDrop ? $this->resolveActiveVariant() : null;
-            $batch = $isDrop ? $this->resolveFifoBatch($drop) : null;
         } catch (\RuntimeException $e) {
             $this->addError('general', $e->getMessage());
             return;
         }
 
         try {
-            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $batch) {
+            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant) {
                 $newDeliveryId = null;
                 $settledDeliveryId = null;
 
@@ -291,18 +271,18 @@ class ActiveTrip extends Component
                     ]);
                 }
 
-                // 2. Drop titipan baru (new_procurement, FIFO batch)
+                // 2. Drop titipan baru (new_procurement, tanpa link batch — operasional bebas)
                 if ($isDrop) {
                     $newDelivery = Delivery::create([
                         'kiosk_id' => $this->selectedKiosk->id,
                         'trip_id' => $this->trip->id,
                         'product_variant_id' => $variant->id,
-                        'procurement_batch_id' => $batch->id,
+                        'procurement_batch_id' => null,
                         'source_type' => 'new_procurement',
                         'delivery_type' => 'consignment',
                         'qty_delivered' => $drop,
                         'unit_price' => $variant->sale_price_per_pack,
-                        'cost_snapshot' => $batch->cost_per_pack,
+                        'cost_snapshot' => null,
                     ]);
                     $newDeliveryId = $newDelivery->id;
                 }
@@ -333,13 +313,18 @@ class ActiveTrip extends Component
     // --- END TRIP FLOW ---
     public function openEndTripModal()
     {
+        $totalDrop = (int) Delivery::where('trip_id', $this->trip->id)->sum('qty_delivered');
+        $qtyCarried = (int) ($this->trip->qty_carried_total ?? 0);
+
         $this->tripSummary = [
             'kios_visited' => KioskVisit::where('trip_id', $this->trip->id)->count(),
-            'total_mika_drop' => (int) Delivery::where('trip_id', $this->trip->id)->sum('qty_delivered'),
+            'total_mika_drop' => $totalDrop,
             'total_uang_diterima' => (int) Settlement::whereHas(
                 'delivery',
                 fn ($q) => $q->where('trip_id', $this->trip->id)
             )->sum('amount_paid'),
+            'qty_carried' => $qtyCarried,
+            'total_mika_sisa' => $qtyCarried - $totalDrop,
         ];
 
         $this->endReason = '';

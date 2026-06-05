@@ -77,8 +77,16 @@
                         <span class="font-bold text-slate-900">{{ $tripSummary['kios_visited'] }}</span>
                     </div>
                     <div class="flex justify-between text-sm">
+                        <span class="text-slate-600">Dibawa</span>
+                        <span class="font-bold text-slate-900">{{ $tripSummary['qty_carried'] }} mika</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
                         <span class="text-slate-600">Total Drop</span>
                         <span class="font-bold text-slate-900">{{ $tripSummary['total_mika_drop'] }} mika</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-600">Sisa</span>
+                        <span class="font-bold {{ $tripSummary['total_mika_sisa'] >= 0 ? 'text-green-700' : 'text-red-600' }}">{{ $tripSummary['total_mika_sisa'] }} mika</span>
                     </div>
                     <div class="flex justify-between text-sm">
                         <span class="text-slate-600">Total Uang Diterima</span>

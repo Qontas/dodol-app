@@ -13,6 +13,7 @@ use Livewire\Component;
 class StartTrip extends Component
 {
     public ?int $selectedClusterId = null;
+    public int $qtyCarried = 0;
 
     public function mount(): void
     {
@@ -119,9 +120,12 @@ class StartTrip extends Component
     {
         $this->validate([
             'selectedClusterId' => 'required|exists:clusters,id',
+            'qtyCarried' => 'required|integer|min:1',
         ], [
             'selectedClusterId.required' => 'Pilih cluster dulu',
             'selectedClusterId.exists' => 'Cluster tidak valid',
+            'qtyCarried.required' => 'Isi jumlah mika dulu',
+            'qtyCarried.min' => 'Isi jumlah mika dulu',
         ]);
 
         // Proteksi 1: Intersepsi PHP
@@ -147,7 +151,7 @@ class StartTrip extends Component
                 'trip_number_of_day' => $nextNumber,
                 'starting_cluster_id' => $this->selectedClusterId,
                 'started_at' => now(),
-                'qty_carried_total' => 0,
+                'qty_carried_total' => $this->qtyCarried,
                 'notes' => "Cluster awal: cluster_id={$this->selectedClusterId}",
             ]);
         } catch (\Throwable $e) {
