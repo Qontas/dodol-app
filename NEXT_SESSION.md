@@ -51,6 +51,17 @@ Tambah widget statistik di /owner/dashboard:
 - Kios overdue (belum dikunjungi > target_visit_interval_days)
 - Total outstanding (settlement pending)
 
+### PRIORITAS 4: Fitur Operator Input Kios Baru
+Operator (Rian) butuh input kios baru langsung di lapangan tanpa harus ke admin panel.
+Yang dibutuhkan:
+- Form sederhana di operator side (/operator/kiosks/create atau modal di dashboard)
+- Field: nama kios, nama pemilik, telepon, cluster, lokasi (map picker), default qty mika
+- Setelah save: kios langsung aktif dan bisa dikunjungi di trip berikutnya
+
+### PRIORITAS 5: Import Kios via Excel/CSV
+Untuk bulk import data kios dari spreadsheet existing.
+Field mapping: nama_kios, nama_pemilik, telepon, cluster, alamat, lat, lng, default_qty_mika
+
 ## BUSINESS RULES LOCKED
 
 - 1 mika = 15 biji
