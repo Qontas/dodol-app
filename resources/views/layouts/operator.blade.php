@@ -34,7 +34,7 @@
             $items = [
                 ['label' => 'Beranda', 'route' => 'operator.dashboard', 'active' => request()->routeIs('operator.dashboard')],
                 ['label' => 'Mulai Trip', 'route' => 'operator.trip.start', 'active' => request()->routeIs('operator.trip.*')],
-                ['label' => 'Kios Baru', 'route' => null, 'active' => false],
+                ['label' => 'Kios Baru', 'route' => 'operator.kiosks.create', 'active' => request()->routeIs('operator.kiosks.*')],
                 ['label' => 'Profil', 'route' => 'profile', 'active' => request()->routeIs('profile')],
             ];
         @endphp
