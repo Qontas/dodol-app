@@ -47,7 +47,7 @@ class KioskResource extends Resource
 
                         Forms\Components\Select::make('cluster_id')
                             ->label('Cluster')
-                            ->relationship('cluster', 'name', fn ($query) => $query->where('is_active', true))
+                            ->relationship('cluster', 'name', fn($query) => $query->where('is_active', true))
                             ->searchable()
                             ->preload()
                             ->required()
@@ -97,7 +97,7 @@ class KioskResource extends Resource
                             ->columnSpanFull()
                             ->defaultLocation(latitude: 3.5952, longitude: 98.6722)
                             ->draggable()
-                            ->clickable()
+                            ->clickable(true)
                             ->afterStateUpdated(function (Set $set, ?array $state): void {
                                 $set('latitude', $state['lat'] ?? null);
                                 $set('longitude', $state['lng'] ?? null);
@@ -201,7 +201,7 @@ class KioskResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->weight('bold')
-                    ->description(fn ($record) => $record->owner_name),
+                    ->description(fn($record) => $record->owner_name),
 
                 Tables\Columns\TextColumn::make('cluster.name')
                     ->label('Cluster')
@@ -236,7 +236,7 @@ class KioskResource extends Resource
 
                 Tables\Columns\IconColumn::make('latitude')
                     ->label('GPS')
-                    ->getStateUsing(fn ($record) => $record->latitude !== null && $record->longitude !== null)
+                    ->getStateUsing(fn($record) => $record->latitude !== null && $record->longitude !== null)
                     ->boolean()
                     ->trueIcon('heroicon-o-map-pin')
                     ->falseIcon('heroicon-o-x-mark')
@@ -278,8 +278,8 @@ class KioskResource extends Resource
                     ->trueLabel('Ada GPS')
                     ->falseLabel('Belum ada GPS')
                     ->queries(
-                        true: fn ($query) => $query->whereNotNull('latitude')->whereNotNull('longitude'),
-                        false: fn ($query) => $query->whereNull('latitude')->orWhereNull('longitude'),
+                        true: fn($query) => $query->whereNotNull('latitude')->whereNotNull('longitude'),
+                        false: fn($query) => $query->whereNull('latitude')->orWhereNull('longitude'),
                     ),
             ])
             ->actions([
