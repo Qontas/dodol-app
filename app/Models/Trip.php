@@ -53,4 +53,91 @@ class Trip extends Model
     {
         return $this->hasMany(Commission::class);
     }
+
+    public function getMikaTerjualAttribute(): float
+    {
+        $settledDeliveryIds = $this->visits()
+            ->whereNotNull('settled_delivery_id')
+            ->pluck('settled_delivery_id');
+
+        $qtySoldBiji = (float) Settlement::whereIn('delivery_id', $settledDeliveryIds)
+            ->sum('qty_sold');
+
+        return $qtySoldBiji / 15;
+    }
+
+    public function getMikaKiosBaruAttribute(): float
+    {
+        $newKioskVisits = $this->visits()
+            ->where('visit_action', 'drop_only')
+            ->whereHas('kiosk', function ($q) {
+                $q->whereDate('created_at', $this->trip_date);
+            })
+            ->get();
+
+        $mikaKiosBaru = 0;
+        foreach ($newKioskVisits as $visit) {
+            if ($visit->newDelivery) {
+                $mikaKiosBaru += (float) $visit->newDelivery->qty_delivered;
+            }
+        }
+
+        return (float) $mikaKiosBaru;
+    }
+
+    public function getOmsetValAttribute(): float
+    {
+        $settledDeliveryIds = $this->visits()
+            ->whereNotNull('settled_delivery_id')
+            ->pluck('settled_delivery_id');
+
+        return (float) Settlement::whereIn('delivery_id', $settledDeliveryIds)
+            ->sum('amount_paid');
+    }
+
+    public function getHppEstimasiAttribute(): float
+    {
+        return $this->mika_terjual * 9500;
+    }
+
+    public function getUntungKotorAttribute(): float
+    {
+        return $this->mika_terjual * 2500;
+    }
+
+    public function getKomisiRegulerAttribute(): float
+    {
+        return $this->mika_terjual * 500;
+    }
+
+    public function getKomisiKiosBaruAttribute(): float
+    {
+        return $this->mika_kios_baru * 1000;
+    }
+
+    public function getKomisiRianAttribute(): float
+    {
+        return $this->komisi_reguler + $this->komisi_kios_baru;
+    }
+
+    public function getUntungBersihOwnerAttribute(): float
+    {
+        return $this->untung_kotor - $this->komisi_rian;
+    }
+
+    public function getKiosBaruCountAttribute(): int
+    {
+        return $this->visits()
+            ->where('visit_action', 'drop_only')
+            ->whereHas('kiosk', function ($q) {
+                $q->whereDate('created_at', $this->trip_date);
+            })
+            ->count();
+    }
+
+    public function getKiosLamaCountAttribute(): int
+    {
+        $totalVisited = $this->visits()->count();
+        return max(0, $totalVisited - $this->kios_baru_count);
+    }
 }

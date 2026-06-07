@@ -65,4 +65,10 @@ class ProcurementBatch extends Model
 
         return sprintf('BATCH-%s-%03d', $this->created_at->format('Y-m-d'), $counter);
     }
+
+    public function getRemainingPacksAttribute(): int
+    {
+        $delivered = (int) $this->deliveries()->sum('qty_delivered');
+        return max(0, (int) $this->qty_packs - $delivered);
+    }
 }

@@ -7,6 +7,7 @@ use App\Models\Kiosk;
 use App\Models\KioskVisit;
 use App\Models\Settlement;
 use App\Models\Supplier;
+use App\Models\Trip;
 use App\Models\User;
 use Illuminate\View\View;
 
@@ -49,12 +50,47 @@ class OwnerDashboardController extends Controller
             ->selectRaw('SUM(amount_due - amount_paid) as total')
             ->value('total') ?? 0;
 
+        // Data: sum(amount_paid) per hari 30 hari terakhir
+        $startDate = today()->subDays(29);
+        $endDate = today();
+
+        $dailyOmsetRaw = Settlement::whereBetween('visit_date', [$startDate, $endDate])
+            ->groupBy('visit_date')
+            ->selectRaw('visit_date, SUM(amount_paid) as total_omset')
+            ->pluck('total_omset', 'visit_date')
+            ->all();
+
+        $chartLabels = [];
+        $chartData = [];
+
+        for ($date = clone $startDate; $date <= $endDate; $date->addDay()) {
+            $formattedDate = $date->format('Y-m-d');
+            $chartLabels[] = $date->format('d M');
+            $chartData[] = (int) ($dailyOmsetRaw[$formattedDate] ?? 0);
+        }
+
+        // Active trips real-time progress
+        $activeTrips = Trip::whereNull('ended_at')
+            ->with(['operator', 'startingCluster', 'visits.kiosk', 'deliveries'])
+            ->get();
+
+        // Completed trips for ended trip reports
+        $completedTrips = Trip::whereNotNull('ended_at')
+            ->with(['operator', 'startingCluster', 'visits.kiosk', 'deliveries'])
+            ->latest('ended_at')
+            ->take(5)
+            ->get();
+
         return view('owner.dashboard', compact(
             'user',
             'stats',
             'omsetHariIni',
             'overdueCount',
-            'totalOutstanding'
+            'totalOutstanding',
+            'chartLabels',
+            'chartData',
+            'activeTrips',
+            'completedTrips'
         ));
     }
 }

@@ -1,4 +1,28 @@
-<div class="max-w-md mx-auto pb-20">
+<div class="max-w-md mx-auto pb-20" x-data="{
+    loading: false,
+    sortByDistance() {
+        if (!navigator.geolocation) {
+            alert('Geolocation tidak didukung oleh browser Anda.');
+            return;
+        }
+        this.loading = true;
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                $wire.sortByDistance(position.coords.latitude, position.coords.longitude)
+                    .then(() => { this.loading = false; });
+            },
+            (error) => {
+                this.loading = false;
+                alert('Gagal mendapatkan lokasi GPS: ' + error.message);
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 0
+            }
+        );
+    }
+}">
     {{-- Header --}}
     <div class="mb-6 bg-white p-4 border-b border-slate-200 shadow-sm">
         <div class="flex justify-between items-start">
@@ -21,7 +45,25 @@
 
     {{-- Daftar Kios Aktual --}}
     <div class="px-4 space-y-3">
-        <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-2">Daftar Kunjungan</h2>
+        <div class="flex justify-between items-center mb-2">
+            <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Daftar Kunjungan</h2>
+            <button type="button" 
+                    @click="sortByDistance()"
+                    :disabled="loading"
+                    class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-sm ring-1 ring-inset transition-colors
+                           {{ $sortedByDistance ? 'bg-amber-600 text-white ring-amber-600 hover:bg-amber-700' : 'bg-amber-50 text-amber-700 ring-amber-600/20 hover:bg-amber-100 active:bg-amber-200' }}
+                           disabled:opacity-50">
+                <svg x-show="!loading" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <svg x-show="loading" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24" style="display: none;">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span x-text="loading ? 'Mencari...' : '{{ $sortedByDistance ? 'Terurut by Jarak' : 'Urutkan by Jarak' }}'">Urutkan by Jarak</span>
+            </button>
+        </div>
         
         @forelse ($kiosks as $kiosk)
             @php
@@ -81,26 +123,71 @@
 
             <div class="p-5 space-y-5">
                 {{-- Ringkasan Trip --}}
-                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
-                    <div class="flex justify-between text-sm">
-                        <span class="text-slate-600">Kios Dikunjungi</span>
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-slate-600">Total Kios Dikunjungi</span>
                         <span class="font-bold text-slate-900">{{ $tripSummary['kios_visited'] }}</span>
                     </div>
-                    <div class="flex justify-between text-sm">
-                        <span class="text-slate-600">Dibawa</span>
+                    <div class="flex justify-between pl-3 text-xs text-slate-500">
+                        <span>— Kios Lama (Pergantian)</span>
+                        <span>{{ $tripSummary['kios_lama'] }}</span>
+                    </div>
+                    <div class="flex justify-between pl-3 text-xs text-slate-500">
+                        <span>— Kios Baru (Tempat Baru)</span>
+                        <span>{{ $tripSummary['kios_baru'] }}</span>
+                    </div>
+                    <div class="border-t border-slate-200 my-2"></div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-600">Mika Dibawa</span>
                         <span class="font-bold text-slate-900">{{ $tripSummary['qty_carried'] }} mika</span>
                     </div>
-                    <div class="flex justify-between text-sm">
+                    <div class="flex justify-between">
                         <span class="text-slate-600">Total Drop</span>
                         <span class="font-bold text-slate-900">{{ $tripSummary['total_mika_drop'] }} mika</span>
                     </div>
-                    <div class="flex justify-between text-sm">
-                        <span class="text-slate-600">Sisa</span>
+                    <div class="flex justify-between">
+                        <span class="text-slate-600">Sisa di Motor</span>
                         <span class="font-bold {{ $tripSummary['total_mika_sisa'] >= 0 ? 'text-green-700' : 'text-red-600' }}">{{ $tripSummary['total_mika_sisa'] }} mika</span>
                     </div>
-                    <div class="flex justify-between text-sm">
-                        <span class="text-slate-600">Total Uang Diterima</span>
-                        <span class="font-bold text-green-700">Rp {{ number_format($tripSummary['total_uang_diterima'], 0, ',', '.') }}</span>
+                    <div class="border-t border-slate-200 my-2"></div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-600 font-medium">Mika Terjual (biji ÷ 15)</span>
+                        <span class="font-bold text-slate-900">{{ number_format($tripSummary['mika_terjual'], 2, ',', '.') }} mika</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-600 font-medium">Mika Kios Baru</span>
+                        <span class="font-bold text-slate-900">{{ number_format($tripSummary['mika_kios_baru'], 2, ',', '.') }} mika</span>
+                    </div>
+                    <div class="border-t border-slate-200 my-2"></div>
+                    <div class="flex justify-between text-green-700 font-semibold">
+                        <span>Omset (Cash Diterima)</span>
+                        <span>Rp {{ number_format($tripSummary['total_uang_diterima'], 0, ',', '.') }}</span>
+                    </div>
+                    <div class="flex justify-between text-slate-600">
+                        <span>HPP (Terjual × 9.500)</span>
+                        <span>Rp {{ number_format($tripSummary['hpp_estimasi'], 0, ',', '.') }}</span>
+                    </div>
+                    <div class="flex justify-between text-slate-800 font-medium">
+                        <span>Untung Kotor (Terjual × 2.500)</span>
+                        <span>Rp {{ number_format($tripSummary['untung_kotor'], 0, ',', '.') }}</span>
+                    </div>
+                    <div class="border-t border-slate-200 my-2"></div>
+                    <div class="flex justify-between text-slate-500 text-xs">
+                        <span>Komisi Reguler (Terjual × 500)</span>
+                        <span>Rp {{ number_format($tripSummary['komisi_reguler'], 0, ',', '.') }}</span>
+                    </div>
+                    <div class="flex justify-between text-slate-500 text-xs">
+                        <span>Komisi Kios Baru (Kios Baru × 1.000)</span>
+                        <span>Rp {{ number_format($tripSummary['komisi_kios_baru'], 0, ',', '.') }}</span>
+                    </div>
+                    <div class="flex justify-between text-amber-700 font-bold">
+                        <span>Total Komisi Rian</span>
+                        <span>Rp {{ number_format($tripSummary['komisi_rian'], 0, ',', '.') }}</span>
+                    </div>
+                    <div class="border-t border-slate-200 my-2"></div>
+                    <div class="flex justify-between text-slate-900 font-bold text-base">
+                        <span>Untung Bersih Owner</span>
+                        <span>Rp {{ number_format($tripSummary['untung_bersih_owner'], 0, ',', '.') }}</span>
                     </div>
                 </div>
 
