@@ -1,76 +1,57 @@
-# NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 07 Juni 2026*
-
-## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 58 PASS. Map picker assets otomatisasi selesai.
-GitHub: Qontas/dodol-app synced, HEAD: cc46dd4.
-PRIORITAS: Deploy.
+# HANDOVER & NEXT SESSION CONTEXT — Dodol-App
+*Terakhir diperbarui: 07 Juni 2026*
 
 ## STATUS TERAKHIR
-- feat(kiosk): bulk import kios via native Filament Importer
-- feat(owner): Laporan trip real-time di owner dashboard (progress live Rian)
-- feat(operator/owner): End-trip report (HPP estimasi & Komisi Rian 20%)
-- feat(admin): Stock tracking mika per batch di Filament
-- feat(operator): Nearest Neighbor (sort kios by jarak GPS)
-- feat(owner): Analytics chart (grafik omset 30 hari terakhir)
-- cc46dd4 feat(operator): list kios per cluster — visited status + tap to visit
-- dcdc04a feat(kiosk): GPS link navigasi + foto kios di admin dan operator
-- abf6fd6 fix(db): cascade delete kiosk — auto hapus deliveries, visits, settlements
-- 73a8fba feat(operator): input kios baru dari lapangan + leaflet map
-- adbbdd9 feat(owner): dashboard widgets — omset, overdue, outstanding
-- Test: 58 PASS, 178 assertions
-- GitHub: https://github.com/Qontas/dodol-app
+**PRODUCTION READY - 58 Tests PASS (178 assertions)**
+Seluruh test suite berjalan sukses dan mencakup asersi logika operasional serta asersi database secara terisolasi.
 
-## OPERATOR & OWNER FLOW — COMPLETED
-- bulk import kios via native Filament Importer (mapping: nama, pemilik, cluster, qty_mika, telepon, alamat, lat, lng)
-- Real-time Trip progress & visits timeline di Owner Dashboard
-- Estimasi HPP Trip & Komisi 20% Rian (disimpan ke DB saat End Trip)
-- Stock tracking mika sisa per batch (`qty_packs - sum(qty_delivered)`) di Filament
-- Nearest Neighbor (Urutkan by Jarak via Browser Geolocation + Haversine formula)
-- Analytics Chart Owner (Grafik omset harian 30 hari terakhir via Chart.js)
-- saveVisit() 4 aksi (drop_and_settle, drop_only, settle_only, check_only)
-- Extension granted (max 2x, warning cut off)
-- End trip (wajib pilih alasan, summary: dibawa/drop/sisa/uang)
-- qty_carried input di StartTrip
-- List kios per cluster (badge visited/pending, tap-card, sort belum-dulu)
-- Input kios baru dari lapangan (Leaflet map)
-- GPS navigasi ke kios (Google Maps link)
-- Foto kios di modal visit
+## FITUR TERAKHIR DISELESAIKAN (ANTIGRAVITY)
+1. **Otomatisasi Asset Publishing Map Picker**:
+   - Mendaftarkan `@php artisan filament:assets` pada composer script hook `post-autoload-dump` dan `post-update-cmd` di `composer.json`.
+   - Asset frontend map picker secara otomatis ter-copy ke direktori `public/js/dotswan` dan `public/css/dotswan` pada build step deploy (tanpa perlu manual copy).
+2. **Feature Test `ActiveTripSaveVisitTest` Komprehensif**:
+   - Menguji fungsionalitas Livewire component `ActiveTrip::saveVisit()` untuk 4 skenario `visit_action` (`drop_only`, `settle_only`, `drop_and_settle`, `check_only`) dengan asersi database terperinci.
+3. **Bulk Import Kios CSV Filament**:
+   - Membangun native Filament v3 Importer (`KioskImporter`) dengan pemetaan kolom:
+     - `nama` -> `name` (Wajib di-map, validasi tidak boleh kosong).
+     - `pemilik` -> `owner_name`
+     - `cluster` -> `cluster_id` (Mencari cluster berdasarkan nama; jika tidak ada, fallback ke cluster `UNCATEGORIZED` atau `null`).
+     - `qty_mika` -> `default_qty_mika`
+     - `telepon` -> `phone`
+     - `alamat` -> `location_description`
+     - `lat` -> `latitude`
+     - `lng` -> `longitude`
+   - Menambahkan `ImportAction` pada header action `KioskResource` List page.
+
+---
+
+## BUSINESS RULES (LOCKED - DILARANG DIUBAH)
+Aturan-aturan ini telah dikunci dan tidak boleh diubah oleh asisten AI berikutnya:
+
+1. **Konversi Satuan & Harga**:
+   - **1 mika = 15 biji**.
+   - Harga jual dodol = **Rp 800 per biji** (atau setara **Rp 12.000 per mika**).
+   - Penginputan pada form Kunjungan/Settlement menggunakan satuan **BIJI**, sedangkan data titipan baru (delivery/drop) menggunakan satuan **MIKA**.
+
+2. **Formula Finansial Trip Report (Owner Dashboard)**:
+   - **Mika Terjual** = `sum(qty_sold) settlements trip ÷ 15`
+   - **Mika Kios Baru** = `sum(qty_delivered)` dari delivery ke kios yang memiliki `created_at` sama dengan tanggal berlangsungnya trip DAN dikunjungi dengan aksi `drop_only`. Komisi dihitung berdasarkan `qty_delivered` (bukan `qty_sold`).
+   - **Omset** = `sum(amount_paid)` dari seluruh settlements dalam trip bersangkutan.
+   - **HPP** = `mika_terjual × 9500`
+   - **Untung Kotor** = `mika_terjual × 2500`
+   - **Komisi Reguler** = `mika_terjual × 500`
+   - **Komisi Kios Baru** = `mika_kios_baru × 1000`
+   - **Total Komisi Rian** = `komisi_reguler + komisi_kios_baru`
+   - **Untung Bersih Owner** = `untung_kotor - total_komisi_rian`
+
+3. **Definisi Kios Baru**:
+   - Kios dibuat di database (`kios.created_at`) pada hari berlangsungnya trip **DAN** dikunjungi dengan aksi `drop_only` pada trip ini.
+
+4. **Logika Stok per Batch**:
+   - Sisa mika per batch = `qty_packs - sum(qty_delivered)` dari batch bersangkutan.
+
+---
 
 ## PRIORITAS SESI BERIKUTNYA
-
-### PRIORITAS 1: Deploy
-- VPS atau Railway
-- Setup setelah semua fitur core selesai
-
-## BUSINESS RULES LOCKED
-- 1 mika = 15 biji, Rp 800/biji = Rp 12.000/mika
-- Settlement qty BIJI, delivery qty_delivered MIKA
-- HPP variable per batch (yield 68-75 mika/batch)
-- cost_snapshot null untuk delivery tanpa batch link
-- Rule B: bonus reconciliation HPP=0
-- Extension max 2x → warning cut off
-- End trip wajib pilih alasan (5 opsi)
-- procurement_batch_id nullable (operasional bebas)
-- Overdue = lewat target_visit_interval_days per kios (default 10 hari)
-- Outstanding = sum(amount_due - amount_paid) settlements pending
-- Omset = amount_paid settlements visit_date hari ini
-
-## KNOWN ISSUES
-1. MariaDB XAMPP harus di-start manual setiap sesi (silent fail kalau lupa)
-
-## TECH STACK
-- Laravel 11.52.0, PHP 8.2.12 (XAMPP)
-- Filament v3.3.50, Livewire 3.8, Breeze v2.4.1
-- MariaDB 10.4.32, dotswan/filament-map-picker v1.8.8
-- Working dir: C:\Users\Qontas\Projects\dodol-app
-
-## DAILY DEV ROUTINE
-1. XAMPP → Start MySQL (WAJIB — silent fail kalau lupa)
-2. php artisan serve
-3. npm run dev
-4. php artisan optimize:clear (kalau edit code)
-
-## LOGIN CREDENTIALS
-- Owner: owner@cemilanqontas.id / password
-- Operator: operator@cemilanqontas.id / password
+**DEKLARASI FREEZE KODE - Lanjut eksekusi Deployment ke Railway.app**
+*Catatan: Jangan tambahkan prioritas pengerjaan fitur baru. Sesi berikutnya difokuskan penuh untuk deployment.*
