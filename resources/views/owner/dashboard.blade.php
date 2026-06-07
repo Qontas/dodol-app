@@ -75,6 +75,121 @@
             </div>
         </div>
 
+        {{-- Live Trip Progress --}}
+        <livewire:owner.live-trip-progress />
+
+        {{-- Completed Trips Report --}}
+        <div class="bg-white rounded-lg border border-slate-200 p-5 mt-6">
+            <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 border-b border-slate-100 pb-3">
+                Laporan Akhir Trip Terbaru (Selesai)
+            </h2>
+            
+            @forelse ($completedTrips as $completedTrip)
+                @php
+                    $mikaDrop = $completedTrip->deliveries->sum('qty_delivered');
+                @endphp
+                <div class="border border-slate-200 rounded-xl p-5 mb-4 last:mb-0 bg-slate-50/50 shadow-sm">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                        <div>
+                            <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-500/10">Selesai</span>
+                            <span class="text-lg font-bold text-slate-900 ml-1">Trip #{{ $completedTrip->trip_number_of_day }} — {{ $completedTrip->operator->name }}</span>
+                            <p class="text-sm text-slate-500 mt-1">
+                                Tanggal Trip: <span class="font-semibold text-slate-700">{{ $completedTrip->trip_date ? $completedTrip->trip_date->format('d M Y') : '—' }}</span>
+                                | Area: <span class="text-amber-700 font-semibold">{{ $completedTrip->startingCluster->name ?? 'Semua Kios' }}</span> 
+                                | Waktu: <span class="font-medium text-slate-700">{{ $completedTrip->started_at ? $completedTrip->started_at->format('H:i') : '—' }} - {{ $completedTrip->ended_at ? $completedTrip->ended_at->format('H:i') : '—' }}</span>
+                                @if ($completedTrip->ended_reason)
+                                    | Alasan Selesai: <span class="font-medium text-slate-700">
+                                        @switch($completedTrip->ended_reason)
+                                            @case('stock_habis') Stok Habis @break
+                                            @case('target_done') Target Selesai @break
+                                            @case('sakit') Sakit @break
+                                            @case('urgent_personal') Urusan Pribadi Mendesak @break
+                                            @default Lainnya
+                                        @endswitch
+                                    </span>
+                                @endif
+                            </p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs text-slate-500">Omset Akhir</p>
+                            <p class="text-xl font-bold text-green-600">Rp {{ number_format($completedTrip->omset_val, 0, ',', '.') }}</p>
+                        </div>
+                    </div>
+                    
+                    {{-- Physical Counts Grid --}}
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-white border border-slate-100 rounded-lg p-3 text-center mb-4 shadow-inner">
+                        <div>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">Kios Dikunjungi</p>
+                            <p class="text-base font-bold text-slate-900">{{ $completedTrip->visits->count() }} kios</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">Kios Lama</p>
+                            <p class="text-base font-bold text-slate-700">{{ $completedTrip->kios_lama_count }} kios</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">Kios Baru</p>
+                            <p class="text-base font-bold text-amber-600">{{ $completedTrip->kios_baru_count }} kios</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">Total Mika Drop</p>
+                            <p class="text-base font-bold text-slate-900">{{ $mikaDrop }} mika</p>
+                        </div>
+                    </div>
+
+                    {{-- Financial Report Grid --}}
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-white border border-slate-100 rounded-lg p-4 text-center shadow-inner">
+                        <div>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Terjual (Settled)</p>
+                            <p class="text-base font-bold text-slate-900">{{ number_format($completedTrip->mika_terjual, 2, ',', '.') }} mika</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Kios Baru (Drop)</p>
+                            <p class="text-base font-bold text-amber-700">{{ number_format($completedTrip->mika_kios_baru, 2, ',', '.') }} mika</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">HPP Estimasi</p>
+                            <p class="text-base font-bold text-red-600">Rp {{ number_format($completedTrip->hpp_estimasi, 0, ',', '.') }}</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">Untung Kotor</p>
+                            <p class="text-base font-bold text-green-600">Rp {{ number_format($completedTrip->untung_kotor, 0, ',', '.') }}</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-amber-50 border border-amber-100 rounded-lg p-4 text-center mt-3 shadow-inner">
+                        <div>
+                            <p class="text-[10px] uppercase text-amber-800 font-medium">Komisi Reguler</p>
+                            <p class="text-base font-bold text-amber-700">Rp {{ number_format($completedTrip->komisi_reguler, 0, ',', '.') }}</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase text-amber-800 font-medium">Komisi Kios Baru</p>
+                            <p class="text-base font-bold text-amber-700">Rp {{ number_format($completedTrip->komisi_kios_baru, 0, ',', '.') }}</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase text-amber-800 font-medium">Total Komisi Rian</p>
+                            <p class="text-base font-bold text-amber-900">Rp {{ number_format($completedTrip->komisi_rian, 0, ',', '.') }}</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase text-emerald-800 font-medium">Untung Bersih Owner</p>
+                            <p class="text-base font-bold text-emerald-700 font-sans">Rp {{ number_format($completedTrip->untung_bersih_owner, 0, ',', '.') }}</p>
+                        </div>
+                    </div>
+                </div>
+            @empty
+                <div class="text-center py-6 text-slate-500 border border-dashed border-slate-300 rounded-xl bg-slate-50/50">
+                    <p class="text-sm">Belum ada trip yang diselesaikan.</p>
+                </div>
+            @endforelse
+        </div>
+
+        {{-- Chart Omset --}}
+        <div class="bg-white rounded-lg border border-slate-200 p-5 mt-6">
+            <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Tren Omset (30 Hari Terakhir)</h2>
+            <div class="relative w-full" style="height: 320px;">
+                <canvas id="omsetChart"></canvas>
+            </div>
+        </div>
+
         <div class="mt-6">
             <a href="{{ route('filament.admin.pages.dashboard') }}"
                class="inline-block bg-amber-600 text-white px-6 py-3 rounded-lg hover:bg-amber-700 font-medium">
@@ -82,4 +197,85 @@
             </a>
         </div>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const ctx = document.getElementById('omsetChart').getContext('2d');
+            
+            const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, 'rgba(217, 119, 6, 0.3)');
+            gradient.addColorStop(1, 'rgba(217, 119, 6, 0)');
+            
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: {!! json_encode($chartLabels) !!},
+                    datasets: [{
+                        label: 'Omset',
+                        data: {!! json_encode($chartData) !!},
+                        borderColor: '#d97706',
+                        backgroundColor: gradient,
+                        fill: true,
+                        tension: 0.3,
+                        borderWidth: 2,
+                        pointBackgroundColor: '#d97706',
+                        pointHoverRadius: 6,
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: '#d97706',
+                        pointHoverBorderWidth: 2,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(context.parsed.y);
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'Rp ' + new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(value);
+                                },
+                                font: {
+                                    size: 10
+                                }
+                            },
+                            grid: {
+                                color: '#f1f5f9'
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                font: {
+                                    size: 10
+                                }
+                            },
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    </script>
 @endsection

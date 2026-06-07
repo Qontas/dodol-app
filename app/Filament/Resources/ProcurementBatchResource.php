@@ -246,6 +246,14 @@ class ProcurementBatchResource extends Resource
                     ->sortable()
                     ->weight('bold'),
 
+                Tables\Columns\TextColumn::make('remaining_packs')
+                    ->label('Sisa Mika')
+                    ->getStateUsing(fn ($record) => $record->remaining_packs)
+                    ->suffix(' mika')
+                    ->alignRight()
+                    ->weight('bold')
+                    ->color(fn ($state) => $state > 0 ? 'success' : 'danger'),
+
                 Tables\Columns\TextColumn::make('total_cost')
                     ->label('Total Cost')
                     ->money('IDR')

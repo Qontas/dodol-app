@@ -33,6 +33,11 @@ class ActiveTrip extends Component
     public array $visitedKioskIds = [];
     public array $pendingKioskIds = [];
 
+    // --- STATE GEO/NEAREST NEIGHBOR ---
+    public bool $sortedByDistance = false;
+    public ?float $userLat = null;
+    public ?float $userLng = null;
+
     // --- STATE TRANSAKSI KUNJUNGAN ---
     public $isVisitModalOpen = false;
     public $selectedKiosk = null;
@@ -101,11 +106,61 @@ class ActiveTrip extends Component
             ->values()
             ->all();
 
-        // Belum dikunjungi (false) di atas, sudah dikunjungi (true) di bawah
+        // Belum dikunjungi (false) di atas, sudah dikunjungi (true) di bawah.
+        // Jika diurutkan berdasarkan jarak, urutkan berdasarkan status kunjungan dahulu, lalu jarak terdekat.
         $visited = $this->visitedKioskIds;
-        $this->kiosks = $kiosks
-            ->sortBy(fn ($k) => in_array($k->id, $visited, true))
-            ->values();
+        if ($this->sortedByDistance && $this->userLat !== null && $this->userLng !== null) {
+            $this->kiosks = $kiosks->sort(function ($a, $b) use ($visited) {
+                $visitedA = in_array($a->id, $visited, true) ? 1 : 0;
+                $visitedB = in_array($b->id, $visited, true) ? 1 : 0;
+                if ($visitedA !== $visitedB) {
+                    return $visitedA <=> $visitedB;
+                }
+
+                $distA = ($a->latitude === null || $a->longitude === null)
+                    ? PHP_FLOAT_MAX
+                    : $this->calculateDistance($this->userLat, $this->userLng, (float) $a->latitude, (float) $a->longitude);
+
+                $distB = ($b->latitude === null || $b->longitude === null)
+                    ? PHP_FLOAT_MAX
+                    : $this->calculateDistance($this->userLat, $this->userLng, (float) $b->latitude, (float) $b->longitude);
+
+                return $distA <=> $distB;
+            })->values();
+        } else {
+            $this->kiosks = $kiosks
+                ->sortBy(fn ($k) => in_array($k->id, $visited, true))
+                ->values();
+        }
+    }
+
+    public function sortByDistance($lat, $lng)
+    {
+        $this->userLat = (float) $lat;
+        $this->userLng = (float) $lng;
+        $this->sortedByDistance = true;
+
+        $this->loadKiosks();
+    }
+
+    private function calculateDistance(float $latFrom, float $lngFrom, float $latTo, float $lngTo): float
+    {
+        $earthRadius = 6371000; // meter
+
+        $latFromRad = deg2rad($latFrom);
+        $lngFromRad = deg2rad($lngFrom);
+        $latToRad = deg2rad($latTo);
+        $lngToRad = deg2rad($lngTo);
+
+        $latDelta = $latToRad - $latFromRad;
+        $lngDelta = $lngToRad - $lngFromRad;
+
+        $angle = 2 * asin(sqrt(
+            pow(sin($latDelta / 2), 2) +
+            cos($latFromRad) * cos($latToRad) * pow(sin($lngDelta / 2), 2)
+        ));
+
+        return $angle * $earthRadius;
     }
 
     // --- METODE TRANSAKSI MODAL ---
@@ -344,13 +399,21 @@ class ActiveTrip extends Component
 
         $this->tripSummary = [
             'kios_visited' => KioskVisit::where('trip_id', $this->trip->id)->count(),
-            'total_mika_drop' => $totalDrop,
-            'total_uang_diterima' => (int) Settlement::whereHas(
-                'delivery',
-                fn ($q) => $q->where('trip_id', $this->trip->id)
-            )->sum('amount_paid'),
+            'kios_lama' => (int) $this->trip->kios_lama_count,
+            'kios_baru' => (int) $this->trip->kios_baru_count,
             'qty_carried' => $qtyCarried,
+            'total_mika_drop' => $totalDrop,
             'total_mika_sisa' => $qtyCarried - $totalDrop,
+            
+            'mika_terjual' => (float) $this->trip->mika_terjual,
+            'mika_kios_baru' => (float) $this->trip->mika_kios_baru,
+            'total_uang_diterima' => (int) $this->trip->omset_val,
+            'hpp_estimasi' => (int) $this->trip->hpp_estimasi,
+            'untung_kotor' => (int) $this->trip->untung_kotor,
+            'komisi_reguler' => (int) $this->trip->komisi_reguler,
+            'komisi_kios_baru' => (int) $this->trip->komisi_kios_baru,
+            'komisi_rian' => (int) $this->trip->komisi_rian,
+            'untung_bersih_owner' => (int) $this->trip->untung_bersih_owner,
         ];
 
         $this->endReason = '';
@@ -382,6 +445,34 @@ class ActiveTrip extends Component
             $this->trip->update([
                 'ended_at' => now(),
                 'ended_reason' => $this->endReason,
+            ]);
+
+            // Save commission record to the database using the new formula
+            $omset = $this->trip->omset_val;
+            $komisi = $this->trip->komisi_rian;
+
+            $cashCollectedReported = $omset;
+            $marginRateAssumed = 0;
+
+            if ($omset > 0) {
+                $marginRateAssumed = $komisi / ($omset * 0.2000);
+            }
+
+            // Fallback if omset is 0 or margin rate would overflow decimal(5,4)
+            if ($omset == 0 || $marginRateAssumed > 9.0) {
+                $cashCollectedReported = $komisi / 0.2000;
+                $marginRateAssumed = 1.0000;
+            }
+
+            \App\Models\Commission::create([
+                'trip_id' => $this->trip->id,
+                'operator_id' => $this->trip->operator_id,
+                'cash_collected_reported' => $cashCollectedReported,
+                'margin_rate_assumed' => $marginRateAssumed,
+                'commission_rate' => 0.2000,
+                'status' => 'paid',
+                'paid_at' => now(),
+                'notes' => 'Komisi Rian: reguler (mika terjual x 500) + kios baru (mika kios baru x 1000)',
             ]);
         });
 
