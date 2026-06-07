@@ -2,11 +2,12 @@
 *Sesi terakhir: 07 Juni 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 48 PASS. List kios per cluster + GPS + foto kios selesai.
+Bg, lanjut dodol-app. 58 PASS. Map picker assets otomatisasi selesai.
 GitHub: Qontas/dodol-app synced, HEAD: cc46dd4.
-PRIORITAS: Import Kios Excel/CSV → Deploy.
+PRIORITAS: Deploy.
 
 ## STATUS TERAKHIR
+- feat(kiosk): bulk import kios via native Filament Importer
 - feat(owner): Laporan trip real-time di owner dashboard (progress live Rian)
 - feat(operator/owner): End-trip report (HPP estimasi & Komisi Rian 20%)
 - feat(admin): Stock tracking mika per batch di Filament
@@ -17,10 +18,11 @@ PRIORITAS: Import Kios Excel/CSV → Deploy.
 - abf6fd6 fix(db): cascade delete kiosk — auto hapus deliveries, visits, settlements
 - 73a8fba feat(operator): input kios baru dari lapangan + leaflet map
 - adbbdd9 feat(owner): dashboard widgets — omset, overdue, outstanding
-- Test: 51 PASS, 145 assertions
+- Test: 58 PASS, 178 assertions
 - GitHub: https://github.com/Qontas/dodol-app
 
 ## OPERATOR & OWNER FLOW — COMPLETED
+- bulk import kios via native Filament Importer (mapping: nama, pemilik, cluster, qty_mika, telepon, alamat, lat, lng)
 - Real-time Trip progress & visits timeline di Owner Dashboard
 - Estimasi HPP Trip & Komisi 20% Rian (disimpan ke DB saat End Trip)
 - Stock tracking mika sisa per batch (`qty_packs - sum(qty_delivered)`) di Filament
@@ -37,12 +39,7 @@ PRIORITAS: Import Kios Excel/CSV → Deploy.
 
 ## PRIORITAS SESI BERIKUTNYA
 
-### PRIORITAS 1: Import Kios Excel/CSV
-Bulk input 217 kios dari spreadsheet.
-- Form upload CSV di Filament admin
-- Field mapping: nama, pemilik, cluster, qty_mika, telepon, alamat, lat, lng
-
-### PRIORITAS 2: Deploy
+### PRIORITAS 1: Deploy
 - VPS atau Railway
 - Setup setelah semua fitur core selesai
 
@@ -60,11 +57,7 @@ Bulk input 217 kios dari spreadsheet.
 - Omset = amount_paid settlements visit_date hari ini
 
 ## KNOWN ISSUES
-1. saveVisit belum ada feature test Livewire
-2. Map picker public assets harus di-copy manual kalau deploy baru:
-   Copy-Item vendor/dotswan/filament-map-picker/resources/dist/filament-map-picker.js public/js/dotswan/filament-map-picker/filament-map-picker-scripts.js
-   Copy-Item vendor/dotswan/filament-map-picker/resources/dist/filament-map-picker.css public/css/dotswan/filament-map-picker/filament-map-picker-styles.css
-3. MariaDB XAMPP harus di-start manual setiap sesi (silent fail kalau lupa)
+1. MariaDB XAMPP harus di-start manual setiap sesi (silent fail kalau lupa)
 
 ## TECH STACK
 - Laravel 11.52.0, PHP 8.2.12 (XAMPP)
