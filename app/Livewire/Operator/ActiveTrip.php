@@ -27,6 +27,12 @@ class ActiveTrip extends Component
     public $kiosks = [];
     public $starting_cluster_id;
 
+    // Status per-kios disimpan terpisah dari model: Livewire re-query Eloquent
+    // collection saat hydrate (lihat EloquentCollectionSynth), jadi atribut custom
+    // di model akan hilang antar-request. Array primitif aman diserialisasi.
+    public array $visitedKioskIds = [];
+    public array $pendingKioskIds = [];
+
     // --- STATE TRANSAKSI KUNJUNGAN ---
     public $isVisitModalOpen = false;
     public $selectedKiosk = null;
@@ -73,13 +79,33 @@ class ActiveTrip extends Component
 
     public function loadKiosks()
     {
+        // Kios aktif di cluster trip. Tanpa starting_cluster = semua kios aktif (trip "Semua Kios").
+        $query = Kiosk::where('is_active', true);
+
         if ($this->starting_cluster_id) {
-            $this->kiosks = Kiosk::where('cluster_id', $this->starting_cluster_id)
-                ->where('is_active', true)
-                ->get();
-        } else {
-            $this->kiosks = Kiosk::where('is_active', true)->get();
+            $query->where('cluster_id', $this->starting_cluster_id);
         }
+
+        // Kios yang sudah dikunjungi pada trip ini
+        $this->visitedKioskIds = KioskVisit::where('trip_id', $this->trip->id)
+            ->pluck('kiosk_id')
+            ->all();
+
+        $kiosks = $query->get();
+
+        // Kios dengan titipan yang belum di-settle (satu query, hindari N+1)
+        $this->pendingKioskIds = Delivery::whereIn('kiosk_id', $kiosks->pluck('id'))
+            ->doesntHave('settlement')
+            ->pluck('kiosk_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        // Belum dikunjungi (false) di atas, sudah dikunjungi (true) di bawah
+        $visited = $this->visitedKioskIds;
+        $this->kiosks = $kiosks
+            ->sortBy(fn ($k) => in_array($k->id, $visited, true))
+            ->values();
     }
 
     // --- METODE TRANSAKSI MODAL ---

@@ -24,28 +24,38 @@
         <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-2">Daftar Kunjungan</h2>
         
         @forelse ($kiosks as $kiosk)
-            <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:border-amber-400 transition-colors">
-                <div class="flex justify-between items-start mb-3">
-                    <div>
-                        <h3 class="font-bold text-slate-900">{{ $kiosk->name }}</h3>
-                        <p class="text-xs text-slate-500 mt-0.5">Siklus: {{ $kiosk->target_visit_interval_days }} hari</p>
+            @php
+                $isVisited = in_array($kiosk->id, $visitedKioskIds);
+                $hasPending = in_array($kiosk->id, $pendingKioskIds);
+            @endphp
+            <div wire:key="kiosk-{{ $kiosk->id }}"
+                 @if(!$isVisited) wire:click="openVisitModal({{ $kiosk->id }})" @endif
+                 class="bg-white rounded-xl border p-4 flex items-center justify-between shadow-sm transition-colors
+                        {{ $isVisited ? 'opacity-50 cursor-default border-slate-200' : 'cursor-pointer border-slate-200 active:bg-slate-50 hover:border-amber-300' }}">
+                <div>
+                    <p class="font-bold text-slate-900">{{ $kiosk->name }}</p>
+                    <p class="text-sm text-slate-500">{{ $kiosk->owner_name ?? '—' }}</p>
+                    <div class="flex flex-wrap gap-2 mt-1">
+                        @if($isVisited)
+                            <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✓ Dikunjungi</span>
+                        @else
+                            <span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Belum</span>
+                        @endif
+                        @if($hasPending)
+                            <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Ada Titipan</span>
+                        @endif
                     </div>
-                    <span class="w-3 h-3 rounded-full bg-slate-300"></span>
                 </div>
-                
-                <div class="grid grid-cols-2 gap-2 mt-4">
-                    <button type="button" wire:click="openVisitModal({{ $kiosk->id }})" wire:loading.attr="disabled" wire:target="openVisitModal" class="w-full bg-amber-100 text-amber-900 text-sm font-semibold py-2 rounded-lg border border-amber-200 active:bg-amber-200 transition-all">
-                        <span wire:loading.remove wire:target="openVisitModal">Settle & Drop</span>
-                        <span wire:loading wire:target="openVisitModal">Memuat...</span>
-                    </button>
-                    <button type="button" class="w-full bg-slate-100 text-slate-700 text-sm font-semibold py-2 rounded-lg border border-slate-200 active:bg-slate-200">
-                        Lainnya...
-                    </button>
-                </div>
+                @if(!$isVisited)
+                    <svg class="h-5 w-5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                @endif
             </div>
         @empty
-            <div class="text-center py-10 bg-slate-50 rounded-xl border border-slate-200">
-                <p class="text-slate-500 text-sm">Tidak ada kios aktif di area ini.</p>
+            <div class="text-center py-8 text-slate-400">
+                <p>Belum ada kios di area ini.</p>
+                <p class="text-sm mt-1">Tambah kios dulu via menu Kios Baru.</p>
             </div>
         @endforelse
     </div>
