@@ -234,14 +234,13 @@ class KioskResource extends Resource
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                Tables\Columns\IconColumn::make('latitude')
+                Tables\Columns\TextColumn::make('maps_link')
                     ->label('GPS')
-                    ->getStateUsing(fn($record) => $record->latitude !== null && $record->longitude !== null)
-                    ->boolean()
-                    ->trueIcon('heroicon-o-map-pin')
-                    ->falseIcon('heroicon-o-x-mark')
-                    ->trueColor('success')
-                    ->falseColor('gray')
+                    ->getStateUsing(fn($record) => $record->maps_url ? 'Maps' : '—')
+                    ->url(fn($record) => $record->maps_url)
+                    ->openUrlInNewTab()
+                    ->icon(fn($record) => $record->maps_url ? 'heroicon-o-map-pin' : null)
+                    ->color(fn($record) => $record->maps_url ? 'success' : 'gray')
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('first_titip_date')
