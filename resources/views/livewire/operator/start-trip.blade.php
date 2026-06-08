@@ -92,7 +92,7 @@
             <input
                 type="number"
                 id="qtyCarried"
-                wire:model="qtyCarried"
+                wire:model.live.debounce.500ms="qtyCarried"
                 min="0"
                 inputmode="numeric"
                 class="w-full rounded-xl border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-2xl font-bold py-3">
