@@ -511,6 +511,10 @@ class ActiveTrip extends Component
     {
         $totalDrop = (int) Delivery::where('trip_id', $this->trip->id)->sum('qty_delivered');
         $qtyCarried = (int) ($this->trip->qty_carried_total ?? 0);
+        $totalMikaCash = (int) Delivery::where('trip_id', $this->trip->id)
+            ->where('delivery_type', 'cash_sale')
+            ->sum('qty_delivered');
+        $totalAmountCash = $totalMikaCash * self::BIJI_PER_MIKA * self::HARGA_PER_BIJI;
 
         $this->tripSummary = [
             'kios_visited' => KioskVisit::where('trip_id', $this->trip->id)->count(),
@@ -522,6 +526,8 @@ class ActiveTrip extends Component
             
             'mika_terjual' => (float) $this->trip->mika_terjual,
             'mika_kios_baru' => (float) $this->trip->mika_kios_baru,
+            'total_mika_cash' => $totalMikaCash,
+            'total_amount_cash' => $totalAmountCash,
             'total_uang_diterima' => (int) $this->trip->omset_val,
             'hpp_estimasi' => (int) $this->trip->hpp_estimasi,
             'untung_kotor' => (int) $this->trip->untung_kotor,

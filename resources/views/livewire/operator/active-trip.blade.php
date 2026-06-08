@@ -158,6 +158,12 @@
                         <span class="text-slate-600 font-medium">Mika Kios Baru</span>
                         <span class="font-bold text-slate-900">{{ number_format($tripSummary['mika_kios_baru'], 2, ',', '.') }} mika</span>
                     </div>
+                    @if(($tripSummary['total_mika_cash'] ?? 0) > 0)
+                    <div class="flex justify-between">
+                        <span class="text-slate-600 font-medium">Mika Cash</span>
+                        <span class="font-bold text-slate-900">{{ $tripSummary['total_mika_cash'] }} mika (Rp {{ number_format($tripSummary['total_amount_cash'], 0, ',', '.') }})</span>
+                    </div>
+                    @endif
                     <div class="border-t border-slate-200 my-2"></div>
                     <div class="flex justify-between text-green-700 font-semibold">
                         <span>Omset (Cash Diterima)</span>
@@ -340,7 +346,7 @@
                     <div class="flex items-center gap-3">
                         <button type="button" wire:click="decrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">-</button>
                         
-                        <input type="number" id="dropBaru" wire:model="dropBaru" class="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-2xl font-bold" min="0">
+                        <input type="number" id="dropBaru" wire:model.live="dropBaru" class="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-2xl font-bold" min="0">
                         
                         <button type="button" wire:click="incrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
                     </div>

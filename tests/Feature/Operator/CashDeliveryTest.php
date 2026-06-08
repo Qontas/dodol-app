@@ -139,4 +139,68 @@ class CashDeliveryTest extends TestCase
         $this->assertEquals(5, $deliveries->first()->qty_delivered);
         $this->assertSame(0, Settlement::count());
     }
+
+    public function test_drop_when_default_qty_mika_is_null_no_split(): void
+    {
+        $kiosk = Kiosk::factory()->create([
+            'cluster_id' => $this->cluster->id,
+            'is_cash_only' => false,
+            'default_qty_mika' => null,
+        ]);
+
+        Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $kiosk->id)
+            ->set('dropBaru', 5)
+            ->call('saveVisit')
+            ->assertHasNoErrors();
+
+        $deliveries = Delivery::where('kiosk_id', $kiosk->id)->get();
+        $this->assertCount(1, $deliveries);
+        $this->assertSame('consignment', $deliveries->first()->delivery_type);
+        $this->assertEquals(5, $deliveries->first()->qty_delivered);
+        $this->assertSame(0, Settlement::count());
+    }
+
+    public function test_drop_when_default_qty_mika_is_zero_no_split(): void
+    {
+        $kiosk = Kiosk::factory()->create([
+            'cluster_id' => $this->cluster->id,
+            'is_cash_only' => false,
+            'default_qty_mika' => 0,
+        ]);
+
+        Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $kiosk->id)
+            ->set('dropBaru', 5)
+            ->call('saveVisit')
+            ->assertHasNoErrors();
+
+        $deliveries = Delivery::where('kiosk_id', $kiosk->id)->get();
+        $this->assertCount(1, $deliveries);
+        $this->assertSame('consignment', $deliveries->first()->delivery_type);
+        $this->assertEquals(5, $deliveries->first()->qty_delivered);
+        $this->assertSame(0, Settlement::count());
+    }
+
+    public function test_end_trip_summary_displays_cash_sale_details(): void
+    {
+        $kiosk = Kiosk::factory()->create([
+            'cluster_id' => $this->cluster->id,
+            'is_cash_only' => false,
+            'default_qty_mika' => 2,
+        ]);
+
+        Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $kiosk->id)
+            ->set('dropBaru', 5) // 2 consignment + 3 cash extra
+            ->call('saveVisit')
+            ->assertHasNoErrors();
+
+        Livewire::test(ActiveTrip::class)
+            ->call('openEndTripModal')
+            ->assertSet('tripSummary.total_mika_cash', 3)
+            ->assertSet('tripSummary.total_amount_cash', 36000) // 3 * 15 * 800
+            ->assertSeeHtml('Mika Cash')
+            ->assertSeeHtml('3 mika (Rp 36.000)');
+    }
 }
