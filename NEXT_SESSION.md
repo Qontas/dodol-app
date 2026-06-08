@@ -4,18 +4,19 @@ _Sesi terakhir: 08 Juni 2026_
 
 ## TRIGGER SENTENCE
 
-Bg, lanjut dodol-app. 93 PASS. Real-time polling dashboard + Laporan bulanan dengan harga_mika custom selesai.
+Bg, lanjut dodol-app. 95 PASS. Super admin dashboard widget global stats & owner leaderboard selesai.
 GitHub: Qontas/dodol-app synced.
-PRIORITAS: Super admin dashboard → Deploy.
+PRIORITAS: Deploy ke Railway.app.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS TERAKHIR
 
+- feat(admin): build super admin dashboard with global stats and owner leaderboard
 - feat(owner): real-time dashboard polling and monthly report with custom harga_mika
 - fix(operator/bug4): drop extra cash detection + end trip summary
 - 8c278f5 feat(operator): cash delivery — kios cash only + drop extra cash
 - 950cd69 feat(import): KioskImporter format spreadsheet abang
-- Test: 93 PASS, 313 assertions
+- Test: 95 PASS, 321 assertions
 - GitHub: https://github.com/Qontas/dodol-app
 
 ## CREDENTIALS
@@ -26,16 +27,9 @@ Baca NEXT_SESSION.md untuk context lengkap.
 
 ## FITUR BERIKUTNYA (URUTAN PRIORITAS)
 
-### 1. Super Admin Dashboard
+### 1. Deploy ke Railway.app
 
-Widget: total owner, total operator, total kios semua owner, omset hari ini semua owner.
-List owner + statistik singkat per owner.
-Super admin TIDAK input kios/cluster (data operasional urusan owner masing-masing).
-File: buat SuperAdminDashboardController + view
-
-### 2. Deploy ke Railway.app
-
-Setelah semua fitur di atas selesai.
+Setelah semua fitur selesai.
 
 ## BUSINESS RULES LOCKED
 
@@ -74,7 +68,7 @@ Setelah semua fitur di atas selesai.
 Setelah Selesai:
 php artisan test --compact
 git add .
-git commit -m "feat(owner): real-time dashboard polling and monthly report with custom harga_mika"
+git commit -m "feat(admin): build super admin dashboard with global stats and owner leaderboard"
 git push origin main
 
 Report: commit hash + test status.
