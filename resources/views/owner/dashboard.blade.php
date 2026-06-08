@@ -159,6 +159,12 @@
                         <div class="text-right">
                             <p class="text-xs text-slate-500">Omset Akhir</p>
                             <p class="text-xl font-bold text-green-600">Rp {{ number_format($completedTrip->omset_val, 0, ',', '.') }}</p>
+                            <div class="mt-2 flex justify-end gap-1.5">
+                                <a href="{{ route('owner.trips.export.pdf', $completedTrip) }}"
+                                   class="rounded bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700">PDF</a>
+                                <a href="{{ route('owner.trips.export.excel', $completedTrip) }}"
+                                   class="rounded bg-green-600 px-2 py-1 text-xs font-semibold text-white hover:bg-green-700">XLS</a>
+                            </div>
                         </div>
                     </div>
                     
@@ -226,6 +232,13 @@
                     <p class="text-sm">Belum ada trip yang diselesaikan.</p>
                 </div>
             @endforelse
+
+            <div class="mt-4 pt-4 border-t border-slate-100 text-right">
+                <a href="{{ route('owner.reports.monthly') }}"
+                   class="inline-flex items-center gap-1 text-sm font-semibold text-amber-700 hover:text-amber-800">
+                    Lihat Laporan Bulanan &rarr;
+                </a>
+            </div>
         </div>
 
         {{-- Chart Omset --}}
