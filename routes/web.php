@@ -7,7 +7,7 @@ use App\Http\Controllers\OwnerSettingsController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
-Route::view('/', 'welcome');
+Route::view('/', 'landing');
 
 Route::post('logout', function () {
     Auth::guard('web')->logout();
