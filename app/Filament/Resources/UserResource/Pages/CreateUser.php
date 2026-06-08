@@ -11,4 +11,15 @@ class CreateUser extends CreateRecord
     use RedirectsToIndex;
 
     protected static string $resource = UserResource::class;
+
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        // Owner hanya boleh membuat operator miliknya sendiri.
+        if (auth()->user()?->isOwner()) {
+            $data['role'] = 'operator';
+            $data['owner_id'] = auth()->id();
+        }
+
+        return $data;
+    }
 }

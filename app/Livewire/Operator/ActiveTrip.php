@@ -87,6 +87,13 @@ class ActiveTrip extends Component
         // Kios aktif di cluster trip. Tanpa starting_cluster = semua kios aktif (trip "Semua Kios").
         $query = Kiosk::where('is_active', true);
 
+        // Multi-tenant: batasi ke kios milik owner operator (lewat cluster).
+        // Guard null untuk backward-compat (data lama / operator tanpa owner_id).
+        $ownerId = auth()->user()->owner_id;
+        if ($ownerId !== null) {
+            $query->whereHas('cluster', fn($q) => $q->where('owner_id', $ownerId));
+        }
+
         if ($this->starting_cluster_id) {
             $query->where('cluster_id', $this->starting_cluster_id);
         }

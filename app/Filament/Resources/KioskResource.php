@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\KioskResource\Pages;
 use App\Models\Kiosk;
+use Illuminate\Database\Eloquent\Builder;
 use Dotswan\MapPicker\Fields\Map;
 use Filament\Forms;
 use Filament\Forms\Components\Section;
@@ -293,6 +294,18 @@ class KioskResource extends Resource
                         ->requiresConfirmation(),
                 ]),
             ]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        if (auth()->user()?->isSuperAdmin()) {
+            return $query;
+        }
+
+        // Kios Level 2: owner lewat cluster.owner_id
+        return $query->whereHas('cluster', fn (Builder $q) => $q->where('owner_id', auth()->id()));
     }
 
     public static function getRelations(): array

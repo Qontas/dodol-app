@@ -6,6 +6,7 @@ namespace App\Models;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -25,6 +26,7 @@ class User extends Authenticatable implements FilamentUser
         'email',
         'password',
         'role',
+        'owner_id',
         'commission_rate',
         'is_active',
     ];
@@ -55,9 +57,40 @@ class User extends Authenticatable implements FilamentUser
         ];
     }
 
+    public function isSuperAdmin(): bool
+    {
+        return $this->role === 'super_admin';
+    }
+
+    public function isOwner(): bool
+    {
+        return $this->role === 'owner';
+    }
+
+    public function isOperator(): bool
+    {
+        return $this->role === 'operator';
+    }
+
     public function canAccessPanel(Panel $panel): bool
     {
-        return $this->role === 'owner' && $this->is_active;
+        return in_array($this->role, ['owner', 'super_admin'], true) && $this->is_active;
+    }
+
+    /**
+     * Owner dari user ini (hanya relevan untuk operator).
+     */
+    public function owner(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'owner_id');
+    }
+
+    /**
+     * Operator yang terikat ke owner ini.
+     */
+    public function operators(): HasMany
+    {
+        return $this->hasMany(User::class, 'owner_id');
     }
 
     public function operatedTrips(): HasMany
