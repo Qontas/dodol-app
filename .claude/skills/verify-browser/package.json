@@ -1,0 +1,9 @@
+{
+  "name": "dodol-verify-browser",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Self-contained browser smoke-test driver. Keeps playwright-core local to this skill (not a project dependency).",
+  "dependencies": {
+    "playwright-core": "^1.60.0"
+  }
+}
