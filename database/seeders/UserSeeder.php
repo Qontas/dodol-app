@@ -18,6 +18,7 @@ class UserSeeder extends Seeder
                 'role' => 'super_admin',
                 'owner_id' => null,
                 'commission_rate' => null,
+                'hpp_per_mika' => 9500,
                 'is_active' => true,
                 'email_verified_at' => now(),
             ]
@@ -32,6 +33,7 @@ class UserSeeder extends Seeder
                 'role' => 'owner',
                 'owner_id' => null,
                 'commission_rate' => null,
+                'hpp_per_mika' => 9500,
                 'is_active' => true,
                 'email_verified_at' => now(),
             ]

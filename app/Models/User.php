@@ -28,6 +28,7 @@ class User extends Authenticatable implements FilamentUser
         'role',
         'owner_id',
         'commission_rate',
+        'hpp_per_mika',
         'is_active',
     ];
 
@@ -53,6 +54,7 @@ class User extends Authenticatable implements FilamentUser
             'password' => 'hashed',
             'role' => 'string',
             'commission_rate' => 'decimal:4',
+            'hpp_per_mika' => 'decimal:2',
             'is_active' => 'boolean',
         ];
     }
@@ -70,6 +72,14 @@ class User extends Authenticatable implements FilamentUser
     public function isOperator(): bool
     {
         return $this->role === 'operator';
+    }
+
+    /**
+     * HPP per mika owner ini, fallback ke default Rp 9.500.
+     */
+    public function getHppPerMikaValue(): float
+    {
+        return (float) ($this->hpp_per_mika ?? 9500);
     }
 
     public function canAccessPanel(Panel $panel): bool

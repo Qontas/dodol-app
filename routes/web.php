@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\OwnerDashboardController;
+use App\Http\Controllers\OwnerSettingsController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -33,6 +34,11 @@ Route::middleware(['auth', 'verified', 'role:owner'])
     ->group(function () {
         Route::get('/dashboard', [OwnerDashboardController::class, 'index'])
             ->name('dashboard');
+
+        Route::get('/settings', [OwnerSettingsController::class, 'index'])
+            ->name('settings');
+        Route::put('/settings', [OwnerSettingsController::class, 'update'])
+            ->name('settings.update');
     });
 
 Route::middleware(['auth', 'verified', 'role:operator'])
