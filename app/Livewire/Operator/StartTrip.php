@@ -157,6 +157,7 @@ class StartTrip extends Component
         // Proteksi 2: Jaring Throwable Total (Menangkap segala jenis error database)
         try {
             $trip = Trip::create([
+                'owner_id' => auth()->user()->owner_id,
                 'operator_id' => auth()->id(),
                 'trip_date' => today(),
                 'trip_number_of_day' => $nextNumber,
