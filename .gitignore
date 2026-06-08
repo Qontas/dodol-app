@@ -22,5 +22,6 @@ yarn-error.log
 /.vscode
 /.zed
 
-# Claude Code session folder (not project code)
-/.claude
+# Claude Code session folder (not project code) — but keep shared project skills
+/.claude/*
+!/.claude/skills/
