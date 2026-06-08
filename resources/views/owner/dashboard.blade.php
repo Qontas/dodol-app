@@ -8,6 +8,12 @@
             <p class="mt-1 text-slate-600">Selamat datang, {{ $user->name }}.</p>
         </div>
 
+        @if (session('status'))
+            <div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                {{ session('status') }}
+            </div>
+        @endif
+
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="bg-white rounded-lg border border-slate-200 p-4">
                 <div class="text-xs uppercase tracking-wide text-slate-500">Total Kios</div>
@@ -164,6 +170,13 @@
                                    class="rounded bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700">PDF</a>
                                 <a href="{{ route('owner.trips.export.excel', $completedTrip) }}"
                                    class="rounded bg-green-600 px-2 py-1 text-xs font-semibold text-white hover:bg-green-700">XLS</a>
+                                <form method="POST" action="{{ route('owner.trips.destroy', $completedTrip) }}"
+                                      onsubmit="return confirm('Yakin hapus Trip #{{ $completedTrip->trip_number_of_day }}? Data kunjungan akan terhapus permanen.');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit"
+                                            class="rounded bg-slate-700 px-2 py-1 text-xs font-semibold text-white hover:bg-slate-800">Hapus</button>
+                                </form>
                             </div>
                         </div>
                     </div>
