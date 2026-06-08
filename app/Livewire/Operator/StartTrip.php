@@ -140,11 +140,19 @@ class StartTrip extends Component
             return $this->redirect(route('operator.trip.active', $activeTrip->id), navigate: true);
         }
 
-        $maxNumber = Trip::where('operator_id', auth()->id())
-            ->whereDate('trip_date', today())
-            ->max('trip_number_of_day');
+        // Nomor trip harian sekarang unik PER OWNER (lihat idx_trip_owner_date_number).
+        // Numbering ikut owner: trip ke-N bisnis hari ini lintas semua operator owner tsb.
+        // Fallback ke operator_id kalau owner_id null (data lama / operator tanpa owner).
+        $ownerId = auth()->user()->owner_id;
 
-        $nextNumber = ($maxNumber ?? 0) + 1;
+        $numberQuery = Trip::whereDate('trip_date', today());
+        if ($ownerId !== null) {
+            $numberQuery->where('owner_id', $ownerId);
+        } else {
+            $numberQuery->where('operator_id', auth()->id());
+        }
+
+        $nextNumber = ($numberQuery->max('trip_number_of_day') ?? 0) + 1;
 
         // Proteksi 2: Jaring Throwable Total (Menangkap segala jenis error database)
         try {
