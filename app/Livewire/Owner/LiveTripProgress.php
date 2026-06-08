@@ -10,7 +10,9 @@ class LiveTripProgress extends Component
 {
     public function render()
     {
+        // Multi-tenant: owner hanya lihat trip bisnisnya sendiri.
         $activeTrips = Trip::whereNull('ended_at')
+            ->where('owner_id', auth()->id())
             ->with(['operator', 'startingCluster', 'visits.kiosk', 'deliveries'])
             ->get();
 
