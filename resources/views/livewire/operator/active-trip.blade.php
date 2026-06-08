@@ -163,32 +163,6 @@
                         <span>Omset (Cash Diterima)</span>
                         <span>Rp {{ number_format($tripSummary['total_uang_diterima'], 0, ',', '.') }}</span>
                     </div>
-                    <div class="flex justify-between text-slate-600">
-                        <span>HPP (Terjual × 9.500)</span>
-                        <span>Rp {{ number_format($tripSummary['hpp_estimasi'], 0, ',', '.') }}</span>
-                    </div>
-                    <div class="flex justify-between text-slate-800 font-medium">
-                        <span>Untung Kotor (Terjual × 2.500)</span>
-                        <span>Rp {{ number_format($tripSummary['untung_kotor'], 0, ',', '.') }}</span>
-                    </div>
-                    <div class="border-t border-slate-200 my-2"></div>
-                    <div class="flex justify-between text-slate-500 text-xs">
-                        <span>Komisi Reguler (Terjual × 500)</span>
-                        <span>Rp {{ number_format($tripSummary['komisi_reguler'], 0, ',', '.') }}</span>
-                    </div>
-                    <div class="flex justify-between text-slate-500 text-xs">
-                        <span>Komisi Kios Baru (Kios Baru × 1.000)</span>
-                        <span>Rp {{ number_format($tripSummary['komisi_kios_baru'], 0, ',', '.') }}</span>
-                    </div>
-                    <div class="flex justify-between text-amber-700 font-bold">
-                        <span>Total Komisi Rian</span>
-                        <span>Rp {{ number_format($tripSummary['komisi_rian'], 0, ',', '.') }}</span>
-                    </div>
-                    <div class="border-t border-slate-200 my-2"></div>
-                    <div class="flex justify-between text-slate-900 font-bold text-base">
-                        <span>Untung Bersih Owner</span>
-                        <span>Rp {{ number_format($tripSummary['untung_bersih_owner'], 0, ',', '.') }}</span>
-                    </div>
                 </div>
 
                 {{-- Pilih Alasan --}}
@@ -366,7 +340,7 @@
                     <div class="flex items-center gap-3">
                         <button type="button" wire:click="decrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">-</button>
                         
-                        <input type="number" id="dropBaru" wire:model.live="dropBaru" class="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-2xl font-bold" min="0">
+                        <input type="number" id="dropBaru" wire:model="dropBaru" class="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-2xl font-bold" min="0">
                         
                         <button type="button" wire:click="incrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
                     </div>
