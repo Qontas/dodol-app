@@ -1,0 +1,4 @@
+nomor,cluster,nama_kios,qty_mika,deskripsi_lokasi,koordinat_atau_link,tanggal_pertama_titip
+1,1,"Karya 1 (masjid)",3,"Jl. Karya (disamping Masjid, depan mie aceh)","3° 36' 15.5196"" N 98° 39' 54.072"" E",26/02/2025
+2,2,"Karya 2 (alfa midi)",2,"Jl. Karya (Jual sayur depan Alfa Midi)",https://maps.app.goo.gl/xxxx,26/02/2025
+3,,"Gaperta 3",5,"Jl. Gaperta ujung","WARKOP NST",

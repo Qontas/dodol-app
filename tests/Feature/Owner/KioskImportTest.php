@@ -29,9 +29,9 @@ class KioskImportTest extends TestCase
     public function test_kiosk_importer_maps_and_creates_records()
     {
         $user = User::factory()->create(['role' => 'owner', 'is_active' => true]);
-        
-        $cluster = \App\Models\Cluster::create(['name' => 'Cluster A', 'is_active' => true]);
-        $uncategorized = \App\Models\Cluster::create(['name' => 'UNCATEGORIZED', 'is_active' => true]);
+
+        // Cluster milik owner ini (multi-tenant: resolveCluster scope by owner_id).
+        $cluster = \App\Models\Cluster::create(['name' => 'Cluster A', 'is_active' => true, 'owner_id' => $user->id]);
 
         $import = \Filament\Actions\Imports\Models\Import::create([
             'file_name' => 'kiosks.csv',
@@ -66,11 +66,11 @@ class KioskImportTest extends TestCase
             'lng' => '98.6722',
         ]);
 
-        // Row 2: Valid kiosk with missing cluster (should fallback to UNCATEGORIZED)
+        // Row 2: cluster tidak ada → auto-create "Cluster B" milik owner
         $importer([
             'nama' => 'Kios Jaya',
             'pemilik' => 'Joko',
-            'cluster' => 'Cluster B', // doesn't exist
+            'cluster' => 'Cluster B', // doesn't exist → dibuat otomatis
             'qty_mika' => '5',
             'telepon' => '0898765432',
             'alamat' => 'Jl. Sudirman No. 2',
@@ -78,7 +78,7 @@ class KioskImportTest extends TestCase
             'lng' => '106.8166',
         ]);
 
-        // Row 3: Valid kiosk with empty cluster (should fallback to UNCATEGORIZED)
+        // Row 3: cluster kosong → auto-create "Uncategorized" milik owner
         $importer([
             'nama' => 'Kios Mandiri',
             'pemilik' => 'Siti',
@@ -101,10 +101,13 @@ class KioskImportTest extends TestCase
             'longitude' => '98.6722000',
         ]);
 
+        // "Cluster B" auto-dibuat untuk owner ini
+        $clusterB = \App\Models\Cluster::where('owner_id', $user->id)->where('name', 'Cluster B')->first();
+        $this->assertNotNull($clusterB);
         $this->assertDatabaseHas('kiosks', [
             'name' => 'Kios Jaya',
             'owner_name' => 'Joko',
-            'cluster_id' => $uncategorized->id,
+            'cluster_id' => $clusterB->id,
             'default_qty_mika' => 5,
             'phone' => '0898765432',
             'location_description' => 'Jl. Sudirman No. 2',
@@ -112,6 +115,9 @@ class KioskImportTest extends TestCase
             'longitude' => '106.8166000',
         ]);
 
+        // "Uncategorized" auto-dibuat untuk owner ini
+        $uncategorized = \App\Models\Cluster::where('owner_id', $user->id)->where('name', 'Uncategorized')->first();
+        $this->assertNotNull($uncategorized);
         $this->assertDatabaseHas('kiosks', [
             'name' => 'Kios Mandiri',
             'owner_name' => 'Siti',
