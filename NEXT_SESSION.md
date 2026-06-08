@@ -1,22 +1,18 @@
 # NEXT_SESSION.md — Dodol-App
 
-_Sesi terakhir: 08 Juni 2026_
+_Sesi terakhir: 09 Juni 2026_
 
 ## TRIGGER SENTENCE
 
-Bg, lanjut dodol-app. 95 PASS. Super admin dashboard widget global stats & owner leaderboard selesai.
+Bg, lanjut dodol-app. 97 PASS. Operator multi-tenancy & workspace cleanup selesai. Ready to deploy.
 GitHub: Qontas/dodol-app synced.
-PRIORITAS: Deploy ke Railway.app.
+PRIORITAS: DEKLARASI FREEZE KODE - Lanjut eksekusi Deployment ke Railway.app.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS TERAKHIR
 
-- feat(admin): build super admin dashboard with global stats and owner leaderboard
-- feat(owner): real-time dashboard polling and monthly report with custom harga_mika
-- fix(operator/bug4): drop extra cash detection + end trip summary
-- 8c278f5 feat(operator): cash delivery — kios cash only + drop extra cash
-- 950cd69 feat(import): KioskImporter format spreadsheet abang
-- Test: 95 PASS, 321 assertions
+- STATUS TERAKHIR: "PRODUCTION READY - 95+ Tests PASS" (97 PASS, 333 assertions)
+- FITUR TERAKHIR: Super Admin Dashboard & Fix Operator Multi-tenancy
 - GitHub: https://github.com/Qontas/dodol-app
 
 ## CREDENTIALS
@@ -27,9 +23,9 @@ Baca NEXT_SESSION.md untuk context lengkap.
 
 ## FITUR BERIKUTNYA (URUTAN PRIORITAS)
 
-### 1. Deploy ke Railway.app
+### 1. DEKLARASI FREEZE KODE - Lanjut eksekusi Deployment ke Railway.app
 
-Setelah semua fitur selesai.
+Setelah semua fitur selesai, lakukan deployment ke Railway.app.
 
 ## BUSINESS RULES LOCKED
 
@@ -68,7 +64,7 @@ Setelah semua fitur selesai.
 Setelah Selesai:
 php artisan test --compact
 git add .
-git commit -m "feat(admin): build super admin dashboard with global stats and owner leaderboard"
+git commit -m "feat(core): fix operator multi-tenancy and workspace cleanup"
 git push origin main
 
 Report: commit hash + test status.
