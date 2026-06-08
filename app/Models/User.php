@@ -30,6 +30,7 @@ class User extends Authenticatable implements FilamentUser
         'commission_rate',
         'hpp_per_mika',
         'is_active',
+        'harga_mika',
     ];
 
     /**
@@ -56,6 +57,7 @@ class User extends Authenticatable implements FilamentUser
             'commission_rate' => 'decimal:4',
             'hpp_per_mika' => 'decimal:2',
             'is_active' => 'boolean',
+            'harga_mika' => 'decimal:2',
         ];
     }
 
