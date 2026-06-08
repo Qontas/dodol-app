@@ -27,13 +27,13 @@
                 $nav = [
                     ['label' => 'Dashboard', 'route' => 'owner.dashboard', 'active' => request()->routeIs('owner.dashboard')],
                     ['label' => '🗂️ Admin Panel', 'route' => 'filament.admin.pages.dashboard', 'active' => false],
-                    ['label' => 'Manajemen Kios', 'route' => null, 'active' => false],
-                    ['label' => 'Manajemen Cluster', 'route' => null, 'active' => false],
-                    ['label' => 'Manajemen Supplier', 'route' => null, 'active' => false],
-                    ['label' => 'Manajemen Anggota', 'route' => null, 'active' => false],
-                    ['label' => 'Procurement', 'route' => null, 'active' => false],
-                    ['label' => 'Laporan & Analitik', 'route' => null, 'active' => false],
-                    ['label' => 'Settings', 'route' => null, 'active' => false],
+                    ['label' => 'Manajemen Kios', 'route' => 'filament.admin.resources.kiosks.index', 'active' => request()->routeIs('filament.admin.resources.kiosks.*')],
+                    ['label' => 'Manajemen Cluster', 'route' => 'filament.admin.resources.clusters.index', 'active' => request()->routeIs('filament.admin.resources.clusters.*')],
+                    ['label' => 'Manajemen Supplier', 'route' => 'filament.admin.resources.suppliers.index', 'active' => request()->routeIs('filament.admin.resources.suppliers.*')],
+                    ['label' => 'Manajemen Anggota', 'route' => 'filament.admin.resources.users.index', 'active' => request()->routeIs('filament.admin.resources.users.*')],
+                    ['label' => 'Procurement', 'route' => 'filament.admin.resources.procurement-batches.index', 'active' => request()->routeIs('filament.admin.resources.procurement-batches.*')],
+                    ['label' => 'Laporan & Analitik', 'route' => 'owner.reports.monthly', 'active' => request()->routeIs('owner.reports.*')],
+                    ['label' => 'Settings', 'route' => 'owner.settings', 'active' => request()->routeIs('owner.settings')],
                 ];
             @endphp
             @foreach ($nav as $item)
