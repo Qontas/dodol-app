@@ -30,8 +30,11 @@ class StartTrip extends Component
 
     public function getClustersProperty()
     {
+        $ownerId = auth()->user()->owner_id;
+
         return Cluster::query()
             ->where('is_active', true)
+            ->when($ownerId !== null, fn($q) => $q->where('owner_id', $ownerId))
             ->withCount(['kiosks' => fn($q) => $q->where('is_active', true)])
             ->orderBy('name')
             ->get()

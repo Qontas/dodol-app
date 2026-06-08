@@ -9,7 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class EnsureUserHasRole
 {
-    public function handle(Request $request, Closure $next, string $role): Response
+    public function handle(Request $request, Closure $next, string ...$roles): Response
     {
         $user = $request->user();
 
@@ -26,7 +26,7 @@ class EnsureUserHasRole
                 ->with('status', 'Akun nonaktif. Hubungi owner.');
         }
 
-        if ($user->role !== $role) {
+        if (! in_array($user->role, $roles, true)) {
             abort(403, 'Akses ditolak. Role tidak sesuai.');
         }
 

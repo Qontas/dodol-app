@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ProductVariantResource\Pages;
 use App\Models\ProductVariant;
+use Illuminate\Database\Eloquent\Builder;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -152,6 +153,18 @@ class ProductVariantResource extends Resource
                         ->requiresConfirmation(),
                 ]),
             ]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        if (auth()->user()?->isSuperAdmin()) {
+            return $query;
+        }
+
+        // Varian Level 2: owner lewat product.owner_id
+        return $query->whereHas('product', fn (Builder $q) => $q->where('owner_id', auth()->id()));
     }
 
     public static function getRelations(): array

@@ -18,6 +18,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', function () {
         $role = auth()->user()->role;
 
+        // Super admin diarahkan ke Filament admin panel (lihat semua owner).
+        if ($role === 'super_admin') {
+            return redirect('/admin');
+        }
+
         return redirect()->route("{$role}.dashboard");
     })->name('dashboard');
 });

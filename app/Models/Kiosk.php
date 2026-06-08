@@ -40,6 +40,14 @@ class Kiosk extends Model
         return $this->belongsTo(Cluster::class);
     }
 
+    /**
+     * Owner kios diketahui lewat cluster (Level 2 — tidak punya kolom owner_id).
+     */
+    public function getOwnerIdAttribute(): ?int
+    {
+        return $this->cluster?->owner_id;
+    }
+
     public function deliveries(): HasMany
     {
         return $this->hasMany(Delivery::class);

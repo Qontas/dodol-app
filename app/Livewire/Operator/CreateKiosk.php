@@ -30,8 +30,11 @@ class CreateKiosk extends Component
 
     public function getClustersProperty()
     {
+        $ownerId = auth()->user()->owner_id;
+
         return Cluster::query()
             ->where('is_active', true)
+            ->when($ownerId !== null, fn($q) => $q->where('owner_id', $ownerId))
             ->orderBy('name')
             ->get();
     }

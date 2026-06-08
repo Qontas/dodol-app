@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Filament\Forms;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Form;
@@ -68,14 +69,27 @@ class UserResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('role')
                             ->label('Role')
-                            ->options([
-                                'owner' => 'Owner',
-                                'operator' => 'Operator',
-                            ])
+                            ->options(fn (): array => auth()->user()?->isSuperAdmin()
+                                ? [
+                                    'super_admin' => 'Super Admin',
+                                    'owner' => 'Owner',
+                                    'operator' => 'Operator',
+                                ]
+                                : ['operator' => 'Operator'])
                             ->default('operator')
                             ->required()
                             ->live()
-                            ->helperText('Owner = akses penuh sistem. Operator = akses operasional lapangan'),
+                            ->helperText('Owner = akses penuh bisnis sendiri. Operator = akses operasional lapangan'),
+
+                        // Owner dari operator. Owner viewer: auto-set ke dirinya (lihat CreateUser).
+                        // Super admin: pilih owner mana operator ini terikat.
+                        Forms\Components\Select::make('owner_id')
+                            ->label('Owner')
+                            ->options(fn (): array => User::query()->where('role', 'owner')->pluck('name', 'id')->all())
+                            ->searchable()
+                            ->visible(fn (Get $get): bool => (bool) auth()->user()?->isSuperAdmin() && $get('role') === 'operator')
+                            ->required(fn (Get $get): bool => (bool) auth()->user()?->isSuperAdmin() && $get('role') === 'operator')
+                            ->helperText('Operator ini bekerja untuk owner yang dipilih'),
 
                         Forms\Components\TextInput::make('commission_rate')
                             ->label('Tarif Komisi')
@@ -116,11 +130,13 @@ class UserResource extends Resource
                     ->label('Role')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
+                        'super_admin' => 'danger',
                         'owner' => 'success',
                         'operator' => 'warning',
                         default => 'gray',
                     })
                     ->formatStateUsing(fn (string $state): string => match ($state) {
+                        'super_admin' => 'Super Admin',
                         'owner' => 'Owner',
                         'operator' => 'Operator',
                         default => $state,
@@ -183,6 +199,19 @@ class UserResource extends Resource
                         ->requiresConfirmation(),
                 ]),
             ]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        if (auth()->user()?->isSuperAdmin()) {
+            return $query; // super admin lihat semua user
+        }
+
+        // Owner: hanya operator yang terikat ke dirinya
+        return $query->where('role', 'operator')
+            ->where('owner_id', auth()->id());
     }
 
     public static function getRelations(): array
