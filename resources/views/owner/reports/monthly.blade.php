@@ -54,6 +54,22 @@
             </div>
         </div>
 
+        {{-- Ringkasan Pengiriman & Komisi --}}
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Total Mika Diantar</div>
+                <div class="mt-2 text-2xl font-bold text-slate-900">{{ number_format($total_mika_diantar, 0, ',', '.') }} mika</div>
+            </div>
+            <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Modal Mika</div>
+                <div class="mt-2 text-2xl font-bold text-slate-900">Rp {{ number_format($modal_mika, 0, ',', '.') }}</div>
+            </div>
+            <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Rekap Komisi Operator</div>
+                <div class="mt-2 text-2xl font-bold text-amber-600">Rp {{ number_format($rekap_komisi, 0, ',', '.') }}</div>
+            </div>
+        </div>
+
         {{-- Rekap per trip --}}
         <div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
             <div class="px-5 py-4 border-b border-slate-100">

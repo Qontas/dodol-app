@@ -93,9 +93,26 @@ class MonthlyReportController extends Controller
             ->whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId))
             ->count();
 
+        $owner = \App\Models\User::find($ownerId);
+        $hargaMika = (float) ($owner?->harga_mika ?? 200.00);
+
+        $totalMikaDiantar = (int) \App\Models\Delivery::whereHas('trip', function ($q) use ($ownerId, $year, $mon) {
+            $q->where('owner_id', $ownerId)
+              ->whereYear('trip_date', $year)
+              ->whereMonth('trip_date', $mon);
+        })->sum('qty_delivered');
+
+        $modalMika = $totalMikaDiantar * $hargaMika;
+
+        $rekapKomisi = (float) \App\Models\Commission::whereHas('trip', function ($q) use ($ownerId, $year, $mon) {
+            $q->where('owner_id', $ownerId)
+              ->whereYear('trip_date', $year)
+              ->whereMonth('trip_date', $mon);
+        })->sum('commission_amount');
+
         return [
             'month' => $month,
-            'businessName' => auth()->user()->name,
+            'businessName' => $owner?->name ?? '—',
             'trips' => $trips,
             'rows' => $rows,
             'totals' => $totals,
@@ -105,6 +122,9 @@ class MonthlyReportController extends Controller
                 'kios_baru' => $kiosBaruCount,
                 'frekuensi' => $kiosFrekuensi,
             ],
+            'total_mika_diantar' => $totalMikaDiantar,
+            'modal_mika' => $modalMika,
+            'rekap_komisi' => $rekapKomisi,
         ];
     }
 
