@@ -43,6 +43,9 @@ class ActiveTrip extends Component
     public $selectedKiosk = null;
     public $pendingDelivery = null;
 
+    // Kios cash only: setiap drop langsung bayar cash (di-set dari kios terpilih)
+    public bool $isCashOnly = false;
+
     // Input Form dari Rian
     public $returnFresh = 0;
     public $returnExpired = 0;
@@ -174,6 +177,7 @@ class ActiveTrip extends Component
     public function openVisitModal($kioskId)
     {
         $this->selectedKiosk = Kiosk::find($kioskId);
+        $this->isCashOnly = (bool) ($this->selectedKiosk?->is_cash_only);
 
         $this->pendingDelivery = Delivery::where('kiosk_id', $kioskId)
             ->doesntHave('settlement')
@@ -248,6 +252,11 @@ class ActiveTrip extends Component
 
     private function resolveVisitAction(): string
     {
+        // Kios cash only selalu penjualan cash langsung.
+        if ($this->isCashOnly) {
+            return 'cash_sale';
+        }
+
         $drop = (int) $this->dropBaru;
         $hasPending = (bool) $this->pendingDelivery;
 
@@ -302,6 +311,74 @@ class ActiveTrip extends Component
         $isSettleAction = in_array($action, ['drop_and_settle', 'settle_only'], true);
         $isDrop = in_array($action, ['drop_and_settle', 'drop_only'], true);
 
+        // === SKENARIO KIOS CASH ONLY ===
+        // Setiap kunjungan = penjualan cash langsung lunas, tanpa konsinyasi.
+        if ($this->isCashOnly) {
+            if ($drop <= 0) {
+                $this->addError('general', 'Jumlah mika harus lebih dari 0 untuk penjualan cash.');
+                return;
+            }
+
+            try {
+                $variant = $this->resolveActiveVariant();
+            } catch (\RuntimeException $e) {
+                $this->addError('general', $e->getMessage());
+                return;
+            }
+
+            try {
+                DB::transaction(function () use ($drop, $variant) {
+                    $delivery = Delivery::create([
+                        'kiosk_id' => $this->selectedKiosk->id,
+                        'trip_id' => $this->trip->id,
+                        'product_variant_id' => $variant->id,
+                        'procurement_batch_id' => null,
+                        'source_type' => 'new_procurement',
+                        'delivery_type' => 'cash_sale',
+                        'qty_delivered' => $drop,
+                        'unit_price' => $variant->sale_price_per_pack,
+                        'cost_snapshot' => null,
+                    ]);
+
+                    $totalBiji = $drop * self::BIJI_PER_MIKA;
+                    $amountDue = $totalBiji * self::HARGA_PER_BIJI;
+
+                    Settlement::create([
+                        'delivery_id' => $delivery->id,
+                        'visit_date' => today(),
+                        'qty_sold' => $totalBiji,
+                        'qty_returned_fresh' => 0,
+                        'qty_returned_expired' => 0,
+                        'amount_due' => $amountDue,
+                        'amount_paid' => $amountDue, // langsung lunas
+                    ]);
+
+                    KioskVisit::create([
+                        'trip_id' => $this->trip->id,
+                        'kiosk_id' => $this->selectedKiosk->id,
+                        'visited_at' => now(),
+                        'visit_action' => 'cash_sale',
+                        'new_delivery_id' => $delivery->id,
+                        'settled_delivery_id' => $delivery->id,
+                        'extension_granted' => false,
+                    ]);
+                });
+            } catch (\Throwable $e) {
+                $this->addError('general', 'Gagal menyimpan. Coba lagi.');
+                return;
+            }
+
+            $this->loadKiosks();
+            $this->closeVisitModal();
+            session()->flash('visit_saved', 'Kunjungan cash berhasil disimpan.');
+            return;
+        }
+
+        // Deteksi drop extra cash: kelebihan di atas default_qty_mika bayar cash langsung.
+        $defaultQty = (int) ($this->selectedKiosk->default_qty_mika ?? 0);
+        $extraQty = max(0, $drop - $defaultQty);
+        $hasCashExtra = $isDrop && $extraQty > 0 && $defaultQty > 0;
+
         // Extension hanya berlaku untuk aksi yang seharusnya settle + ada titipan lama.
         // Kalau granted: settle DITUNDA (tidak buat row settlements), drop tetap jalan.
         $extension = $this->extensionGranted && $hasPending && $isSettleAction;
@@ -335,7 +412,7 @@ class ActiveTrip extends Component
         }
 
         try {
-            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant) {
+            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $extraQty, $hasCashExtra) {
                 $newDeliveryId = null;
                 $settledDeliveryId = null;
 
@@ -361,6 +438,9 @@ class ActiveTrip extends Component
 
                 // 2. Drop titipan baru (new_procurement, tanpa link batch — operasional bebas)
                 if ($isDrop) {
+                    // Kalau drop melebihi default: bagian default = konsinyasi, sisanya = cash.
+                    $konsinyasiQty = $hasCashExtra ? ($drop - $extraQty) : $drop;
+
                     $newDelivery = Delivery::create([
                         'kiosk_id' => $this->selectedKiosk->id,
                         'trip_id' => $this->trip->id,
@@ -368,11 +448,39 @@ class ActiveTrip extends Component
                         'procurement_batch_id' => null,
                         'source_type' => 'new_procurement',
                         'delivery_type' => 'consignment',
-                        'qty_delivered' => $drop,
+                        'qty_delivered' => $konsinyasiQty,
                         'unit_price' => $variant->sale_price_per_pack,
                         'cost_snapshot' => null,
                     ]);
                     $newDeliveryId = $newDelivery->id;
+
+                    // Kelebihan di atas default = delivery cash terpisah, langsung lunas.
+                    if ($hasCashExtra) {
+                        $cashDelivery = Delivery::create([
+                            'kiosk_id' => $this->selectedKiosk->id,
+                            'trip_id' => $this->trip->id,
+                            'product_variant_id' => $variant->id,
+                            'procurement_batch_id' => null,
+                            'source_type' => 'new_procurement',
+                            'delivery_type' => 'cash_sale',
+                            'qty_delivered' => $extraQty,
+                            'unit_price' => $variant->sale_price_per_pack,
+                            'cost_snapshot' => null,
+                        ]);
+
+                        $totalBijiCash = $extraQty * self::BIJI_PER_MIKA;
+                        $amountDueCash = $totalBijiCash * self::HARGA_PER_BIJI;
+
+                        Settlement::create([
+                            'delivery_id' => $cashDelivery->id,
+                            'visit_date' => today(),
+                            'qty_sold' => $totalBijiCash,
+                            'qty_returned_fresh' => 0,
+                            'qty_returned_expired' => 0,
+                            'amount_due' => $amountDueCash,
+                            'amount_paid' => $amountDueCash, // langsung lunas
+                        ]);
+                    }
                 }
 
                 // 3. Catat kunjungan

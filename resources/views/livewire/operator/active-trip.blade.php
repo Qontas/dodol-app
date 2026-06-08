@@ -229,7 +229,12 @@
             
             <div class="sticky top-0 bg-white px-5 py-4 border-b border-slate-100 flex justify-between items-center z-10">
                 <div>
-                    <h3 class="font-bold text-lg text-slate-900">{{ $selectedKiosk->name }}</h3>
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-bold text-lg text-slate-900">{{ $selectedKiosk->name }}</h3>
+                        @if($isCashOnly)
+                            <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200">CASH ONLY</span>
+                        @endif
+                    </div>
                     <p class="text-xs text-slate-500">Form Serah Terima</p>
                 </div>
                 <button wire:click="closeVisitModal" class="p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-slate-200">
@@ -276,6 +281,7 @@
                             @case('drop_and_settle') Settle + Drop Baru @break
                             @case('drop_only') Drop Baru @break
                             @case('settle_only') Settle Saja @break
+                            @case('cash_sale') Penjualan Cash @break
                             @default Kunjungan (Cek)
                         @endswitch
                     </span>
@@ -364,6 +370,15 @@
                         
                         <button type="button" wire:click="incrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
                     </div>
+
+                    @if($isCashOnly)
+                        <p class="mt-2 text-xs font-medium text-emerald-700">Penjualan cash — langsung lunas, tanpa konsinyasi.</p>
+                    @elseif(!empty($selectedKiosk->default_qty_mika) && (int) $dropBaru > (int) $selectedKiosk->default_qty_mika)
+                        <p class="mt-2 text-xs font-medium text-amber-700">
+                            {{ (int) $selectedKiosk->default_qty_mika }} mika konsinyasi +
+                            {{ (int) $dropBaru - (int) $selectedKiosk->default_qty_mika }} mika cash langsung
+                        </p>
+                    @endif
                 </div>
             </div>
 

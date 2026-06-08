@@ -172,6 +172,11 @@ class KioskResource extends Resource
                             ->label('Status Aktif')
                             ->default(true)
                             ->helperText('Nonaktifkan kalau kios ini stop/tutup'),
+
+                        Forms\Components\Toggle::make('is_cash_only')
+                            ->label('Kios Cash Only')
+                            ->default(false)
+                            ->helperText('Aktifkan jika kios ini selalu bayar cash langsung (tidak ada konsinyasi)'),
                     ]),
 
                 Section::make('Catatan')
@@ -228,6 +233,11 @@ class KioskResource extends Resource
                     ->label('Aktif')
                     ->boolean()
                     ->sortable(),
+
+                Tables\Columns\IconColumn::make('is_cash_only')
+                    ->label('Cash Only')
+                    ->boolean()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('target_visit_interval_days')
                     ->label('Interval')

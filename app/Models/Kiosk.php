@@ -25,6 +25,7 @@ class Kiosk extends Model
         'default_qty_mika',
         'first_titip_date',
         'is_active',
+        'is_cash_only',
         'notes',
     ];
 
@@ -33,6 +34,7 @@ class Kiosk extends Model
         'longitude' => 'decimal:7',
         'first_titip_date' => 'date',
         'is_active' => 'boolean',
+        'is_cash_only' => 'boolean',
     ];
 
     public function cluster(): BelongsTo
