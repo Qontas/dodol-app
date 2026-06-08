@@ -1,29 +1,3 @@
-<?php
-
-use App\Livewire\Forms\LoginForm;
-use Illuminate\Support\Facades\Session;
-use Livewire\Attributes\Layout;
-use Livewire\Volt\Component;
-
-new #[Layout('layouts.blank')] class extends Component
-{
-    public LoginForm $form;
-
-    /**
-     * Handle an incoming authentication request.
-     */
-    public function login(): void
-    {
-        $this->validate();
-
-        $this->form->authenticate();
-
-        Session::regenerate();
-
-        $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);
-    }
-}; ?>
-
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -43,22 +17,24 @@ new #[Layout('layouts.blank')] class extends Component
             <div class="px-8 py-8">
                 <x-auth-session-status class="mb-4" :status="session('status')" />
 
-                <form wire:submit="login">
+                <form method="POST" action="{{ route('login') }}">
+                    @csrf
+
                     <div>
                         <label for="email" class="block text-sm font-semibold text-slate-700">Email</label>
-                        <input id="email" wire:model="form.email" class="block mt-2 w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 sm:text-sm" type="email" name="email" required autofocus autocomplete="username" placeholder="Masukkan email anda..." />
-                        <x-input-error :messages="$errors->get('form.email')" class="mt-2" />
+                        <input id="email" class="block mt-2 w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 sm:text-sm" type="email" name="email" :value="old('email')" required autofocus autocomplete="username" placeholder="Masukkan email anda..." />
+                        <x-input-error :messages="$errors->get('email')" class="mt-2" />
                     </div>
 
                     <div class="mt-6">
                         <label for="password" class="block text-sm font-semibold text-slate-700">Password</label>
-                        <input id="password" wire:model="form.password" class="block mt-2 w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 sm:text-sm" type="password" name="password" required autocomplete="current-password" placeholder="••••••••" />
-                        <x-input-error :messages="$errors->get('form.password')" class="mt-2" />
+                        <input id="password" class="block mt-2 w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 sm:text-sm" type="password" name="password" required autocomplete="current-password" placeholder="••••••••" />
+                        <x-input-error :messages="$errors->get('password')" class="mt-2" />
                     </div>
 
                     <div class="flex items-center justify-between mt-6">
                         <label for="remember_me" class="inline-flex items-center cursor-pointer">
-                            <input id="remember_me" wire:model="form.remember" type="checkbox" class="rounded border-slate-300 text-amber-600 shadow-sm focus:ring-amber-500" name="remember">
+                            <input id="remember_me" type="checkbox" class="rounded border-slate-300 text-amber-600 shadow-sm focus:ring-amber-500" name="remember">
                             <span class="ms-2 text-sm text-slate-600">Ingat Saya</span>
                         </label>
                     </div>
