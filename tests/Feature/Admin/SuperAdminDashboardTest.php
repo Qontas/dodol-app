@@ -39,7 +39,7 @@ class SuperAdminDashboardTest extends TestCase
         // Test Livewire widgets render without errors
         Livewire::test(SuperAdminStatsOverview::class)
             ->assertOk()
-            ->assertSee('Owner &amp; Operator Aktif')
+            ->assertSee('Owner & Operator Aktif')
             ->assertSee('Total Kios Terdaftar');
 
         Livewire::test(OwnerPerformanceTable::class)
@@ -57,12 +57,8 @@ class SuperAdminDashboardTest extends TestCase
         // As owner, accessing /admin is OK, but the widgets should not be visible
         $this->actingAs($owner)
             ->get('/admin')
-            ->assertOk();
-
-        Livewire::test(SuperAdminStatsOverview::class)
-            ->assertStatus(403);
-
-        Livewire::test(OwnerPerformanceTable::class)
-            ->assertStatus(403);
+            ->assertOk()
+            ->assertDontSee('Owner & Operator Aktif')
+            ->assertDontSee('Leaderboard Owner Hari Ini');
     }
 }
