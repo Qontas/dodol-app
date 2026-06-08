@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Owner\MonthlyReportController;
+use App\Http\Controllers\Owner\TripDeleteController;
 use App\Http\Controllers\Owner\TripExportController;
 use App\Http\Controllers\OwnerDashboardController;
 use App\Http\Controllers\OwnerSettingsController;
@@ -52,6 +53,9 @@ Route::middleware(['auth', 'verified', 'role:owner,super_admin'])
             ->name('trips.export.pdf');
         Route::get('/trips/{trip}/export/excel', [TripExportController::class, 'excel'])
             ->name('trips.export.excel');
+
+        Route::delete('/trips/{trip}', [TripDeleteController::class, 'destroy'])
+            ->name('trips.destroy');
 
         Route::get('/reports/monthly', [MonthlyReportController::class, 'index'])
             ->name('reports.monthly');
