@@ -73,7 +73,8 @@ class Trip extends Model
         $newKioskVisits = $this->visits()
             ->where('visit_action', 'drop_only')
             ->whereHas('kiosk', function ($q) {
-                $q->whereDate('created_at', $this->trip_date);
+                // Kios baru = first_titip_date sama dengan tanggal trip ini.
+                $q->whereDate('first_titip_date', $this->trip_date);
             })
             ->get();
 
@@ -132,7 +133,8 @@ class Trip extends Model
         return $this->visits()
             ->where('visit_action', 'drop_only')
             ->whereHas('kiosk', function ($q) {
-                $q->whereDate('created_at', $this->trip_date);
+                // Kios baru = first_titip_date sama dengan tanggal trip ini.
+                $q->whereDate('first_titip_date', $this->trip_date);
             })
             ->count();
     }

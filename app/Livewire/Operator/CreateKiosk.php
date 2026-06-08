@@ -70,6 +70,8 @@ class CreateKiosk extends Component
                 'latitude' => $this->latitude,
                 'longitude' => $this->longitude,
                 'is_active' => true,
+                // Kios dibuat operator di lapangan = titip pertama hari ini → kios baru.
+                'first_titip_date' => today(),
                 'notes' => 'Input lapangan oleh operator: '.auth()->user()->name.' (id='.auth()->id().')',
             ]);
         });
