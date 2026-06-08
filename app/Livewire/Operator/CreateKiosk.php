@@ -44,7 +44,7 @@ class CreateKiosk extends Component
         $validated = $this->validate([
             'namaKios' => 'required|string|max:255',
             'namaPemilik' => 'required|string|max:255',
-            'clusterId' => 'required|exists:clusters,id',
+            'clusterId' => 'nullable|exists:clusters,id',
             'defaultQtyMika' => 'required|integer|min:1',
             'latitude' => 'required|numeric|between:-90,90',
             'longitude' => 'required|numeric|between:-180,180',
@@ -52,7 +52,6 @@ class CreateKiosk extends Component
         ], [
             'namaKios.required' => 'Nama kios wajib diisi',
             'namaPemilik.required' => 'Nama pemilik wajib diisi',
-            'clusterId.required' => 'Pilih cluster dulu',
             'clusterId.exists' => 'Cluster tidak valid',
             'defaultQtyMika.required' => 'Isi default jumlah mika',
             'defaultQtyMika.min' => 'Minimal 1 mika',
@@ -65,7 +64,7 @@ class CreateKiosk extends Component
                 'name' => $this->namaKios,
                 'owner_name' => $this->namaPemilik,
                 'phone' => $this->telepon ?: null,
-                'cluster_id' => $this->clusterId,
+                'cluster_id' => $this->clusterId ?: null,
                 'default_qty_mika' => $this->defaultQtyMika,
                 'latitude' => $this->latitude,
                 'longitude' => $this->longitude,

@@ -65,7 +65,7 @@
         {{-- Cluster --}}
         <div>
             <label for="clusterId" class="block text-sm font-bold text-slate-900 mb-2">
-                Cluster <span class="text-red-500">*</span>
+                Cluster (opsional)
             </label>
             <select
                 id="clusterId"

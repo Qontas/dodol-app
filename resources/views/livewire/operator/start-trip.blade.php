@@ -78,7 +78,7 @@
             <input
                 type="number"
                 id="qtyCarried"
-                wire:model.live="qtyCarried"
+                wire:model="qtyCarried"
                 min="0"
                 inputmode="numeric"
                 class="w-full rounded-xl border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-2xl font-bold py-3">
