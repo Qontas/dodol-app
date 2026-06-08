@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Owner\MonthlyReportController;
+use App\Http\Controllers\Owner\TripExportController;
 use App\Http\Controllers\OwnerDashboardController;
 use App\Http\Controllers\OwnerSettingsController;
 use Illuminate\Support\Facades\Auth;
@@ -39,6 +41,24 @@ Route::middleware(['auth', 'verified', 'role:owner'])
             ->name('settings');
         Route::put('/settings', [OwnerSettingsController::class, 'update'])
             ->name('settings.update');
+    });
+
+// Laporan & export — owner + super admin (otorisasi per-trip di controller).
+Route::middleware(['auth', 'verified', 'role:owner,super_admin'])
+    ->prefix('owner')
+    ->name('owner.')
+    ->group(function () {
+        Route::get('/trips/{trip}/export/pdf', [TripExportController::class, 'pdf'])
+            ->name('trips.export.pdf');
+        Route::get('/trips/{trip}/export/excel', [TripExportController::class, 'excel'])
+            ->name('trips.export.excel');
+
+        Route::get('/reports/monthly', [MonthlyReportController::class, 'index'])
+            ->name('reports.monthly');
+        Route::get('/reports/monthly/export/pdf', [MonthlyReportController::class, 'pdf'])
+            ->name('reports.monthly.pdf');
+        Route::get('/reports/monthly/export/excel', [MonthlyReportController::class, 'excel'])
+            ->name('reports.monthly.excel');
     });
 
 Route::middleware(['auth', 'verified', 'role:operator'])
