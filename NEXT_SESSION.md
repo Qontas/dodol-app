@@ -4,18 +4,18 @@ _Sesi terakhir: 08 Juni 2026_
 
 ## TRIGGER SENTENCE
 
-Bg, lanjut dodol-app. 92 PASS. Bug 1-4 fixed + cash delivery selesai.
+Bg, lanjut dodol-app. 93 PASS. Real-time polling dashboard + Laporan bulanan dengan harga_mika custom selesai.
 GitHub: Qontas/dodol-app synced.
-PRIORITAS: Realtime dashboard polling → Laporan bulanan update → Super admin dashboard → Deploy.
+PRIORITAS: Super admin dashboard → Deploy.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS TERAKHIR
 
-- fix(operator): qty glitch + cluster optional + hide data sensitif
+- feat(owner): real-time dashboard polling and monthly report with custom harga_mika
 - fix(operator/bug4): drop extra cash detection + end trip summary
 - 8c278f5 feat(operator): cash delivery — kios cash only + drop extra cash
 - 950cd69 feat(import): KioskImporter format spreadsheet abang
-- Test: 92 PASS, 300 assertions
+- Test: 93 PASS, 313 assertions
 - GitHub: https://github.com/Qontas/dodol-app
 
 ## CREDENTIALS
@@ -26,27 +26,14 @@ Baca NEXT_SESSION.md untuk context lengkap.
 
 ## FITUR BERIKUTNYA (URUTAN PRIORITAS)
 
-### 1. Real-time polling owner dashboard (30 detik)
-
-Livewire polling di LiveTripProgress component + widget cards.
-Owner dashboard auto-update tanpa refresh manual.
-
-### 2. Laporan Bulanan — data tambahan
-
-- Total mika diantar = sum(qty_delivered) semua deliveries bulan itu
-- Modal mika = total_mika x harga_mika_per_owner (default Rp 200, custom per owner)
-- Tambah kolom harga_mika ke users table (default 200)
-- Rekap komisi operator per bulan
-  File: MonthlyReportController.php + monthly.blade.php + migration users
-
-### 3. Super Admin Dashboard
+### 1. Super Admin Dashboard
 
 Widget: total owner, total operator, total kios semua owner, omset hari ini semua owner.
 List owner + statistik singkat per owner.
 Super admin TIDAK input kios/cluster (data operasional urusan owner masing-masing).
 File: buat SuperAdminDashboardController + view
 
-### 4. Deploy ke Railway.app
+### 2. Deploy ke Railway.app
 
 Setelah semua fitur di atas selesai.
 
@@ -84,10 +71,10 @@ Setelah semua fitur di atas selesai.
 3. npm run dev
 4. php artisan optimize:clear
 
-Setelah Task 1 + Task 2:
+Setelah Selesai:
 php artisan test --compact
 git add .
-git commit -m "fix(operator): drop extra cash detection + handover docs updated"
+git commit -m "feat(owner): real-time dashboard polling and monthly report with custom harga_mika"
 git push origin main
 
 Report: commit hash + test status.
