@@ -43,4 +43,12 @@ class UserFactory extends Factory
             'email_verified_at' => null,
         ]);
     }
+
+    public function operator(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'role' => 'operator',
+            'owner_id' => User::factory(),
+        ]);
+    }
 }
