@@ -34,7 +34,7 @@
         @endif
 
         {{-- Widget statistik operasional --}}
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {{-- Omset Hari Ini --}}
             <div class="bg-white rounded-lg border border-slate-200 p-5">
                 <div class="flex items-center gap-2 text-slate-500">
@@ -73,7 +73,53 @@
                     Rp {{ number_format($totalOutstanding, 0, ',', '.') }}
                 </div>
             </div>
+
+            {{-- Total Stok Tersisa --}}
+            <div class="bg-white rounded-lg border border-slate-200 p-5">
+                <div class="flex items-center gap-2 text-slate-500">
+                    <svg class="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                    </svg>
+                    <span class="text-xs uppercase tracking-wide font-medium">Total Stok</span>
+                </div>
+                <div class="mt-3 text-2xl font-bold text-blue-600">
+                    {{ $totalStokTersisa }} mika
+                </div>
+            </div>
         </div>
+
+        {{-- Tabel Stok Per Batch --}}
+        @if ($batchStok->count() > 0)
+            <div class="bg-white rounded-lg border border-slate-200 mt-6">
+                <div class="px-5 py-4 border-b border-slate-100">
+                    <h3 class="font-bold text-slate-900">Stok Per Batch</h3>
+                </div>
+                <div class="divide-y divide-slate-100">
+                    @foreach ($batchStok as $batch)
+                        <div class="px-5 py-3 flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-slate-900">
+                                    Batch {{ \Carbon\Carbon::parse($batch['purchase_date'])->format('d M Y') }}
+                                </p>
+                                <p class="text-xs text-slate-500">
+                                    Total: {{ $batch['qty_packs'] }} mika
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-sm font-bold {{ $batch['is_habis'] ? 'text-red-600' : ($batch['is_hampis_habis'] ? 'text-amber-600' : 'text-green-600') }}">
+                                    {{ $batch['stok_tersisa'] }} mika
+                                </span>
+                                @if ($batch['is_habis'])
+                                    <p class="text-xs text-red-500">Habis</p>
+                                @elseif ($batch['is_hampis_habis'])
+                                    <p class="text-xs text-amber-500">Hampir Habis</p>
+                                @endif
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
 
         {{-- Live Trip Progress --}}
         <livewire:owner.live-trip-progress />

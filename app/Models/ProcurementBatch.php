@@ -73,4 +73,23 @@ class ProcurementBatch extends Model
         $delivered = (int) $this->deliveries()->sum('qty_delivered');
         return max(0, (int) $this->qty_packs - $delivered);
     }
+
+    /**
+     * Stok tersisa = qty_packs - total mika yang sudah di-drop dari batch ini.
+     * Alias eksplisit untuk fitur batch stok tracking (sama dengan remaining_packs).
+     */
+    public function getStokTersisaAttribute(): int
+    {
+        return $this->remaining_packs;
+    }
+
+    public function getIsHabisAttribute(): bool
+    {
+        return $this->stok_tersisa <= 0;
+    }
+
+    public function getIsHampisHabisAttribute(): bool
+    {
+        return $this->stok_tersisa > 0 && $this->stok_tersisa <= 10;
+    }
 }

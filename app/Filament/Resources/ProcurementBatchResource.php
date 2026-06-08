@@ -12,6 +12,7 @@ use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Columns\Summarizers\Summarizer;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -247,13 +248,25 @@ class ProcurementBatchResource extends Resource
                     ->sortable()
                     ->weight('bold'),
 
-                Tables\Columns\TextColumn::make('remaining_packs')
-                    ->label('Sisa Mika')
-                    ->getStateUsing(fn ($record) => $record->remaining_packs)
-                    ->suffix(' mika')
-                    ->alignRight()
-                    ->weight('bold')
-                    ->color(fn ($state) => $state > 0 ? 'success' : 'danger'),
+                Tables\Columns\TextColumn::make('stok_tersisa')
+                    ->label('Stok Tersisa')
+                    ->getStateUsing(fn ($record) => $record->stok_tersisa.' mika')
+                    ->badge()
+                    ->color(fn ($record) => match (true) {
+                        $record->is_habis => 'danger',
+                        $record->is_hampis_habis => 'warning',
+                        default => 'success',
+                    })
+                    ->sortable(false)
+                    ->summarize(
+                        Summarizer::make()
+                            ->label('Total sisa')
+                            // Hitung di SQL: per batch GREATEST(qty_packs - sum(qty_delivered), 0), lalu dijumlah.
+                            ->using(fn ($query): string => (int) $query->sum(\Illuminate\Support\Facades\DB::raw(
+                                'GREATEST(qty_packs - COALESCE((SELECT SUM(d.qty_delivered) FROM deliveries d '
+                                .'WHERE d.procurement_batch_id = procurement_batches.id), 0), 0)'
+                            )).' mika')
+                    ),
 
                 Tables\Columns\TextColumn::make('total_cost')
                     ->label('Total Cost')
