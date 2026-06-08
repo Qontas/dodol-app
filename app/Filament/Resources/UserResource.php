@@ -102,6 +102,15 @@ class UserResource extends Resource
                             ->helperText('Format desimal: 0.20 = 20%. Hanya untuk operator. Kosongkan untuk owner.')
                             ->visible(fn (Get $get) => $get('role') === 'operator'),
 
+                        Forms\Components\TextInput::make('hpp_per_mika')
+                            ->label('HPP per Mika (Rp)')
+                            ->numeric()
+                            ->default(9500)
+                            ->minValue(1)
+                            ->helperText('Harga Pokok Produksi per mika. Default: Rp 9.500')
+                            ->visible(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin']))
+                            ->required(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin'])),
+
                         Forms\Components\Toggle::make('is_active')
                             ->label('Status Aktif')
                             ->default(true)
@@ -148,6 +157,12 @@ class UserResource extends Resource
                     ->formatStateUsing(fn ($state) => $state ? number_format($state * 100, 0).'%' : '—')
                     ->alignCenter()
                     ->sortable(),
+
+                Tables\Columns\TextColumn::make('hpp_per_mika')
+                    ->label('HPP/Mika')
+                    ->money('IDR')
+                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false)
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Aktif')

@@ -98,19 +98,43 @@ class Trip extends Model
             ->sum('amount_paid');
     }
 
+    /**
+     * HPP per mika dari owner trip ini. Fallback Rp 9.500 kalau owner belum di-set.
+     */
+    private function getHpp(): float
+    {
+        return (float) ($this->owner?->hpp_per_mika ?? 9500);
+    }
+
+    /**
+     * Untung kotor per mika = harga jual (Rp 12.000) - HPP.
+     */
+    private function getUntungPerMika(): float
+    {
+        return 12000 - $this->getHpp();
+    }
+
+    /**
+     * Komisi reguler per mika = 20% dari untung kotor per mika.
+     */
+    private function getKomisiPerMika(): float
+    {
+        return $this->getUntungPerMika() * 0.2;
+    }
+
     public function getHppEstimasiAttribute(): float
     {
-        return $this->mika_terjual * 9500;
+        return $this->mika_terjual * $this->getHpp();
     }
 
     public function getUntungKotorAttribute(): float
     {
-        return $this->mika_terjual * 2500;
+        return $this->mika_terjual * $this->getUntungPerMika();
     }
 
     public function getKomisiRegulerAttribute(): float
     {
-        return $this->mika_terjual * 500;
+        return $this->mika_terjual * $this->getKomisiPerMika();
     }
 
     public function getKomisiKiosBaruAttribute(): float
