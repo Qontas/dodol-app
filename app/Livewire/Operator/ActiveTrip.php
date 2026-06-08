@@ -9,6 +9,7 @@ use App\Models\Delivery;
 use App\Models\Settlement;
 use App\Models\KioskVisit;
 use App\Models\ProductVariant;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 
@@ -32,6 +33,9 @@ class ActiveTrip extends Component
     // di model akan hilang antar-request. Array primitif aman diserialisasi.
     public array $visitedKioskIds = [];
     public array $pendingKioskIds = [];
+
+    // Flag pintar per kios: ['kioskId' => ['urgent','warning','fast_mover','slow_mover','new']]
+    public array $kioskFlags = [];
 
     // --- STATE GEO/NEAREST NEIGHBOR ---
     public bool $sortedByDistance = false;
@@ -108,6 +112,9 @@ class ActiveTrip extends Component
 
         $kiosks = $query->get();
 
+        // Flag pintar per kios (dihitung sekaligus, hindari N+1)
+        $this->computeKiosFlags($kiosks);
+
         // Kios dengan titipan yang belum di-settle (satu query, hindari N+1)
         $this->pendingKioskIds = Delivery::whereIn('kiosk_id', $kiosks->pluck('id'))
             ->doesntHave('settlement')
@@ -141,6 +148,78 @@ class ActiveTrip extends Component
             $this->kiosks = $kiosks
                 ->sortBy(fn ($k) => in_array($k->id, $visited, true))
                 ->values();
+        }
+    }
+
+    /**
+     * Hitung flag pintar untuk semua kios sekaligus (hindari N+1).
+     * Flag: urgent, warning, new, fast_mover, slow_mover.
+     */
+    private function computeKiosFlags(Collection $kiosks): void
+    {
+        $kioskIds = $kiosks->pluck('id')->all();
+        $this->kioskFlags = [];
+
+        if (empty($kioskIds)) {
+            return;
+        }
+
+        $today = now();
+        $thirtyDaysAgo = $today->copy()->subDays(30)->toDateString();
+
+        // Kunjungan terakhir per kios (MAX(visited_at)) — pakai index (kiosk_id, visited_at).
+        $lastVisits = KioskVisit::whereIn('kiosk_id', $kioskIds)
+            ->groupBy('kiosk_id')
+            ->selectRaw('kiosk_id, MAX(visited_at) as last_visit')
+            ->pluck('last_visit', 'kiosk_id');
+
+        // Rata-rata hari sampai habis (settle) per kios, minimal 3 settlement.
+        $avgDays = Settlement::query()
+            ->join('deliveries', 'settlements.delivery_id', '=', 'deliveries.id')
+            ->whereIn('deliveries.kiosk_id', $kioskIds)
+            ->groupBy('deliveries.kiosk_id')
+            ->havingRaw('COUNT(*) >= 3')
+            ->selectRaw('deliveries.kiosk_id as kiosk_id, AVG(DATEDIFF(settlements.visit_date, deliveries.created_at)) as avg_days')
+            ->pluck('avg_days', 'kiosk_id');
+
+        foreach ($kiosks as $kiosk) {
+            $flags = [];
+
+            $lastVisit = $lastVisits[$kiosk->id] ?? null;
+            // abs(): Carbon 3 diffInDays bertanda (tanggal lampau = negatif).
+            $daysSinceVisit = $lastVisit
+                ? (int) abs($today->diffInDays(\Illuminate\Support\Carbon::parse($lastVisit)))
+                : 999;
+
+            // URGENT — lewat target interval (default 10 hari).
+            $urgentThreshold = $kiosk->target_visit_interval_days ?: 10;
+            if ($daysSinceVisit > $urgentThreshold) {
+                $flags[] = 'urgent';
+            }
+
+            // HAMPIR EXPIRED — lewat warning interval (kalau belum urgent).
+            $warningThreshold = $kiosk->warning_visit_interval_days ?? null;
+            if ($warningThreshold && $daysSinceVisit > $warningThreshold && ! in_array('urgent', $flags, true)) {
+                $flags[] = 'warning';
+            }
+
+            // KIOS BARU — first_titip_date dalam 30 hari terakhir.
+            if ($kiosk->first_titip_date && $kiosk->first_titip_date->toDateString() >= $thirtyDaysAgo) {
+                $flags[] = 'new';
+            }
+
+            // FAST / SLOW MOVER — butuh threshold + minimal 3 data settle.
+            $threshold = $kiosk->fast_mover_threshold_days ?? null;
+            $avg = isset($avgDays[$kiosk->id]) ? (float) $avgDays[$kiosk->id] : null;
+            if ($threshold && $avg !== null) {
+                if ($avg < $threshold) {
+                    $flags[] = 'fast_mover';
+                } elseif ($avg > ($threshold * 2)) {
+                    $flags[] = 'slow_mover';
+                }
+            }
+
+            $this->kioskFlags[$kiosk->id] = $flags;
         }
     }
 

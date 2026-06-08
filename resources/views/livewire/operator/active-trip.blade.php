@@ -86,6 +86,23 @@
                         @if($hasPending)
                             <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Ada Titipan</span>
                         @endif
+
+                        {{-- Smart Kios Flags --}}
+                        @php $flags = $kioskFlags[$kiosk->id] ?? []; @endphp
+                        @if(in_array('urgent', $flags))
+                            <span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold">🔴 URGENT</span>
+                        @elseif(in_array('warning', $flags))
+                            <span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">⚠️ Hampir Expired</span>
+                        @endif
+                        @if(in_array('fast_mover', $flags))
+                            <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">⚡ Fast Mover</span>
+                        @endif
+                        @if(in_array('slow_mover', $flags))
+                            <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">🐢 Slow Mover</span>
+                        @endif
+                        @if(in_array('new', $flags))
+                            <span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">⭐ Kios Baru</span>
+                        @endif
                     </div>
                 </div>
                 @if(!$isVisited)

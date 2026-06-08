@@ -11,7 +11,20 @@
         <p class="text-slate-500 text-sm">Pilih cluster awal yang akan dikunjungi</p>
     </div>
 
+    {{-- Toggle Trip Bebas --}}
+    <div class="flex items-center gap-3 p-4 mb-4 bg-slate-50 rounded-xl border border-slate-200">
+        <input
+            type="checkbox"
+            wire:model.live="tripBebas"
+            id="tripBebas"
+            class="rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
+        <label for="tripBebas" class="text-sm font-medium text-slate-700 cursor-pointer">
+            Trip Bebas (Semua Kios, Lintas Cluster)
+        </label>
+    </div>
+
     {{-- Cluster List --}}
+    @unless ($tripBebas)
     <div class="space-y-3">
         @forelse ($clusters as $cluster)
             <button
@@ -68,9 +81,10 @@
     @error('selectedClusterId')
         <p class="mt-3 text-sm text-red-600 text-center">{{ $message }}</p>
     @enderror
+    @endunless
 
     {{-- Input Jumlah Mika Dibawa --}}
-    @if (count($clusters) > 0)
+    @if ($tripBebas || count($clusters) > 0)
         <div class="mt-6">
             <label for="qtyCarried" class="block text-sm font-bold text-slate-900 mb-2">
                 Berapa mika yang kamu bawa hari ini?
@@ -89,23 +103,23 @@
     @endif
 
     {{-- CTA Button --}}
-    @if (count($clusters) > 0)
+    @if ($tripBebas || count($clusters) > 0)
         <div class="mt-6">
             <button
                 type="button"
                 wire:click="startTrip"
                 wire:loading.attr="disabled"
                 wire:target="startTrip" {{-- <-- KUNCI DI SINI: Mencegah tombol terkunci saat milih cluster --}}
-                @disabled(!$selectedClusterId || $qtyCarried < 1)
+                @disabled((!$tripBebas && !$selectedClusterId) || $qtyCarried < 1)
                 class="w-full py-4 rounded-xl font-bold text-lg transition-all
-                    {{ ($selectedClusterId && $qtyCarried >= 1)
+                    {{ (($tripBebas || $selectedClusterId) && $qtyCarried >= 1)
                         ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-md active:scale-[0.98]'
                         : 'bg-slate-200 text-slate-400 cursor-not-allowed' }}
                     disabled:opacity-60 disabled:cursor-not-allowed"> {{-- <-- Tambahan utility class Tailwind untuk visual saat lock --}}
 
                 {{-- State Teks Normal --}}
                 <span wire:loading.remove wire:target="startTrip">
-                    @if (!$selectedClusterId)
+                    @if (!$tripBebas && !$selectedClusterId)
                         Pilih cluster dulu
                     @elseif ($qtyCarried < 1)
                         Isi jumlah mika dulu

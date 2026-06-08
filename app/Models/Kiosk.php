@@ -18,6 +18,7 @@ class Kiosk extends Model
         'cluster_id',
         'target_visit_interval_days',
         'warning_visit_interval_days',
+        'fast_mover_threshold_days',
         'location_description',
         'latitude',
         'longitude',
@@ -35,6 +36,7 @@ class Kiosk extends Model
         'first_titip_date' => 'date',
         'is_active' => 'boolean',
         'is_cash_only' => 'boolean',
+        'fast_mover_threshold_days' => 'integer',
     ];
 
     public function cluster(): BelongsTo

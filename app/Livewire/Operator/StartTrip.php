@@ -15,6 +15,9 @@ class StartTrip extends Component
     public ?int $selectedClusterId = null;
     public int $qtyCarried = 0;
 
+    // Trip Bebas: antar lintas cluster (semua kios aktif owner), tanpa pilih cluster.
+    public bool $tripBebas = false;
+
     public function mount(): void
     {
         $existingTrip = Trip::where('operator_id', auth()->id())
@@ -121,8 +124,11 @@ class StartTrip extends Component
 
     public function startTrip()
     {
+        // Trip Bebas: cluster tidak wajib. Trip biasa: cluster wajib dipilih.
+        $clusterRule = $this->tripBebas ? 'nullable|exists:clusters,id' : 'required|exists:clusters,id';
+
         $this->validate([
-            'selectedClusterId' => 'required|exists:clusters,id',
+            'selectedClusterId' => $clusterRule,
             'qtyCarried' => 'required|integer|min:1',
         ], [
             'selectedClusterId.required' => 'Pilih cluster dulu',
@@ -154,6 +160,12 @@ class StartTrip extends Component
 
         $nextNumber = ($numberQuery->max('trip_number_of_day') ?? 0) + 1;
 
+        // Trip Bebas → tanpa cluster awal (semua kios aktif owner).
+        $startingClusterId = $this->tripBebas ? null : $this->selectedClusterId;
+        $notes = $this->tripBebas
+            ? 'Trip Bebas (lintas cluster, semua kios)'
+            : "Cluster awal: cluster_id={$startingClusterId}";
+
         // Proteksi 2: Jaring Throwable Total (Menangkap segala jenis error database)
         try {
             $trip = Trip::create([
@@ -161,10 +173,10 @@ class StartTrip extends Component
                 'operator_id' => auth()->id(),
                 'trip_date' => today(),
                 'trip_number_of_day' => $nextNumber,
-                'starting_cluster_id' => $this->selectedClusterId,
+                'starting_cluster_id' => $startingClusterId,
                 'started_at' => now(),
                 'qty_carried_total' => $this->qtyCarried,
-                'notes' => "Cluster awal: cluster_id={$this->selectedClusterId}",
+                'notes' => $notes,
             ]);
         } catch (\Throwable $e) {
             // Segala macam ledakan duplikasi data diserap di sini.
