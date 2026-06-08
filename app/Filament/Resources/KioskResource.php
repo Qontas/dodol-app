@@ -160,6 +160,16 @@ class KioskResource extends Resource
                             ->suffix('hari')
                             ->helperText('Berapa hari sekali kios ini harus dikunjungi'),
 
+                        Forms\Components\TextInput::make('fast_mover_threshold_days')
+                            ->label('Threshold Fast Mover (hari)')
+                            ->numeric()
+                            ->nullable()
+                            ->minValue(1)
+                            ->maxValue(120)
+                            ->suffix('hari')
+                            ->helperText('Rata-rata habis < X hari = Fast Mover. Kosongkan = tidak dimonitor.')
+                            ->placeholder('Contoh: 5'),
+
                         Forms\Components\TextInput::make('default_qty_mika')
                             ->label('Default Qty Mika per Antar')
                             ->numeric()
@@ -243,6 +253,12 @@ class KioskResource extends Resource
                     ->label('Interval')
                     ->suffix(' hari')
                     ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('fast_mover_threshold_days')
+                    ->label('Fast Mover')
+                    ->suffix(' hari')
+                    ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('maps_link')
