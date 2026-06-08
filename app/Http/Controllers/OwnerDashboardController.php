@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Cluster;
 use App\Models\Kiosk;
 use App\Models\KioskVisit;
+use App\Models\ProcurementBatch;
 use App\Models\Settlement;
 use App\Models\Supplier;
 use App\Models\Trip;
@@ -96,6 +97,23 @@ class OwnerDashboardController extends Controller
             ->take(5)
             ->get();
 
+        // Widget stok batch — sisa mika per batch (scoped owner).
+        $batchStok = ProcurementBatch::where('owner_id', $ownerId)
+            ->with('deliveries')
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn ($batch) => [
+                'id' => $batch->id,
+                'purchase_date' => $batch->purchase_date,
+                'qty_packs' => $batch->qty_packs,
+                'stok_tersisa' => $batch->stok_tersisa,
+                'is_habis' => $batch->is_habis,
+                'is_hampis_habis' => $batch->is_hampis_habis,
+                'cost_per_pack' => $batch->cost_per_pack,
+            ]);
+
+        $totalStokTersisa = $batchStok->sum('stok_tersisa');
+
         return view('owner.dashboard', compact(
             'user',
             'stats',
@@ -105,7 +123,9 @@ class OwnerDashboardController extends Controller
             'chartLabels',
             'chartData',
             'activeTrips',
-            'completedTrips'
+            'completedTrips',
+            'batchStok',
+            'totalStokTersisa'
         ));
     }
 }
