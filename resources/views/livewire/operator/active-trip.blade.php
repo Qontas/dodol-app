@@ -104,6 +104,12 @@
                             <span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">⭐ Kios Baru</span>
                         @endif
                     </div>
+
+                    @if(isset($lastOperatorPerKiosk[$kiosk->id]))
+                        <p class="text-xs text-slate-400 mt-1">
+                            👤 {{ $lastOperatorPerKiosk[$kiosk->id]['name'] }} • {{ $lastOperatorPerKiosk[$kiosk->id]['date'] }}
+                        </p>
+                    @endif
                 </div>
                 @if(!$isVisited)
                     <svg class="h-5 w-5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">

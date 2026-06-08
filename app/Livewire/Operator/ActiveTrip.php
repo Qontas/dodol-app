@@ -37,6 +37,9 @@ class ActiveTrip extends Component
     // Flag pintar per kios: ['kioskId' => ['urgent','warning','fast_mover','slow_mover','new']]
     public array $kioskFlags = [];
 
+    // Operator terakhir yang mengunjungi tiap kios: ['kioskId' => ['name'=>..,'date'=>..]]
+    public array $lastOperatorPerKiosk = [];
+
     // --- STATE GEO/NEAREST NEIGHBOR ---
     public bool $sortedByDistance = false;
     public ?float $userLat = null;
@@ -114,6 +117,22 @@ class ActiveTrip extends Component
 
         // Flag pintar per kios (dihitung sekaligus, hindari N+1)
         $this->computeKiosFlags($kiosks);
+
+        // Operator terakhir yang mengunjungi tiap kios (1 query, hindari N+1)
+        $kioskIds = $kiosks->pluck('id')->all();
+        $lastOperatorData = KioskVisit::whereIn('kiosk_id', $kioskIds)
+            ->join('trips', 'kiosk_visits.trip_id', '=', 'trips.id')
+            ->join('users', 'trips.operator_id', '=', 'users.id')
+            ->groupBy('kiosk_visits.kiosk_id')
+            ->selectRaw('kiosk_visits.kiosk_id, MAX(kiosk_visits.visited_at) as last_visited_at, '
+                .'SUBSTRING_INDEX(GROUP_CONCAT(users.name ORDER BY kiosk_visits.visited_at DESC), ",", 1) as operator_name')
+            ->get()
+            ->keyBy('kiosk_id');
+
+        $this->lastOperatorPerKiosk = $lastOperatorData->map(fn ($row) => [
+            'name' => $row->operator_name,
+            'date' => \Carbon\Carbon::parse($row->last_visited_at)->translatedFormat('d M Y'),
+        ])->toArray();
 
         // Kios dengan titipan yang belum di-settle (satu query, hindari N+1)
         $this->pendingKioskIds = Delivery::whereIn('kiosk_id', $kiosks->pluck('id'))
