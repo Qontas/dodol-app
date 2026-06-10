@@ -15,6 +15,8 @@ class KioskVisit extends Model
         'kiosk_id',
         'visited_at',
         'visit_action',
+        'alasan_check',
+        'sisa_biji',
         'new_delivery_id',
         'settled_delivery_id',
         'extension_granted',
@@ -24,6 +26,7 @@ class KioskVisit extends Model
     protected $casts = [
         'visited_at' => 'datetime',
         'visit_action' => 'string',
+        'sisa_biji' => 'integer',
         'extension_granted' => 'boolean',
     ];
 

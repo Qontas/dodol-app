@@ -92,6 +92,19 @@
                     {{ $totalStokTersisa }} mika
                 </div>
             </div>
+
+            {{-- Untung Bersih Hari Ini --}}
+            <div class="bg-white rounded-lg border border-slate-200 p-5">
+                <div class="flex items-center gap-2 text-slate-500">
+                    <svg class="h-5 w-5 {{ $untungBersihHariIni > 0 ? 'text-green-600' : 'text-slate-400' }}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 6l9-4 9 4M4 10v8a2 2 0 002 2h12a2 2 0 002-2v-8M9 21V12h6v9"/>
+                    </svg>
+                    <span class="text-xs uppercase tracking-wide font-medium">Untung Bersih Hari Ini</span>
+                </div>
+                <div class="mt-3 text-2xl font-bold {{ $untungBersihHariIni > 0 ? 'text-green-600' : 'text-slate-400' }}">
+                    Rp {{ number_format($untungBersihHariIni, 0, ',', '.') }}
+                </div>
+            </div>
         </div>
 
         {{-- Tabel Stok Per Batch --}}

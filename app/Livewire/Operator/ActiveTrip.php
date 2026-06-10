@@ -64,6 +64,14 @@ class ActiveTrip extends Component
     // 'konsinyasi'  = semua konsinyasi penuh (tidak di-split) + naikkan default_qty_mika kios.
     public string $extraDropMode = 'cash';
 
+    // --- SKENARIO 4: turunkan default qty kios saat settle ---
+    public bool $turunkanDefault = false;
+    public int $qtyDefaultBaru = 0;
+
+    // --- SKENARIO 5: check_only + alasan + sisa biji ---
+    public string $alasanCheck = '';
+    public int $sisaBiji = 0;
+
     // Kalkulasi Sistem
     public $terjual = 0;
     public $tagihan = 0;
@@ -305,6 +313,10 @@ class ActiveTrip extends Component
         $this->tagihan = 0;
         $this->uangDiterima = 0;
         $this->extraDropMode = 'cash';
+        $this->turunkanDefault = false;
+        $this->qtyDefaultBaru = 0;
+        $this->alasanCheck = '';
+        $this->sisaBiji = 0;
 
         $this->resetErrorBag();
         $this->isVisitModalOpen = true;
@@ -545,6 +557,14 @@ class ActiveTrip extends Component
                     ]);
                 }
 
+                // SKENARIO 4: turunkan default qty kios saat settle (harus lebih kecil
+                // dari default saat ini agar tidak bentrok dengan logika naik-default).
+                if ($isSettleAction && $this->turunkanDefault
+                    && $this->qtyDefaultBaru > 0
+                    && $this->qtyDefaultBaru < (int) $this->selectedKiosk->default_qty_mika) {
+                    $this->selectedKiosk->update(['default_qty_mika' => $this->qtyDefaultBaru]);
+                }
+
                 // 2. Drop titipan baru (new_procurement, tanpa link batch — operasional bebas)
                 if ($isDrop) {
                     // Kalau drop melebihi default: bagian default = konsinyasi, sisanya = cash.
@@ -598,12 +618,14 @@ class ActiveTrip extends Component
                     }
                 }
 
-                // 3. Catat kunjungan
+                // 3. Catat kunjungan (alasan & sisa biji hanya untuk check_only)
                 KioskVisit::create([
                     'trip_id' => $this->trip->id,
                     'kiosk_id' => $this->selectedKiosk->id,
                     'visited_at' => now(),
                     'visit_action' => $action,
+                    'alasan_check' => $action === 'check_only' ? ($this->alasanCheck ?: null) : null,
+                    'sisa_biji' => $action === 'check_only' && $this->sisaBiji > 0 ? $this->sisaBiji : null,
                     'new_delivery_id' => $newDeliveryId,
                     'settled_delivery_id' => $settledDeliveryId,
                     'extension_granted' => $extension,

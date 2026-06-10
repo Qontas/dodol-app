@@ -397,6 +397,51 @@
                         </div>
                     @endif
                 </div>
+
+                {{-- SKENARIO 5: check_only — alasan + sisa biji --}}
+                @if($this->visitAction === 'check_only')
+                    <div class="mt-4 space-y-4">
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2">Alasan Kunjungan</label>
+                            <div class="grid grid-cols-2 gap-2">
+                                @foreach([
+                                    'kios_tutup' => '🔒 Kios Tutup',
+                                    'pemilik_minta_tunggu' => '⏳ Minta Tunggu',
+                                    'tidak_ada_uang' => '💸 Tidak Ada Uang',
+                                    'dodol_masih_banyak' => '📦 Dodol Masih Ada',
+                                ] as $val => $label)
+                                    <label class="flex items-center gap-2 p-3 rounded-xl border cursor-pointer {{ $alasanCheck === $val ? 'border-amber-400 bg-amber-50' : 'border-slate-200' }}">
+                                        <input type="radio" wire:model.live="alasanCheck" value="{{ $val }}" class="sr-only">
+                                        <span class="text-sm font-medium">{{ $label }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2">Sisa Dodol di Kios (Biji)</label>
+                            <input type="number" wire:model="sisaBiji" class="w-full rounded-xl border-slate-300 text-center text-xl font-bold py-3" min="0" placeholder="0">
+                            <p class="text-xs text-slate-400 mt-1">Isi 0 kalau tidak tahu atau kios tutup</p>
+                        </div>
+                    </div>
+                @endif
+
+                {{-- SKENARIO 4: turunkan default qty — muncul saat settle --}}
+                @if(in_array($this->visitAction, ['settle_only', 'drop_and_settle']) && (int) $selectedKiosk->default_qty_mika > 1)
+                    <div class="mt-3">
+                        <label class="flex items-center gap-3 cursor-pointer p-3 rounded-xl border border-slate-200">
+                            <input type="checkbox" wire:model.live="turunkanDefault" class="rounded text-amber-600">
+                            <span class="text-sm font-medium text-slate-700">Turunkan default qty kios ini</span>
+                        </label>
+                        @if($turunkanDefault)
+                            <div class="mt-2">
+                                <label class="text-xs text-slate-500">Default baru (mika)</label>
+                                <input type="number" wire:model="qtyDefaultBaru" min="1" max="{{ (int) $selectedKiosk->default_qty_mika - 1 }}" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
+                                <p class="text-xs text-amber-600 mt-1">Pengantaran berikutnya: {{ $qtyDefaultBaru ?: '?' }} mika</p>
+                            </div>
+                        @endif
+                    </div>
+                @endif
             </div>
 
             <div class="sticky bottom-0 bg-white border-t border-slate-100 p-4 z-10">
