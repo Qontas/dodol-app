@@ -1,4 +1,4 @@
-<div class="max-w-md mx-auto pb-20" x-data="{
+<div class="max-w-md mx-auto pb-28" x-data="{
     loading: false,
     sortByDistance() {
         if (!navigator.geolocation) {
@@ -281,9 +281,9 @@
                     <span class="text-slate-500">Aksi:</span>
                     <span class="font-bold text-amber-700">
                         @switch($this->visitAction)
-                            @case('drop_and_settle') Settle + Drop Baru @break
+                            @case('drop_and_settle') Pembayaran + Drop Baru @break
                             @case('drop_only') Drop Baru @break
-                            @case('settle_only') Settle Saja @break
+                            @case('settle_only') Pembayaran Saja @break
                             @case('cash_sale') Penjualan Cash @break
                             @default Kunjungan (Cek)
                         @endswitch
@@ -302,7 +302,7 @@
                         </div>
                     @endif
 
-                    {{-- AREA SETTLEMENT (Jika ada titipan lama) --}}
+                    {{-- AREA PEMBAYARAN (Jika ada titipan lama) --}}
                     <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
                         <div class="flex justify-between items-center mb-4">
                             <span class="text-xs font-bold text-amber-800 uppercase tracking-wider">Titipan Sebelumnya</span>
@@ -377,10 +377,24 @@
                     @if($isCashOnly)
                         <p class="mt-2 text-xs font-medium text-emerald-700">Penjualan cash — langsung lunas, tanpa konsinyasi.</p>
                     @elseif(!empty($selectedKiosk->default_qty_mika) && (int) $dropBaru > (int) $selectedKiosk->default_qty_mika)
-                        <p class="mt-2 text-xs font-medium text-amber-700">
-                            {{ (int) $selectedKiosk->default_qty_mika }} mika konsinyasi +
-                            {{ (int) $dropBaru - (int) $selectedKiosk->default_qty_mika }} mika cash langsung
-                        </p>
+                        <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                            <p class="text-sm font-bold text-amber-800 mb-3">
+                                Drop melebihi default ({{ (int) $selectedKiosk->default_qty_mika }} mika).
+                                Kelebihan {{ (int) $dropBaru - (int) $selectedKiosk->default_qty_mika }} mika:
+                            </p>
+                            <div class="space-y-2">
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="radio" wire:model.live="extraDropMode" value="cash" class="text-amber-600">
+                                    <span class="text-sm text-slate-700">💵 Bayar cash sekarang</span>
+                                </label>
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="radio" wire:model.live="extraDropMode" value="konsinyasi" class="text-amber-600">
+                                    <span class="text-sm text-slate-700">
+                                        📦 Tambah konsinyasi + naikkan default ke {{ (int) $dropBaru }} mika
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
                     @endif
                 </div>
             </div>

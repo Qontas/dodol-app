@@ -1,4 +1,4 @@
-<div class="max-w-md mx-auto">
+<div class="max-w-md mx-auto pb-24">
     {{-- Header --}}
     <div class="mb-6">
         <a href="{{ route('operator.dashboard') }}" class="text-slate-500 text-sm flex items-center gap-1 hover:text-slate-800">
@@ -8,7 +8,7 @@
             Kembali ke Dashboard
         </a>
         <h1 class="text-2xl font-bold text-slate-900 mt-2">Mulai Trip</h1>
-        <p class="text-slate-500 text-sm">Pilih cluster awal yang akan dikunjungi</p>
+        <p class="text-slate-500 text-sm">Pilih area awal yang akan dikunjungi</p>
     </div>
 
     {{-- Toggle Trip Bebas --}}
@@ -19,7 +19,7 @@
             id="tripBebas"
             class="rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
         <label for="tripBebas" class="text-sm font-medium text-slate-700 cursor-pointer">
-            Trip Bebas (Semua Kios, Lintas Cluster)
+            Trip Bebas (Semua Kios, Lintas Area)
         </label>
     </div>
 
@@ -71,8 +71,8 @@
                 <svg class="mx-auto h-12 w-12 text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
                 </svg>
-                <p class="text-slate-700 font-medium">Belum ada cluster aktif</p>
-                <p class="text-xs text-slate-500 mt-2">Hubungi owner untuk setup cluster dulu</p>
+                <p class="text-slate-700 font-medium">Belum ada area aktif</p>
+                <p class="text-xs text-slate-500 mt-2">Hubungi owner untuk setup area dulu</p>
             </div>
         @endforelse
     </div>
@@ -120,7 +120,7 @@
                 {{-- State Teks Normal --}}
                 <span wire:loading.remove wire:target="startTrip">
                     @if (!$tripBebas && !$selectedClusterId)
-                        Pilih cluster dulu
+                        Pilih area dulu
                     @elseif ($qtyCarried < 1)
                         Isi jumlah mika dulu
                     @else

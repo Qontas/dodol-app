@@ -30,6 +30,9 @@ class SuperAdminStatsOverview extends BaseWidget
 
         $komisi = Commission::whereDate('paid_at', today())->sum('commission_amount');
 
+        // Rata-rata omset per owner aktif (guard pembagian nol).
+        $avgOmsetPerOwner = $owners > 0 ? $omset / $owners : 0;
+
         return [
             Stat::make('Owner & Operator Aktif', $owners + $operators)
                 ->description("{$owners} Owner, {$operators} Operator")
@@ -41,6 +44,9 @@ class SuperAdminStatsOverview extends BaseWidget
                 ->icon('heroicon-o-truck'),
             Stat::make('Total Omset Global Hari Ini', 'Rp ' . number_format($omset, 0, ',', '.'))
                 ->icon('heroicon-o-currency-dollar'),
+            Stat::make('Rata-rata Omset per Owner Hari Ini', 'Rp ' . number_format($avgOmsetPerOwner, 0, ',', '.'))
+                ->description("Dibagi {$owners} owner aktif")
+                ->icon('heroicon-o-scale'),
             Stat::make('Total Komisi Operator Global Hari Ini', 'Rp ' . number_format($komisi, 0, ',', '.'))
                 ->icon('heroicon-o-gift'),
         ];

@@ -59,6 +59,11 @@ class ActiveTrip extends Component
     public $dropBaru = 0;
     public $uangDiterima = 0;
 
+    // Mode penanganan kelebihan drop di atas default_qty_mika (hanya kios non-cash).
+    // 'cash'        = bagian default konsinyasi, sisanya cash langsung (default, backward compat).
+    // 'konsinyasi'  = semua konsinyasi penuh (tidak di-split) + naikkan default_qty_mika kios.
+    public string $extraDropMode = 'cash';
+
     // Kalkulasi Sistem
     public $terjual = 0;
     public $tagihan = 0;
@@ -299,6 +304,7 @@ class ActiveTrip extends Component
         $this->terjual = 0;
         $this->tagihan = 0;
         $this->uangDiterima = 0;
+        $this->extraDropMode = 'cash';
 
         $this->resetErrorBag();
         $this->isVisitModalOpen = true;
@@ -472,10 +478,15 @@ class ActiveTrip extends Component
             return;
         }
 
-        // Deteksi drop extra cash: kelebihan di atas default_qty_mika bayar cash langsung.
+        // Deteksi drop melebihi default_qty_mika. Operator memilih perlakuan kelebihan:
+        // - 'cash'       : bagian default konsinyasi, sisanya cash langsung (default).
+        // - 'konsinyasi' : semua konsinyasi penuh + naikkan default kios ke jumlah drop.
         $defaultQty = (int) ($this->selectedKiosk->default_qty_mika ?? 0);
         $extraQty = max(0, $drop - $defaultQty);
-        $hasCashExtra = $isDrop && $extraQty > 0 && $defaultQty > 0;
+        $hasCashExtra = $isDrop && $extraQty > 0 && $defaultQty > 0
+            && $this->extraDropMode === 'cash';
+        $isKonsinyasiFull = $isDrop && $extraQty > 0 && $defaultQty > 0
+            && $this->extraDropMode === 'konsinyasi';
 
         // Extension hanya berlaku untuk aksi yang seharusnya settle + ada titipan lama.
         // Kalau granted: settle DITUNDA (tidak buat row settlements), drop tetap jalan.
@@ -510,7 +521,7 @@ class ActiveTrip extends Component
         }
 
         try {
-            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $extraQty, $hasCashExtra) {
+            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $extraQty, $hasCashExtra, $isKonsinyasiFull) {
                 $newDeliveryId = null;
                 $settledDeliveryId = null;
 
@@ -551,6 +562,12 @@ class ActiveTrip extends Component
                         'cost_snapshot' => null,
                     ]);
                     $newDeliveryId = $newDelivery->id;
+
+                    // Konsinyasi penuh: kelebihan tidak dijual cash, melainkan dinaikkan
+                    // jadi default baru kios (semua mika di-drop sebagai konsinyasi).
+                    if ($isKonsinyasiFull) {
+                        $this->selectedKiosk->update(['default_qty_mika' => $drop]);
+                    }
 
                     // Kelebihan di atas default = delivery cash terpisah, langsung lunas.
                     if ($hasCashExtra) {
@@ -600,8 +617,14 @@ class ActiveTrip extends Component
 
         // 4. Refresh daftar + reset form + tutup modal
         $this->loadKiosks();
+
+        $message = $isKonsinyasiFull
+            ? "Kunjungan disimpan. Default kios diperbarui ke {$drop} mika."
+            : 'Kunjungan berhasil disimpan.';
+
+        $this->extraDropMode = 'cash';
         $this->closeVisitModal();
-        session()->flash('visit_saved', 'Kunjungan berhasil disimpan.');
+        session()->flash('visit_saved', $message);
     }
 
     // --- END TRIP FLOW ---

@@ -41,11 +41,11 @@
         @foreach ($items as $item)
             @if ($item['route'])
                 <a href="{{ route($item['route']) }}"
-                   class="py-3 {{ $item['active'] ? 'text-amber-600 font-semibold' : 'text-slate-600' }}">
+                   class="min-h-[48px] flex items-center justify-center px-1 leading-tight {{ $item['active'] ? 'text-amber-600 font-semibold' : 'text-slate-600' }}">
                     {{ $item['label'] }}
                 </a>
             @else
-                <span class="py-3 text-slate-400 cursor-not-allowed" title="Segera hadir">{{ $item['label'] }}</span>
+                <span class="min-h-[48px] flex items-center justify-center px-1 leading-tight text-slate-400 cursor-not-allowed" title="Segera hadir">{{ $item['label'] }}</span>
             @endif
         @endforeach
     </nav>
