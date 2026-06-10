@@ -263,9 +263,9 @@
         </div>
 
         <div class="mt-6">
-            <a href="{{ route('filament.admin.pages.dashboard') }}"
+            <a href="{{ route('filament.owner.pages.dashboard') }}"
                class="inline-block bg-amber-600 text-white px-6 py-3 rounded-lg hover:bg-amber-700 font-medium">
-                Buka Admin Panel (Manajemen Data)
+                Buka Panel Manajemen Data
             </a>
         </div>
     </div>
