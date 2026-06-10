@@ -425,6 +425,21 @@ class ActiveTrip extends Component
             return;
         }
 
+        // Guard idempotensi: submit ganda (koneksi lambat, request retry) tidak
+        // boleh membuat kunjungan duplikat. Kunjungan ulang yang sah ke kios
+        // yang sama tetap bisa setelah jeda singkat ini.
+        $alreadySaved = KioskVisit::where('trip_id', $this->trip->id)
+            ->where('kiosk_id', $this->selectedKiosk->id)
+            ->where('visited_at', '>=', now()->subSeconds(10))
+            ->exists();
+
+        if ($alreadySaved) {
+            $this->loadKiosks();
+            $this->closeVisitModal();
+            session()->flash('visit_saved', 'Kunjungan sudah tersimpan.');
+            return;
+        }
+
         $drop = (int) $this->dropBaru;
         $fresh = (int) $this->returnFresh;
         $expired = (int) $this->returnExpired;
