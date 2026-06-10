@@ -63,6 +63,14 @@ class OwnerDashboardController extends Controller
             ->selectRaw('SUM(amount_due - amount_paid) as total')
             ->value('total') ?? 0;
 
+        // Widget — Untung bersih hari ini: jumlah untung_bersih_owner dari trip
+        // milik owner yang sudah selesai hari ini.
+        $untungBersihHariIni = Trip::where('owner_id', $ownerId)
+            ->whereDate('trip_date', today())
+            ->whereNotNull('ended_at')
+            ->get()
+            ->sum('untung_bersih_owner');
+
         // Data: sum(amount_paid) per hari 30 hari terakhir
         $startDate = today()->subDays(29);
         $endDate = today();
@@ -120,6 +128,7 @@ class OwnerDashboardController extends Controller
             'omsetHariIni',
             'overdueCount',
             'totalOutstanding',
+            'untungBersihHariIni',
             'chartLabels',
             'chartData',
             'activeTrips',
