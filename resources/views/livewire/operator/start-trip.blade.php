@@ -1,4 +1,9 @@
 <div class="max-w-md mx-auto pb-24">
+    {{-- Banner offline: operator harus tahu koneksi putus, bukan spinner selamanya --}}
+    <div wire:offline class="fixed top-0 inset-x-0 z-[60] bg-red-600 text-white text-center text-sm font-semibold py-2.5 shadow-md">
+        Koneksi internet terputus. Periksa sinyal, lalu coba lagi.
+    </div>
+
     {{-- Header --}}
     <div class="mb-6">
         <a href="{{ route('operator.dashboard') }}" class="text-slate-500 text-sm flex items-center gap-1 hover:text-slate-800">
