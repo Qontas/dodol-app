@@ -23,6 +23,11 @@
         );
     }
 }">
+    {{-- Banner offline: operator harus tahu koneksi putus, bukan spinner selamanya --}}
+    <div wire:offline class="fixed top-0 inset-x-0 z-[60] bg-red-600 text-white text-center text-sm font-semibold py-2.5 shadow-md">
+        Koneksi internet terputus. Periksa sinyal, lalu coba lagi.
+    </div>
+
     {{-- Header --}}
     <div class="mb-6 bg-white p-4 border-b border-slate-200 shadow-sm">
         <div class="flex justify-between items-start">
@@ -47,10 +52,10 @@
     <div class="px-4 space-y-3">
         <div class="flex justify-between items-center mb-2">
             <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Daftar Kunjungan</h2>
-            <button type="button" 
+            <button type="button"
                     @click="sortByDistance()"
                     :disabled="loading"
-                    class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-sm ring-1 ring-inset transition-colors
+                    class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2.5 min-h-[44px] text-sm font-semibold shadow-sm ring-1 ring-inset transition-colors
                            {{ $sortedByDistance ? 'bg-amber-600 text-white ring-amber-600 hover:bg-amber-700' : 'bg-amber-50 text-amber-700 ring-amber-600/20 hover:bg-amber-100 active:bg-amber-200' }}
                            disabled:opacity-50">
                 <svg x-show="!loading" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -61,7 +66,7 @@
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <span x-text="loading ? 'Mencari...' : '{{ $sortedByDistance ? 'Terurut by Jarak' : 'Urutkan by Jarak' }}'">Urutkan by Jarak</span>
+                <span x-text="loading ? 'Mencari...' : '{{ $sortedByDistance ? 'Terurut Jarak Terdekat' : 'Urutkan Jarak' }}'">Urutkan Jarak</span>
             </button>
         </div>
         
