@@ -75,6 +75,25 @@ class OwnerPerformanceTable extends BaseWidget
                             ->get();
                         return 'Rp ' . number_format($trips->sum('untung_bersih_owner'), 0, ',', '.');
                     }),
+
+                TextColumn::make('total_trip_bulan_ini')
+                    ->label('Total Trip Bulan Ini')
+                    ->state(function (User $record) {
+                        return Trip::where('owner_id', $record->id)
+                            ->whereMonth('trip_date', now()->month)
+                            ->whereYear('trip_date', now()->year)
+                            ->count();
+                    }),
+
+                TextColumn::make('omset_bulan_ini')
+                    ->label('Omset Bulan Ini')
+                    ->state(function (User $record) {
+                        $trips = Trip::where('owner_id', $record->id)
+                            ->whereMonth('trip_date', now()->month)
+                            ->whereYear('trip_date', now()->year)
+                            ->get();
+                        return 'Rp ' . number_format($trips->sum('omset_val'), 0, ',', '.');
+                    }),
             ]);
     }
 }

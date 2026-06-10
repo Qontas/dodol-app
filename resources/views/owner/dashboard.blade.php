@@ -20,7 +20,7 @@
                 <div class="mt-2 text-3xl font-bold text-slate-900">{{ $stats['total_kios'] }}</div>
             </div>
             <div class="bg-white rounded-lg border border-slate-200 p-4">
-                <div class="text-xs uppercase tracking-wide text-slate-500">Total Cluster</div>
+                <div class="text-xs uppercase tracking-wide text-slate-500">Total Area</div>
                 <div class="mt-2 text-3xl font-bold text-slate-900">{{ $stats['total_cluster'] }}</div>
             </div>
             <div class="bg-white rounded-lg border border-slate-200 p-4">
@@ -35,7 +35,7 @@
 
         @if (array_sum($stats) === 0)
             <div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4 text-sm">
-                Database masih kosong. Mulai dengan input cluster &amp; kios dari menu sidebar.
+                Database masih kosong. Mulai dengan input area &amp; kios dari menu sidebar.
             </div>
         @endif
 
@@ -60,7 +60,7 @@
                     <svg class="h-5 w-5 {{ $overdueCount > 0 ? 'text-red-600' : 'text-amber-500' }}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
                     </svg>
-                    <span class="text-xs uppercase tracking-wide font-medium">Kios Overdue</span>
+                    <span class="text-xs uppercase tracking-wide font-medium">Kios Perlu Dikunjungi</span>
                 </div>
                 <div class="mt-3 text-2xl font-bold {{ $overdueCount > 0 ? 'text-red-600' : 'text-amber-500' }}">
                     {{ $overdueCount }} kios
@@ -73,7 +73,7 @@
                     <svg class="h-5 w-5 {{ $totalOutstanding > 0 ? 'text-red-600' : 'text-green-600' }}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
-                    <span class="text-xs uppercase tracking-wide font-medium">Outstanding</span>
+                    <span class="text-xs uppercase tracking-wide font-medium">Belum Bayar</span>
                 </div>
                 <div class="mt-3 text-2xl font-bold {{ $totalOutstanding > 0 ? 'text-red-600' : 'text-green-600' }}">
                     Rp {{ number_format($totalOutstanding, 0, ',', '.') }}
@@ -212,11 +212,11 @@
                             <p class="text-base font-bold text-amber-700">{{ number_format($completedTrip->mika_kios_baru, 2, ',', '.') }} mika</p>
                         </div>
                         <div>
-                            <p class="text-[10px] uppercase text-slate-500 font-medium">HPP Estimasi</p>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">Modal Dodol</p>
                             <p class="text-base font-bold text-red-600">Rp {{ number_format($completedTrip->hpp_estimasi, 0, ',', '.') }}</p>
                         </div>
                         <div>
-                            <p class="text-[10px] uppercase text-slate-500 font-medium">Untung Kotor</p>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">Keuntungan</p>
                             <p class="text-base font-bold text-green-600">Rp {{ number_format($completedTrip->untung_kotor, 0, ',', '.') }}</p>
                         </div>
                     </div>
