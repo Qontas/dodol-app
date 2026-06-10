@@ -8,6 +8,7 @@ use App\Models\Delivery;
 use App\Models\Kiosk;
 use App\Models\KioskVisit;
 use App\Models\ProductVariant;
+use App\Models\Settlement;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -144,5 +145,48 @@ class ActiveTripAdvancedScenarioTest extends TestCase
         $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
 
         $this->assertNull($kiosk->fresh()->prediksi_habis);
+    }
+
+    /** Skenario 7: BS redistribusi = delivery terpisah (titipan, tanpa settlement). */
+    public function test_drop_with_bs_redistribution_creates_separate_delivery()
+    {
+        $kiosk = Kiosk::factory()->create([
+            'cluster_id' => $this->cluster->id,
+            'default_qty_mika' => 10, // tinggi agar drop 5 tidak ke-split cash/konsinyasi
+        ]);
+
+        $this->actingAs($this->operator);
+
+        Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $kiosk->id)
+            ->set('dropBaru', 5)
+            ->set('adaBsRedistribusi', true)
+            ->set('qtyBsMika', 3)
+            ->call('saveVisit')
+            ->assertHasNoErrors();
+
+        // Delivery konsinyasi normal (dari stok baru).
+        $this->assertDatabaseHas('deliveries', [
+            'kiosk_id' => $kiosk->id,
+            'trip_id' => $this->trip->id,
+            'delivery_type' => 'consignment',
+            'qty_delivered' => 5,
+        ]);
+
+        // Delivery BS redistribusi terpisah, HPP 0.
+        $this->assertDatabaseHas('deliveries', [
+            'kiosk_id' => $kiosk->id,
+            'trip_id' => $this->trip->id,
+            'delivery_type' => 'bs_redistribution',
+            'qty_delivered' => 3,
+            'cost_snapshot' => 0,
+        ]);
+
+        // Titipan konsinyasi biasa → tidak ada settlement saat drop.
+        $this->assertEquals(0, Settlement::count());
+
+        // Counter trip + total drop real (exclude BS).
+        $this->assertEquals(3, $this->trip->fresh()->qty_bs_redistributed);
+        $this->assertEquals(5, $this->trip->fresh()->getTotalDropReal());
     }
 }

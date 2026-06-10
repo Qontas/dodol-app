@@ -398,6 +398,26 @@
                     @endif
                 </div>
 
+                {{-- SKENARIO 7: BS redistribusi — muncul saat drop (non-cash) --}}
+                @if(in_array($this->visitAction, ['drop_only', 'drop_and_settle']) && !$isCashOnly)
+                    <div class="mt-3">
+                        <label class="flex items-center gap-3 cursor-pointer p-3 rounded-xl border border-slate-200">
+                            <input type="checkbox" wire:model.live="adaBsRedistribusi" class="rounded text-amber-600">
+                            <span class="text-sm font-medium text-slate-700">Ada mika BS redistribusi ikut di-drop</span>
+                        </label>
+                        @if($adaBsRedistribusi)
+                            <div class="mt-2">
+                                <label class="text-xs text-slate-500">Jumlah mika BS yang ikut (mika)</label>
+                                <input type="number" wire:model.live="qtyBsMika" min="1" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
+                                <p class="text-xs text-slate-400 mt-1">
+                                    Total drop ke kios ini: {{ (int) $dropBaru + (int) $qtyBsMika }} mika
+                                    ({{ (int) $dropBaru }} baru + {{ (int) $qtyBsMika }} BS)
+                                </p>
+                            </div>
+                        @endif
+                    </div>
+                @endif
+
                 {{-- SKENARIO 5: check_only — alasan + sisa biji --}}
                 @if($this->visitAction === 'check_only')
                     <div class="mt-4 space-y-4">

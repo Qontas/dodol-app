@@ -72,6 +72,10 @@ class ActiveTrip extends Component
     public string $alasanCheck = '';
     public int $sisaBiji = 0;
 
+    // --- SKENARIO 7: BS redistribusi (mika BS dari kios lain ikut di-drop) ---
+    public bool $adaBsRedistribusi = false;
+    public int $qtyBsMika = 0;
+
     // Kalkulasi Sistem
     public $terjual = 0;
     public $tagihan = 0;
@@ -317,6 +321,8 @@ class ActiveTrip extends Component
         $this->qtyDefaultBaru = 0;
         $this->alasanCheck = '';
         $this->sisaBiji = 0;
+        $this->adaBsRedistribusi = false;
+        $this->qtyBsMika = 0;
 
         $this->resetErrorBag();
         $this->isVisitModalOpen = true;
@@ -500,6 +506,12 @@ class ActiveTrip extends Component
         $isKonsinyasiFull = $isDrop && $extraQty > 0 && $defaultQty > 0
             && $this->extraDropMode === 'konsinyasi';
 
+        // SKENARIO 7: mika BS redistribusi yang ikut di-drop (delivery terpisah,
+        // titipan konsinyasi biasa — TIDAK di-settle saat ini, dibayar saat terjual).
+        $bsMika = ($isDrop && $this->adaBsRedistribusi && (int) $this->qtyBsMika > 0)
+            ? (int) $this->qtyBsMika
+            : 0;
+
         // Extension hanya berlaku untuk aksi yang seharusnya settle + ada titipan lama.
         // Kalau granted: settle DITUNDA (tidak buat row settlements), drop tetap jalan.
         $extension = $this->extensionGranted && $hasPending && $isSettleAction;
@@ -533,7 +545,7 @@ class ActiveTrip extends Component
         }
 
         try {
-            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $extraQty, $hasCashExtra, $isKonsinyasiFull) {
+            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $extraQty, $hasCashExtra, $isKonsinyasiFull, $bsMika) {
                 $newDeliveryId = null;
                 $settledDeliveryId = null;
 
@@ -615,6 +627,26 @@ class ActiveTrip extends Component
                             'amount_due' => $amountDueCash,
                             'amount_paid' => $amountDueCash, // langsung lunas
                         ]);
+                    }
+
+                    // SKENARIO 7: mika BS redistribusi = delivery terpisah, titipan
+                    // konsinyasi biasa (HPP 0 karena loss sudah dihitung di kios asal).
+                    // TIDAK di-settle sekarang — dibayar nanti saat terjual, seperti titipan normal.
+                    if ($bsMika > 0) {
+                        Delivery::create([
+                            'kiosk_id' => $this->selectedKiosk->id,
+                            'trip_id' => $this->trip->id,
+                            'product_variant_id' => $variant->id,
+                            'procurement_batch_id' => null,
+                            'source_type' => 'new_procurement',
+                            'delivery_type' => 'bs_redistribution',
+                            'qty_delivered' => $bsMika,
+                            'unit_price' => $variant->sale_price_per_pack,
+                            'cost_snapshot' => 0,
+                        ]);
+
+                        // qty BS tidak berasal dari qty_carried → dicatat terpisah.
+                        $this->trip->increment('qty_bs_redistributed', $bsMika);
                     }
                 }
 

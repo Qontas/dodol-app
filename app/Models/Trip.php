@@ -21,6 +21,7 @@ class Trip extends Model
         'ended_at',
         'ended_reason',
         'qty_carried_total',
+        'qty_bs_redistributed',
         'starting_cluster_id',
         'notes',
     ];
@@ -44,6 +45,17 @@ class Trip extends Model
     public function deliveries(): HasMany
     {
         return $this->hasMany(Delivery::class);
+    }
+
+    /**
+     * Total mika drop yang benar-benar berasal dari stok baru yang dibawa
+     * operator — mengecualikan mika BS redistribusi (yang bukan dari qty_carried).
+     */
+    public function getTotalDropReal(): int
+    {
+        return (int) $this->deliveries()
+            ->where('delivery_type', '!=', 'bs_redistribution')
+            ->sum('qty_delivered');
     }
 
     public function visits(): HasMany
