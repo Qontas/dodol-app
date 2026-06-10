@@ -39,13 +39,20 @@ class OwnerDashboardController extends Controller
             ->where($settlementOwnerScope)
             ->sum('amount_paid');
 
-        // Widget 2 — Kios overdue: kios aktif yang lewat target interval kunjungan
-        $overdueKiosks = Kiosk::where('is_active', true)
+        // Widget 2 — Kios overdue: kios aktif yang lewat target interval kunjungan.
+        // Kunjungan terakhir di-batch 1 query (hindari N+1 per kios).
+        $ownerKiosks = Kiosk::where('is_active', true)
             ->whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId))
-            ->get()
-            ->filter(function ($kiosk) {
-                $lastVisit = KioskVisit::where('kiosk_id', $kiosk->id)
-                    ->max('visited_at');
+            ->get();
+
+        $lastVisitPerKiosk = KioskVisit::whereIn('kiosk_id', $ownerKiosks->pluck('id'))
+            ->groupBy('kiosk_id')
+            ->selectRaw('kiosk_id, MAX(visited_at) as last_visit')
+            ->pluck('last_visit', 'kiosk_id');
+
+        $overdueCount = $ownerKiosks
+            ->filter(function ($kiosk) use ($lastVisitPerKiosk) {
+                $lastVisit = $lastVisitPerKiosk[$kiosk->id] ?? null;
 
                 if (! $lastVisit) {
                     return true; // belum pernah dikunjungi = overdue
@@ -53,9 +60,11 @@ class OwnerDashboardController extends Controller
 
                 $threshold = $kiosk->target_visit_interval_days ?: 10;
 
-                return now()->diffInDays($lastVisit) > $threshold;
-            });
-        $overdueCount = $overdueKiosks->count();
+                // abs(): Carbon 3 diffInDays bertanda (tanggal lampau = negatif),
+                // tanpa abs() kios yang sudah pernah dikunjungi tak pernah overdue.
+                return abs(now()->diffInDays(\Illuminate\Support\Carbon::parse($lastVisit))) > $threshold;
+            })
+            ->count();
 
         // Widget 3 — Total outstanding: sisa tagihan dari settlement pending
         $totalOutstanding = Settlement::where('status', 'pending')
@@ -122,6 +131,22 @@ class OwnerDashboardController extends Controller
 
         $totalStokTersisa = $batchStok->sum('stok_tersisa');
 
+        // Widget prediksi dodol habis — kios yang dicek sisa bijinya oleh
+        // operator (skenario check + sisa biji), max 5 terbaru agar query
+        // accessor prediksi tetap terbatas.
+        $prediksiKios = $ownerKiosks
+            ->load('latestCheckVisit')
+            ->filter(fn ($k) => $k->latestCheckVisit && $k->latestCheckVisit->sisa_biji)
+            ->sortByDesc(fn ($k) => $k->latestCheckVisit->visited_at)
+            ->take(5)
+            ->map(fn ($k) => [
+                'name' => $k->name,
+                'sisa_biji' => (int) $k->latestCheckVisit->sisa_biji,
+                'dicek_pada' => $k->latestCheckVisit->visited_at,
+                'prediksi' => $k->prediksi_habis,
+            ])
+            ->values();
+
         return view('owner.dashboard', compact(
             'user',
             'stats',
@@ -134,7 +159,8 @@ class OwnerDashboardController extends Controller
             'activeTrips',
             'completedTrips',
             'batchStok',
-            'totalStokTersisa'
+            'totalStokTersisa',
+            'prediksiKios'
         ));
     }
 }

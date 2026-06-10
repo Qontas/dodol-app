@@ -23,15 +23,15 @@ class ProcurementBatchResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
 
-    protected static ?string $navigationLabel = 'Procurement';
+    protected static ?string $navigationLabel = 'Pengadaan';
 
-    protected static ?string $navigationGroup = 'Transactional';
+    protected static ?string $navigationGroup = 'Transaksi';
 
     protected static ?int $navigationSort = 1;
 
-    protected static ?string $modelLabel = 'Procurement';
+    protected static ?string $modelLabel = 'Pengadaan';
 
-    protected static ?string $pluralModelLabel = 'Procurement';
+    protected static ?string $pluralmodelLabel = 'Pengadaan';
 
     public static function form(Form $form): Form
     {
@@ -152,7 +152,7 @@ class ProcurementBatchResource extends Resource
                             ->helperText('Auto-generated format: BATCH-YYYY-MM-DD-NNN'),
 
                         Placeholder::make('total_cost_preview')
-                            ->label('Total Cost (Auto)')
+                            ->label('Total Biaya (Otomatis)')
                             ->content(fn (Get $get) => 'Rp '.number_format(
                                 (float) ($get('cost_raw_material') ?? 0)
                                 + (float) ($get('cost_packing') ?? 0)
@@ -269,7 +269,7 @@ class ProcurementBatchResource extends Resource
                     ),
 
                 Tables\Columns\TextColumn::make('total_cost')
-                    ->label('Total Cost')
+                    ->label('Total Biaya')
                     ->money('IDR')
                     ->sortable(),
 

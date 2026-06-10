@@ -165,4 +165,120 @@ class DashboardTest extends TestCase
         $response->assertDontSee('OperatorLain');
         $response->assertDontSee('Cluster Rahasia');
     }
+
+    /**
+     * Widget Kios Perlu Dikunjungi harus menghitung kios yang SUDAH pernah
+     * dikunjungi tapi lewat interval (regresi: diffInDays Carbon 3 bertanda
+     * negatif membuat kios terkunjungi tak pernah dianggap overdue).
+     */
+    public function test_overdue_widget_counts_visited_kiosk_past_interval()
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
+        $cluster = Cluster::create(['name' => 'Cluster Overdue', 'owner_id' => $owner->id]);
+
+        $overdueKiosk = Kiosk::factory()->create([
+            'cluster_id' => $cluster->id,
+            'target_visit_interval_days' => 10,
+        ]);
+        $freshKiosk = Kiosk::factory()->create([
+            'cluster_id' => $cluster->id,
+            'target_visit_interval_days' => 10,
+        ]);
+
+        $pastTrip = Trip::factory()->create([
+            'owner_id' => $owner->id,
+            'operator_id' => $operator->id,
+            'trip_date' => today()->subDays(20)->format('Y-m-d'),
+            'started_at' => now()->subDays(20),
+            'ended_at' => now()->subDays(20),
+        ]);
+
+        \App\Models\KioskVisit::create([
+            'trip_id' => $pastTrip->id,
+            'kiosk_id' => $overdueKiosk->id,
+            'visited_at' => now()->subDays(20),
+            'visit_action' => 'check_only',
+            'extension_granted' => false,
+        ]);
+        \App\Models\KioskVisit::create([
+            'trip_id' => $pastTrip->id,
+            'kiosk_id' => $freshKiosk->id,
+            'visited_at' => now()->subDays(2),
+            'visit_action' => 'check_only',
+            'extension_granted' => false,
+        ]);
+
+        $response = $this->actingAs($owner)->get('/owner/dashboard');
+
+        $response->assertOk();
+        // Hanya kios yang lewat interval (20 hari > 10) yang dihitung.
+        $this->assertEquals(1, $response->viewData('overdueCount'));
+    }
+
+    /**
+     * Prediksi dodol habis tampil di dashboard: nama kios + sisa biji + prediksi.
+     */
+    public function test_prediksi_habis_section_shows_checked_kiosk()
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
+        $cluster = Cluster::create(['name' => 'Cluster Prediksi', 'owner_id' => $owner->id]);
+        $variant = ProductVariant::factory()->create(['is_active' => true, 'sale_price_per_pack' => 12000]);
+
+        $kiosk = Kiosk::factory()->create([
+            'cluster_id' => $cluster->id,
+            'name' => 'Kios Prediksi Habis',
+        ]);
+
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id,
+            'operator_id' => $operator->id,
+            'trip_date' => today()->format('Y-m-d'),
+            'started_at' => now(),
+            'ended_at' => now(),
+        ]);
+
+        // Minimal 3 settlement historis agar prediksi terhitung.
+        foreach (range(1, 3) as $i) {
+            $delivery = Delivery::factory()->create([
+                'kiosk_id' => $kiosk->id,
+                'trip_id' => $trip->id,
+                'product_variant_id' => $variant->id,
+                'qty_delivered' => 5,
+            ]);
+            Settlement::factory()->create([
+                'delivery_id' => $delivery->id,
+                'visit_date' => today(),
+                'qty_sold' => 75,
+                'qty_returned_fresh' => 0,
+                'qty_returned_expired' => 0,
+                'amount_due' => 60000,
+                'amount_paid' => 60000,
+                'status' => 'paid',
+            ]);
+        }
+
+        // Kunjungan cek dengan sisa biji (skenario 5).
+        \App\Models\KioskVisit::create([
+            'trip_id' => $trip->id,
+            'kiosk_id' => $kiosk->id,
+            'visited_at' => now(),
+            'visit_action' => 'check_only',
+            'alasan_check' => 'masih_banyak',
+            'sisa_biji' => 30,
+            'extension_granted' => false,
+        ]);
+
+        $response = $this->actingAs($owner)->get('/owner/dashboard');
+
+        $response->assertOk();
+        $response->assertSee('Prediksi Dodol Habis');
+        $response->assertSee('Kios Prediksi Habis');
+        $response->assertSee('Sisa 30 biji');
+
+        $prediksi = $response->viewData('prediksiKios');
+        $this->assertCount(1, $prediksi);
+        $this->assertStringContainsString('hari lagi', $prediksi[0]['prediksi']);
+    }
 }
