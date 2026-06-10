@@ -140,6 +140,31 @@
             </div>
         @endif
 
+        {{-- Prediksi Dodol Habis (dari cek sisa biji oleh operator) --}}
+        @if ($prediksiKios->isNotEmpty())
+            <div class="bg-white rounded-lg border border-slate-200 mt-6">
+                <div class="px-5 py-4 border-b border-slate-100">
+                    <h3 class="font-bold text-slate-900">Prediksi Dodol Habis</h3>
+                    <p class="text-xs text-slate-500 mt-0.5">Dari cek sisa dodol terakhir oleh operator di kios</p>
+                </div>
+                <div class="divide-y divide-slate-100">
+                    @foreach ($prediksiKios as $pk)
+                        <div class="px-5 py-3 flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-sm font-medium text-slate-900">{{ $pk['name'] }}</p>
+                                <p class="text-xs text-slate-500">
+                                    Sisa {{ $pk['sisa_biji'] }} biji — dicek {{ $pk['dicek_pada']->translatedFormat('d M Y') }}
+                                </p>
+                            </div>
+                            <span class="text-sm font-bold shrink-0 {{ $pk['prediksi'] && str_contains($pk['prediksi'], 'hari') ? 'text-amber-600' : 'text-slate-400' }}">
+                                {{ $pk['prediksi'] ?? 'Data belum cukup' }}
+                            </span>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+
         {{-- Live Trip Progress --}}
         <livewire:owner.live-trip-progress />
 
@@ -217,7 +242,7 @@
                     {{-- Financial Report Grid --}}
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-white border border-slate-100 rounded-lg p-4 text-center shadow-inner">
                         <div>
-                            <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Terjual (Settled)</p>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Terjual</p>
                             <p class="text-base font-bold text-slate-900">{{ number_format($completedTrip->mika_terjual, 2, ',', '.') }} mika</p>
                         </div>
                         <div>

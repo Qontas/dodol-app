@@ -78,18 +78,14 @@
                                     <div class="text-xs">
                                         <span class="font-semibold text-slate-500">{{ $visit->visited_at ? $visit->visited_at->format('H:i') : '—' }}</span>
                                         <span class="font-bold text-slate-900 ml-1">{{ $visit->kiosk->name }}</span>
-                                        <span class="ml-2 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium 
+                                        <span class="ml-2 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium
                                             {{ $visit->visit_action === 'drop_and_settle' ? 'bg-green-50 text-green-700 ring-1 ring-inset ring-green-600/20' : '' }}
                                             {{ $visit->visit_action === 'drop_only' ? 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-700/10' : '' }}
                                             {{ $visit->visit_action === 'settle_only' ? 'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-600/20' : '' }}
+                                            {{ $visit->visit_action === 'cash_sale' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20' : '' }}
                                             {{ $visit->visit_action === 'check_only' ? 'bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-500/10' : '' }}
                                         ">
-                                            @switch($visit->visit_action)
-                                                @case('drop_and_settle') Settle + Drop @break
-                                                @case('drop_only') Drop Saja @break
-                                                @case('settle_only') Settle Saja @break
-                                                @default Cek Saja
-                                            @endswitch
+                                            {{ \App\Http\Controllers\Owner\TripExportController::visitActionLabel($visit->visit_action) }}
                                         </span>
                                         
                                         @if ($visit->newDelivery || ($visit->settledDelivery && $visit->settledDelivery->settlement))

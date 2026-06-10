@@ -60,10 +60,11 @@ class TripExportController extends Controller
     public static function visitActionLabel(?string $action): string
     {
         return match ($action) {
-            'drop_and_settle' => 'Drop + Settle',
-            'drop_only' => 'Drop Baru',
-            'settle_only' => 'Settle',
+            'drop_and_settle' => 'Tagih + Titip Baru',
+            'drop_only' => 'Titip Baru',
+            'settle_only' => 'Tagih Saja',
             'check_only' => 'Cek Saja',
+            'cash_sale' => 'Jual Cash',
             default => $action ?? '—',
         };
     }
