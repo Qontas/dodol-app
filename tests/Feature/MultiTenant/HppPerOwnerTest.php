@@ -87,14 +87,20 @@ class HppPerOwnerTest extends TestCase
 
     public function test_trip_report_uses_owner_custom_hpp(): void
     {
-        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true, 'hpp_per_mika' => 10000]);
+        $owner = User::factory()->create([
+            'role' => 'owner',
+            'is_active' => true,
+            'hpp_per_mika' => 10000,
+            'komisi_per_mika' => 400,
+            'komisi_kios_baru_per_mika' => 800,
+        ]);
         $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
 
         $trip = $this->tripWithTenMikaSold($owner, $operator);
 
         $this->assertSame(100000.0, $trip->hpp_estimasi);    // 10 * 10000
         $this->assertSame(20000.0, $trip->untung_kotor);     // 10 * (12000-10000)
-        $this->assertSame(4000.0, $trip->komisi_reguler);    // 10 * (2000*0.2)
+        $this->assertSame(4000.0, $trip->komisi_reguler);    // 10 * 400
     }
 
     public function test_owner_can_update_own_hpp_via_settings(): void
@@ -104,10 +110,18 @@ class HppPerOwnerTest extends TestCase
         $this->actingAs($owner)->get('/owner/settings')->assertOk();
 
         $this->actingAs($owner)
-            ->put('/owner/settings', ['hpp_per_mika' => 8800])
+            ->put('/owner/settings', [
+                'hpp_per_mika' => 8800,
+                'harga_mika' => 250,
+                'komisi_per_mika' => 600,
+                'komisi_kios_baru_per_mika' => 1200,
+            ])
             ->assertRedirect(route('owner.settings'));
 
         $this->assertSame('8800.00', $owner->fresh()->hpp_per_mika);
+        $this->assertSame('250.00', $owner->fresh()->harga_mika);
+        $this->assertSame('600.00', $owner->fresh()->komisi_per_mika);
+        $this->assertSame('1200.00', $owner->fresh()->komisi_kios_baru_per_mika);
     }
 
     public function test_operator_cannot_access_owner_settings(): void

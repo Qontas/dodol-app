@@ -340,6 +340,12 @@ class ActiveTrip extends Component
         if (in_array($propertyName, ['returnFresh', 'returnExpired'])) {
             $this->hitungTagihan();
         }
+
+        if ($propertyName === 'extensionGranted') {
+            if ($this->extensionGranted) {
+                $this->dropBaru = 0;
+            }
+        }
     }
 
     public function hitungTagihan()
@@ -411,6 +417,10 @@ class ActiveTrip extends Component
 
     public function saveVisit()
     {
+        if ($this->extensionGranted) {
+            $this->dropBaru = 0;
+        }
+
         $this->validate([
             'returnFresh' => 'nullable|integer|min:0',
             'returnExpired' => 'nullable|integer|min:0',
@@ -775,6 +785,10 @@ class ActiveTrip extends Component
                 $marginRateAssumed = 1.0000;
             }
 
+            $owner = $this->trip->owner;
+            $komisiPerMika = $owner ? $owner->getKomisiPerMikaValue() : 500;
+            $komisiKiosBaru = $owner ? $owner->getKomisiKiosBaruPerMikaValue() : 1000;
+
             \App\Models\Commission::create([
                 'trip_id' => $this->trip->id,
                 'operator_id' => $this->trip->operator_id,
@@ -783,7 +797,7 @@ class ActiveTrip extends Component
                 'commission_rate' => 0.2000,
                 'status' => 'paid',
                 'paid_at' => now(),
-                'notes' => 'Komisi Rian: reguler (mika terjual x 500) + kios baru (mika kios baru x 1000)',
+                'notes' => sprintf('Komisi Rian: reguler (mika terjual x %d) + kios baru (mika kios baru x %d)', $komisiPerMika, $komisiKiosBaru),
             ]);
         });
 

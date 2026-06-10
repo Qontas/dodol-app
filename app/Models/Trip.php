@@ -127,11 +127,11 @@ class Trip extends Model
     }
 
     /**
-     * Komisi reguler per mika = 20% dari untung kotor per mika.
+     * Komisi reguler per mika dari owner trip ini, fallback ke Rp 500.
      */
     private function getKomisiPerMika(): float
     {
-        return $this->getUntungPerMika() * 0.2;
+        return (float) ($this->owner?->komisi_per_mika ?? 500);
     }
 
     public function getHppEstimasiAttribute(): float
@@ -151,7 +151,7 @@ class Trip extends Model
 
     public function getKomisiKiosBaruAttribute(): float
     {
-        return $this->mika_kios_baru * 1000;
+        return $this->mika_kios_baru * ($this->owner?->komisi_kios_baru_per_mika ?? 1000);
     }
 
     public function getKomisiRianAttribute(): float

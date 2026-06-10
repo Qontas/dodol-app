@@ -111,6 +111,33 @@ class UserResource extends Resource
                             ->visible(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin']))
                             ->required(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin'])),
 
+                        Forms\Components\TextInput::make('harga_mika')
+                            ->label('Harga Mika (Rp)')
+                            ->numeric()
+                            ->default(200)
+                            ->minValue(0)
+                            ->helperText('Harga modal mika per kemasan. Default: Rp 200')
+                            ->visible(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin']))
+                            ->required(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin'])),
+
+                        Forms\Components\TextInput::make('komisi_per_mika')
+                            ->label('Komisi Reguler (Rp)')
+                            ->numeric()
+                            ->default(500)
+                            ->minValue(0)
+                            ->helperText('Komisi per mika untuk kios biasa. Default: Rp 500')
+                            ->visible(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin']))
+                            ->required(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin'])),
+
+                        Forms\Components\TextInput::make('komisi_kios_baru_per_mika')
+                            ->label('Komisi Kios Baru (Rp)')
+                            ->numeric()
+                            ->default(1000)
+                            ->minValue(0)
+                            ->helperText('Komisi per mika untuk kios baru. Default: Rp 1.000')
+                            ->visible(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin']))
+                            ->required(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin'])),
+
                         Forms\Components\Toggle::make('is_active')
                             ->label('Status Aktif')
                             ->default(true)
@@ -160,6 +187,24 @@ class UserResource extends Resource
 
                 Tables\Columns\TextColumn::make('hpp_per_mika')
                     ->label('HPP/Mika')
+                    ->money('IDR')
+                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false)
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('harga_mika')
+                    ->label('Harga Mika')
+                    ->money('IDR')
+                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false)
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('komisi_per_mika')
+                    ->label('Komisi Reguler')
+                    ->money('IDR')
+                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false)
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('komisi_kios_baru_per_mika')
+                    ->label('Komisi Kios Baru')
                     ->money('IDR')
                     ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false)
                     ->toggleable(isToggledHiddenByDefault: true),
