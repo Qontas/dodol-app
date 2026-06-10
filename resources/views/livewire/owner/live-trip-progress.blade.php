@@ -11,19 +11,15 @@
     
     @forelse ($activeTrips as $activeTrip)
         @php
-            $allKiosks = \App\Models\Kiosk::where('is_active', true)
-                ->when($activeTrip->starting_cluster_id, fn($q) => $q->where('cluster_id', $activeTrip->starting_cluster_id))
-                ->get();
-            
-            $visitedKioskIds = $activeTrip->visits->pluck('kiosk_id')->all();
-            
+            $stats = $tripStats[$activeTrip->id];
+
             $visitedKios = $activeTrip->visits->count();
-            $totalKios = $allKiosks->count();
-            
+            $totalKios = $stats['total_kios'];
+
             $progressPercent = min(100, max(0, $totalKios > 0 ? ($visitedKios / $totalKios) * 100 : 0));
-            
-            $unvisitedKiosks = $allKiosks->filter(fn($k) => !in_array($k->id, $visitedKioskIds))->values();
-            
+
+            $unvisitedKiosks = $stats['unvisited_kiosks'];
+
             $totalDrop = (int) $activeTrip->deliveries->sum('qty_delivered');
         @endphp
         <div class="border border-slate-200 rounded-xl p-5 bg-slate-50/50 shadow-sm">
@@ -38,7 +34,7 @@
                 </div>
                 <div class="text-right">
                     <p class="text-xs text-slate-500">Omset Sementara</p>
-                    <p class="text-xl font-bold text-green-600">Rp {{ number_format($activeTrip->omset_val, 0, ',', '.') }}</p>
+                    <p class="text-xl font-bold text-green-600">Rp {{ number_format($stats['omset'], 0, ',', '.') }}</p>
                 </div>
             </div>
             
@@ -61,11 +57,11 @@
                 </div>
                 <div>
                     <p class="text-[10px] uppercase text-slate-500 font-medium">Omset</p>
-                    <p class="text-base font-bold text-green-600">Rp {{ number_format($activeTrip->omset_val, 0, ',', '.') }}</p>
+                    <p class="text-base font-bold text-green-600">Rp {{ number_format($stats['omset'], 0, ',', '.') }}</p>
                 </div>
                 <div>
                     <p class="text-[10px] uppercase text-slate-500 font-medium">Komisi Sejauh Ini</p>
-                    <p class="text-base font-bold text-amber-600">Rp {{ number_format($activeTrip->komisi_rian, 0, ',', '.') }}</p>
+                    <p class="text-base font-bold text-amber-600">Rp {{ number_format($stats['komisi'], 0, ',', '.') }}</p>
                 </div>
             </div>
             
@@ -76,7 +72,7 @@
                     <p class="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">Kios Sudah Dikunjungi ({{ $visitedKios }})</p>
                     @if ($activeTrip->visits->isNotEmpty())
                         <div class="relative pl-4 border-l border-slate-200 space-y-3">
-                            @foreach ($activeTrip->visits()->with(['kiosk', 'newDelivery', 'settledDelivery.settlement'])->latest('visited_at')->get() as $visit)
+                            @foreach ($stats['sorted_visits'] as $visit)
                                 <div class="relative">
                                     <div class="absolute -left-[21px] top-1.5 bg-green-600 rounded-full w-2 h-2 border border-white"></div>
                                     <div class="text-xs">
