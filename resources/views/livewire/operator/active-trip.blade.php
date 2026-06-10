@@ -1,4 +1,4 @@
-<div class="max-w-md mx-auto pb-28" x-data="{
+<div class="max-w-md mx-auto pb-36" x-data="{
     loading: false,
     sortByDistance() {
         if (!navigator.geolocation) {
@@ -131,7 +131,7 @@
     </div>
 
     {{-- Tombol Akhiri Trip Fix di Bawah --}}
-    <div class="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 max-w-md mx-auto">
+    <div class="fixed bottom-[48px] left-0 right-0 p-4 bg-white border-t border-slate-200 max-w-md mx-auto z-30 shadow-md">
         <button type="button" wire:click="openEndTripModal" wire:loading.attr="disabled" wire:target="openEndTripModal" class="w-full bg-red-600 text-white font-bold text-lg py-3 rounded-xl shadow-sm active:bg-red-700">
             <span wire:loading.remove wire:target="openEndTripModal">Akhiri Trip</span>
             <span wire:loading wire:target="openEndTripModal">Memuat...</span>
@@ -286,9 +286,9 @@
                     <span class="text-slate-500">Aksi:</span>
                     <span class="font-bold text-amber-700">
                         @switch($this->visitAction)
-                            @case('drop_and_settle') Pembayaran + Drop Baru @break
-                            @case('drop_only') Drop Baru @break
-                            @case('settle_only') Pembayaran Saja @break
+                            @case('drop_and_settle') Ambil Bayaran + Titip Baru @break
+                            @case('drop_only') Titip Baru @break
+                            @case('settle_only') Ambil Bayaran Saja @break
                             @case('cash_sale') Penjualan Cash @break
                             @default Kunjungan (Cek)
                         @endswitch
@@ -299,11 +299,11 @@
                     {{-- Peringatan jumlah perpanjangan --}}
                     @if($extensionCount >= 2)
                         <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 font-medium">
-                            ⚠️ Sudah 2x perpanjangan — Pertimbangkan Cut Off
+                            ⚠️ Sudah 2x tunda bayar — Pertimbangkan Cut Off
                         </div>
                     @elseif($extensionCount === 1)
                         <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
-                            Perpanjangan ke-1 dari 2
+                            Tunda bayar ke-1 dari 2
                         </div>
                     @endif
 
@@ -321,7 +321,7 @@
                                     <input type="number" wire:model.live="returnFresh" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold" min="0">
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-medium text-slate-700 mb-1">Sisa Basi/BS (Biji)</label>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1">Sisa Basi/Dodol Sisa (Biji)</label>
                                     <input type="number" wire:model.live="returnExpired" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold text-red-600" min="0">
                                 </div>
                             </div>
@@ -346,7 +346,7 @@
                             </div>
                         @else
                             <div class="text-sm text-amber-800 bg-white/60 rounded-lg p-3">
-                                Settle ditunda. BS &amp; pembayaran diambil di kunjungan berikutnya — titipan ini tetap tercatat sebagai tunggakan.
+                                Pembayaran ditunda. Dodol sisa &amp; pembayaran diambil di kunjungan berikutnya — titipan ini tetap tercatat sebagai tunggakan.
                             </div>
                         @endif
                     </div>
@@ -356,7 +356,7 @@
                         <input type="checkbox" wire:model.live="extensionGranted" id="extensionToggle"
                             class="rounded border-slate-300 text-amber-600 focus:ring-amber-500">
                         <label for="extensionToggle" class="text-sm font-medium text-slate-700 cursor-pointer">
-                            Tunda bayar &amp; ambil BS (perpanjangan)
+                            Tunda bayar &amp; ambil Dodol Sisa
                         </label>
                     </div>
                 @else
@@ -369,8 +369,9 @@
                 @endif
 
                 {{-- AREA DROP BARU (Selalu Muncul) --}}
+                @if(!$extensionGranted)
                 <div class="bg-white border border-slate-200 rounded-xl p-4">
-                    <label class="block text-sm font-bold text-slate-900 mb-2">Drop Titipan Baru (Mika)</label>
+                    <label class="block text-sm font-bold text-slate-900 mb-2">Titip Baru (Mika)</label>
                     <div class="flex items-center gap-3">
                         <button type="button" wire:click="decrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">-</button>
                         
@@ -384,7 +385,7 @@
                     @elseif(!empty($selectedKiosk->default_qty_mika) && (int) $dropBaru > (int) $selectedKiosk->default_qty_mika)
                         <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
                             <p class="text-sm font-bold text-amber-800 mb-3">
-                                Drop melebihi default ({{ (int) $selectedKiosk->default_qty_mika }} mika).
+                                Titip melebihi default ({{ (int) $selectedKiosk->default_qty_mika }} mika).
                                 Kelebihan {{ (int) $dropBaru - (int) $selectedKiosk->default_qty_mika }} mika:
                             </p>
                             <div class="space-y-2">
@@ -402,21 +403,22 @@
                         </div>
                     @endif
                 </div>
+                @endif
 
                 {{-- SKENARIO 7: BS redistribusi — muncul saat drop (non-cash) --}}
                 @if(in_array($this->visitAction, ['drop_only', 'drop_and_settle']) && !$isCashOnly)
                     <div class="mt-3">
                         <label class="flex items-center gap-3 cursor-pointer p-3 rounded-xl border border-slate-200">
                             <input type="checkbox" wire:model.live="adaBsRedistribusi" class="rounded text-amber-600">
-                            <span class="text-sm font-medium text-slate-700">Ada mika BS redistribusi ikut di-drop</span>
+                            <span class="text-sm font-medium text-slate-700">Ada mika Dodol Sisa redistribusi ikut dititip</span>
                         </label>
                         @if($adaBsRedistribusi)
                             <div class="mt-2">
-                                <label class="text-xs text-slate-500">Jumlah mika BS yang ikut (mika)</label>
+                                <label class="text-xs text-slate-500">Jumlah mika Dodol Sisa yang ikut (mika)</label>
                                 <input type="number" wire:model.live="qtyBsMika" min="1" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
                                 <p class="text-xs text-slate-400 mt-1">
-                                    Total drop ke kios ini: {{ (int) $dropBaru + (int) $qtyBsMika }} mika
-                                    ({{ (int) $dropBaru }} baru + {{ (int) $qtyBsMika }} BS)
+                                    Total titip ke kios ini: {{ (int) $dropBaru + (int) $qtyBsMika }} mika
+                                    ({{ (int) $dropBaru }} baru + {{ (int) $qtyBsMika }} Dodol Sisa)
                                 </p>
                             </div>
                         @endif
@@ -463,6 +465,10 @@
                                 <label class="text-xs text-slate-500">Default baru (mika)</label>
                                 <input type="number" wire:model="qtyDefaultBaru" min="1" max="{{ (int) $selectedKiosk->default_qty_mika - 1 }}" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
                                 <p class="text-xs text-amber-600 mt-1">Pengantaran berikutnya: {{ $qtyDefaultBaru ?: '?' }} mika</p>
+                                <p class="text-xs text-slate-500 mt-1">ℹ️ Default baru berlaku untuk pengantaran BERIKUTNYA, bukan drop sekarang</p>
+                                @if($dropBaru > 0 && $qtyDefaultBaru > 0 && (int) $dropBaru > (int) $qtyDefaultBaru)
+                                    <p class="text-xs text-red-600 font-semibold mt-1.5">⚠️ Perhatian: Jumlah drop sekarang ({{ $dropBaru }} mika) lebih besar dari default baru ({{ $qtyDefaultBaru }} mika).</p>
+                                @endif
                             </div>
                         @endif
                     </div>

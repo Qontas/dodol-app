@@ -51,15 +51,16 @@ class LiveTripProgress extends Component
             $mikaTerjual = $settlements->sum('qty_sold') / 15;
 
             // Komisi berjalan — formula sama dengan accessor Trip::komisi_rian:
-            // reguler = mika terjual x 20% untung kotor per mika, kios baru = mika drop x 1000.
-            $hpp = (float) ($trip->owner?->hpp_per_mika ?? 9500);
+            // reguler = mika terjual x komisi_per_mika, kios baru = mika drop x komisi_kios_baru_per_mika.
+            $komisiPerMika = (float) ($trip->owner?->komisi_per_mika ?? 500);
+            $komisiKiosBaruPerMika = (float) ($trip->owner?->komisi_kios_baru_per_mika ?? 1000);
             $mikaKiosBaru = $trip->visits
                 ->filter(fn ($v) => $v->visit_action === 'drop_only'
                     && $v->newDelivery
                     && $v->kiosk?->first_titip_date?->isSameDay($trip->trip_date))
                 ->sum(fn ($v) => (float) $v->newDelivery->qty_delivered);
 
-            $komisi = $mikaTerjual * ((12000 - $hpp) * 0.2) + $mikaKiosBaru * 1000;
+            $komisi = $mikaTerjual * $komisiPerMika + $mikaKiosBaru * $komisiKiosBaruPerMika;
 
             $visitedIds = $trip->visits->pluck('kiosk_id')->all();
 

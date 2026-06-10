@@ -31,6 +31,8 @@ class User extends Authenticatable implements FilamentUser
         'hpp_per_mika',
         'is_active',
         'harga_mika',
+        'komisi_per_mika',
+        'komisi_kios_baru_per_mika',
     ];
 
     /**
@@ -58,6 +60,8 @@ class User extends Authenticatable implements FilamentUser
             'hpp_per_mika' => 'decimal:2',
             'is_active' => 'boolean',
             'harga_mika' => 'decimal:2',
+            'komisi_per_mika' => 'decimal:2',
+            'komisi_kios_baru_per_mika' => 'decimal:2',
         ];
     }
 
@@ -82,6 +86,21 @@ class User extends Authenticatable implements FilamentUser
     public function getHppPerMikaValue(): float
     {
         return (float) ($this->hpp_per_mika ?? 9500);
+    }
+
+    public function getHargaMikaValue(): float
+    {
+        return (float) ($this->harga_mika ?? 200);
+    }
+
+    public function getKomisiPerMikaValue(): float
+    {
+        return (float) ($this->komisi_per_mika ?? 500);
+    }
+
+    public function getKomisiKiosBaruPerMikaValue(): float
+    {
+        return (float) ($this->komisi_kios_baru_per_mika ?? 1000);
     }
 
     public function canAccessPanel(Panel $panel): bool

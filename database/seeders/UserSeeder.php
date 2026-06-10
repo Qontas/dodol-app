@@ -34,6 +34,9 @@ class UserSeeder extends Seeder
                 'owner_id' => null,
                 'commission_rate' => null,
                 'hpp_per_mika' => 9500,
+                'harga_mika' => 200,
+                'komisi_per_mika' => 500,
+                'komisi_kios_baru_per_mika' => 1000,
                 'is_active' => true,
                 'email_verified_at' => now(),
             ]
