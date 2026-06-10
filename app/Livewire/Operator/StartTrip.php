@@ -35,25 +35,38 @@ class StartTrip extends Component
     {
         $ownerId = auth()->user()->owner_id;
 
-        return Cluster::query()
+        $clusters = Cluster::query()
             ->where('is_active', true)
             ->when($ownerId !== null, fn($q) => $q->where('owner_id', $ownerId))
             ->withCount(['kiosks' => fn($q) => $q->where('is_active', true)])
             ->orderBy('name')
-            ->get()
-            ->map(function ($cluster) {
-                $cluster->urgency_data = $this->calculateUrgency($cluster->id);
-                return $cluster;
-            });
-    }
-
-    protected function calculateUrgency(int $clusterId): array
-    {
-        $kiosks = Kiosk::query()
-            ->where('cluster_id', $clusterId)
-            ->where('is_active', true)
             ->get();
 
+        // Hindari N+1: semua kios aktif + kunjungan terakhir per kios diambil
+        // dalam 2 query, urgency dihitung di PHP per cluster.
+        $allKiosks = Kiosk::query()
+            ->whereIn('cluster_id', $clusters->pluck('id'))
+            ->where('is_active', true)
+            ->get(['id', 'cluster_id', 'target_visit_interval_days', 'warning_visit_interval_days']);
+
+        $lastVisits = KioskVisit::whereIn('kiosk_id', $allKiosks->pluck('id'))
+            ->groupBy('kiosk_id')
+            ->selectRaw('kiosk_id, MAX(visited_at) as last_visit')
+            ->pluck('last_visit', 'kiosk_id');
+
+        $kiosksPerCluster = $allKiosks->groupBy('cluster_id');
+
+        return $clusters->map(function ($cluster) use ($kiosksPerCluster, $lastVisits) {
+            $cluster->urgency_data = $this->calculateUrgency(
+                $kiosksPerCluster->get($cluster->id, collect()),
+                $lastVisits
+            );
+            return $cluster;
+        });
+    }
+
+    protected function calculateUrgency($kiosks, $lastVisits): array
+    {
         if ($kiosks->isEmpty()) {
             return [
                 'level' => 'empty',
@@ -70,16 +83,16 @@ class StartTrip extends Component
         $never = 0;
 
         foreach ($kiosks as $kiosk) {
-            $lastVisit = KioskVisit::where('kiosk_id', $kiosk->id)
-                ->latest('visited_at')
-                ->value('visited_at');
+            $lastVisit = $lastVisits[$kiosk->id] ?? null;
 
             if (! $lastVisit) {
                 $never++;
                 continue;
             }
 
-            $days = now()->diffInDays($lastVisit);
+            // abs(): Carbon 3 diffInDays bertanda (tanggal lampau = negatif),
+            // tanpa abs() kios overdue tidak pernah terdeteksi.
+            $days = (int) abs(now()->diffInDays(\Illuminate\Support\Carbon::parse($lastVisit)));
             $target = $kiosk->target_visit_interval_days ?? 14;
             $warningThreshold = $kiosk->warning_visit_interval_days ?? 10;
 
