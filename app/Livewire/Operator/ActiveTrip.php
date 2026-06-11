@@ -50,6 +50,11 @@ class ActiveTrip extends Component
     public $selectedKiosk = null;
     public $pendingDelivery = null;
 
+    // Aksi yang dipilih operator di layar pertama modal (UI murni — aksi yang
+    // TERSIMPAN tetap ditentukan resolveVisitAction() dari kondisi form).
+    // null = masih di layar pilih aksi. Nilai: tagih_titip|tagih|tunda|titip|cek|cash
+    public ?string $chosenAction = null;
+
     // Kios cash only: setiap drop langsung bayar cash (di-set dari kios terpilih)
     public bool $isCashOnly = false;
 
@@ -309,7 +314,17 @@ class ActiveTrip extends Component
             $this->extensionCount = 0;
         }
 
-        // Reset form
+        $this->resetVisitForm();
+
+        // Kios cash only tidak punya pilihan aksi — langsung ke form jual cash.
+        $this->chosenAction = $this->isCashOnly ? 'cash' : null;
+
+        $this->resetErrorBag();
+        $this->isVisitModalOpen = true;
+    }
+
+    private function resetVisitForm(): void
+    {
         $this->returnFresh = 0;
         $this->returnExpired = 0;
         $this->dropBaru = 0;
@@ -323,9 +338,39 @@ class ActiveTrip extends Component
         $this->sisaBiji = 0;
         $this->adaBsRedistribusi = false;
         $this->qtyBsMika = 0;
+        $this->extensionGranted = false;
+    }
 
+    /**
+     * Layar 1 modal: operator memilih aksi. Hanya mengatur section form yang
+     * tampil + state extension — TIDAK menentukan visit_action yang tersimpan
+     * (itu tetap auto-detect server-side di resolveVisitAction()).
+     */
+    public function chooseAction(string $action): void
+    {
+        $valid = $this->pendingDelivery
+            ? ['tagih_titip', 'tagih', 'tunda']
+            : ['titip', 'cek'];
+
+        if (! in_array($action, $valid, true)) {
+            return;
+        }
+
+        $this->chosenAction = $action;
+        $this->extensionGranted = ($action === 'tunda');
+
+        // Aksi tanpa titip baru: pastikan qty drop bersih.
+        if (in_array($action, ['tagih', 'tunda', 'cek'], true)) {
+            $this->dropBaru = 0;
+        }
+    }
+
+    /** Kembali ke layar pilih aksi; bersihkan input agar tidak nyangkut antar aksi. */
+    public function backToActionPicker(): void
+    {
+        $this->resetVisitForm();
+        $this->chosenAction = null;
         $this->resetErrorBag();
-        $this->isVisitModalOpen = true;
     }
 
     public function closeVisitModal()
@@ -333,6 +378,7 @@ class ActiveTrip extends Component
         $this->isVisitModalOpen = false;
         $this->selectedKiosk = null;
         $this->pendingDelivery = null;
+        $this->chosenAction = null;
     }
 
     public function updated($propertyName)
