@@ -18,22 +18,22 @@ class ClusterResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-map';
 
-    protected static ?string $navigationLabel = 'Cluster';
+    protected static ?string $navigationLabel = 'Area';
 
     protected static ?string $navigationGroup = 'Master Data';
 
     protected static ?int $navigationSort = 1;
 
-    protected static ?string $modelLabel = 'Cluster';
+    protected static ?string $modelLabel = 'Area';
 
-    protected static ?string $pluralModelLabel = 'Cluster';
+    protected static ?string $pluralmodelLabel = 'Area';
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
                 Forms\Components\TextInput::make('name')
-                    ->label('Nama Cluster')
+                    ->label('Nama Area')
                     ->required()
                     ->maxLength(100)
                     ->placeholder('Contoh: Marelan, Tembung, Pasar 4')
@@ -58,7 +58,7 @@ class ClusterResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Nama Cluster')
+                    ->label('Nama Area')
                     ->searchable()
                     ->sortable()
                     ->weight('bold'),

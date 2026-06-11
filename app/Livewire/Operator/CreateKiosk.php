@@ -52,7 +52,7 @@ class CreateKiosk extends Component
         ], [
             'namaKios.required' => 'Nama kios wajib diisi',
             'namaPemilik.required' => 'Nama pemilik wajib diisi',
-            'clusterId.exists' => 'Cluster tidak valid',
+            'clusterId.exists' => 'Area tidak valid',
             'defaultQtyMika.required' => 'Isi default jumlah mika',
             'defaultQtyMika.min' => 'Minimal 1 mika',
             'latitude.required' => 'Tandai lokasi kios di peta dulu',

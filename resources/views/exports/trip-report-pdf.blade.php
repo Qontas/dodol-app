@@ -28,13 +28,13 @@
     <table class="meta">
         <tr><td style="width:130px;">Tanggal Trip</td><td>: {{ $trip->trip_date->format('d M Y') }}</td></tr>
         <tr><td>Operator</td><td>: {{ $operatorName }}</td></tr>
-        <tr><td>Cluster / Area</td><td>: {{ $clusterName }}</td></tr>
+        <tr><td>Area</td><td>: {{ $clusterName }}</td></tr>
         <tr><td>Trip ke-</td><td>: {{ $trip->trip_number_of_day }}</td></tr>
     </table>
 
     <div class="section-title">Ringkasan Mika</div>
     <table class="data">
-        <tr><th>Mika Dibawa</th><th>Mika Di-drop</th><th>Mika Sisa</th></tr>
+        <tr><th>Mika Dibawa</th><th>Mika Dititip</th><th>Mika Sisa</th></tr>
         <tr>
             <td class="num">{{ number_format($summary['mika_dibawa'], 0, ',', '.') }}</td>
             <td class="num">{{ number_format($summary['mika_drop'], 0, ',', '.') }}</td>

@@ -52,7 +52,7 @@
             {{-- Running Totals --}}
             <div class="grid grid-cols-3 gap-4 bg-white border border-slate-100 rounded-lg p-3 text-center mb-4 shadow-inner">
                 <div>
-                    <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Drop</p>
+                    <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Dititip</p>
                     <p class="text-base font-bold text-slate-900">{{ $totalDrop }} mika</p>
                 </div>
                 <div>
@@ -91,11 +91,11 @@
                                         @if ($visit->newDelivery || ($visit->settledDelivery && $visit->settledDelivery->settlement))
                                             <p class="text-[11px] text-slate-600 mt-0.5">
                                                 @if ($visit->newDelivery)
-                                                    Drop: <span class="font-semibold text-slate-800">{{ $visit->newDelivery->qty_delivered }} mika</span>
+                                                    Titip: <span class="font-semibold text-slate-800">{{ $visit->newDelivery->qty_delivered }} mika</span>
                                                 @endif
                                                 @if ($visit->settledDelivery && $visit->settledDelivery->settlement)
                                                     @if ($visit->newDelivery) | @endif
-                                                    Settle: <span class="font-semibold text-slate-800">Rp {{ number_format($visit->settledDelivery->settlement->amount_paid, 0, ',', '.') }}</span>
+                                                    Tagih: <span class="font-semibold text-slate-800">Rp {{ number_format($visit->settledDelivery->settlement->amount_paid, 0, ',', '.') }}</span>
                                                     (Terjual: <span class="font-semibold text-slate-800">{{ $visit->settledDelivery->settlement->qty_sold }} biji</span>)
                                                 @endif
                                             </p>

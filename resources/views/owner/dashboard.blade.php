@@ -234,7 +234,7 @@
                             <p class="text-base font-bold text-amber-600">{{ $completedTrip->kios_baru_count }} kios</p>
                         </div>
                         <div>
-                            <p class="text-[10px] uppercase text-slate-500 font-medium">Total Mika Drop</p>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">Total Mika Dititip</p>
                             <p class="text-base font-bold text-slate-900">{{ $mikaDrop }} mika</p>
                         </div>
                     </div>
@@ -246,7 +246,7 @@
                             <p class="text-base font-bold text-slate-900">{{ number_format($completedTrip->mika_terjual, 2, ',', '.') }} mika</p>
                         </div>
                         <div>
-                            <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Kios Baru (Drop)</p>
+                            <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Kios Baru (Titip)</p>
                             <p class="text-base font-bold text-amber-700">{{ number_format($completedTrip->mika_kios_baru, 2, ',', '.') }} mika</p>
                         </div>
                         <div>

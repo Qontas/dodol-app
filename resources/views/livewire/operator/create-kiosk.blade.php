@@ -67,16 +67,16 @@
             @enderror
         </div>
 
-        {{-- Cluster --}}
+        {{-- Area --}}
         <div>
             <label for="clusterId" class="block text-sm font-bold text-slate-900 mb-2">
-                Cluster (opsional)
+                Area (opsional)
             </label>
             <select
                 id="clusterId"
                 wire:model="clusterId"
                 class="w-full rounded-xl border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-3">
-                <option value="">— Pilih cluster —</option>
+                <option value="">— Pilih area —</option>
                 @foreach ($clusters as $cluster)
                     <option value="{{ $cluster->id }}">{{ $cluster->name }}</option>
                 @endforeach

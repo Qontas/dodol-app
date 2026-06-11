@@ -82,7 +82,7 @@
                             <th class="px-4 py-2 text-left">Tanggal</th>
                             <th class="px-4 py-2 text-left">Operator</th>
                             <th class="px-4 py-2 text-right">Kios</th>
-                            <th class="px-4 py-2 text-right">Mika Drop</th>
+                            <th class="px-4 py-2 text-right">Mika Dititip</th>
                             <th class="px-4 py-2 text-right">Omset</th>
                             <th class="px-4 py-2 text-right">Komisi</th>
                             <th class="px-4 py-2 text-right">Untung Bersih</th>
