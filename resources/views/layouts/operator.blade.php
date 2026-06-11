@@ -28,7 +28,8 @@
         {{ $slot }}
     </main>
 
-    {{-- Bottom navigation --}}
+    {{-- Bottom navigation (disembunyikan di halaman fokus, mis. trip aktif) --}}
+    @unless($hideBottomNav ?? false)
     <nav class="fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 grid grid-cols-4 text-center text-xs z-20">
         @php
             $items = [
@@ -49,6 +50,7 @@
             @endif
         @endforeach
     </nav>
+    @endunless
 </div>
 </body>
 </html>

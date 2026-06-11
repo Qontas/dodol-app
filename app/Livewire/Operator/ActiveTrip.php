@@ -13,7 +13,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 
-#[Layout('layouts.operator')]
+#[Layout('layouts.operator', ['hideBottomNav' => true])]
 class ActiveTrip extends Component
 {
     // Konstanta domain (jangan hardcode di method)
