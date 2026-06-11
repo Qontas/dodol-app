@@ -47,16 +47,16 @@ class KioskResource extends Resource
                             ->columnSpan(2),
 
                         Forms\Components\Select::make('cluster_id')
-                            ->label('Cluster')
+                            ->label('Area')
                             ->relationship('cluster', 'name', fn($query) => $query->where('is_active', true))
                             ->searchable()
                             ->preload()
                             ->required()
-                            ->placeholder('Pilih cluster')
-                            ->helperText('Cluster tempat kios ini berada')
+                            ->placeholder('Pilih area')
+                            ->helperText('Area tempat kios ini berada')
                             ->createOptionForm([
                                 Forms\Components\TextInput::make('name')
-                                    ->label('Nama Cluster')
+                                    ->label('Nama Area')
                                     ->required()
                                     ->maxLength(100),
                                 Forms\Components\Textarea::make('notes')
@@ -220,7 +220,7 @@ class KioskResource extends Resource
                     ->description(fn($record) => $record->owner_name),
 
                 Tables\Columns\TextColumn::make('cluster.name')
-                    ->label('Cluster')
+                    ->label('Area')
                     ->searchable()
                     ->sortable()
                     ->badge()
@@ -286,7 +286,7 @@ class KioskResource extends Resource
             ->defaultSort('name', 'asc')
             ->filters([
                 SelectFilter::make('cluster_id')
-                    ->label('Cluster')
+                    ->label('Area')
                     ->relationship('cluster', 'name')
                     ->searchable()
                     ->preload()

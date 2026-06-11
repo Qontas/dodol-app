@@ -39,7 +39,7 @@
     <div class="section-title">Rekap Per Trip</div>
     <table class="data">
         <tr>
-            <th>Tanggal</th><th>Operator</th><th class="num">Kios</th><th class="num">Mika Drop</th>
+            <th>Tanggal</th><th>Operator</th><th class="num">Kios</th><th class="num">Mika Dititip</th>
             <th class="num">Omset</th><th class="num">Komisi</th><th class="num">Untung Bersih</th>
         </tr>
         @forelse ($rows as $r)
@@ -80,7 +80,7 @@
 
     <div class="section-title">Analisis Frekuensi Kios</div>
     <table class="data">
-        <tr><th>Nama Kios</th><th>Cluster</th><th class="num">Kunjungan</th><th class="num">Settle</th></tr>
+        <tr><th>Nama Kios</th><th>Area</th><th class="num">Kunjungan</th><th class="num">Ditagih</th></tr>
         @forelse ($analisisKios['frekuensi'] as $k)
             <tr>
                 <td>{{ $k['kiosk'] }}</td>

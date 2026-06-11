@@ -38,7 +38,7 @@
                         Area: <span class="text-amber-700 font-semibold">{{ $trip->startingCluster->name }}</span>
                     </p>
                 @else
-                    <p class="text-slate-600 text-sm mt-1">Area: <span class="text-slate-500 font-semibold">Semua Kios (Uncategorized)</span></p>
+                    <p class="text-slate-600 text-sm mt-1">Area: <span class="text-slate-500 font-semibold">Semua Kios</span></p>
                 @endif
             </div>
             <div class="text-right">
@@ -97,13 +97,13 @@
                         @if(in_array('urgent', $flags))
                             <span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold">🔴 URGENT</span>
                         @elseif(in_array('warning', $flags))
-                            <span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">⚠️ Hampir Expired</span>
+                            <span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">⚠️ Hampir Telat</span>
                         @endif
                         @if(in_array('fast_mover', $flags))
-                            <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">⚡ Fast Mover</span>
+                            <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">⚡ Laku Cepat</span>
                         @endif
                         @if(in_array('slow_mover', $flags))
-                            <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">🐢 Slow Mover</span>
+                            <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">🐢 Laku Lambat</span>
                         @endif
                         @if(in_array('new', $flags))
                             <span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">⭐ Kios Baru</span>
@@ -171,7 +171,7 @@
                         <span class="font-bold text-slate-900">{{ $tripSummary['qty_carried'] }} mika</span>
                     </div>
                     <div class="flex justify-between">
-                        <span class="text-slate-600">Total Drop</span>
+                        <span class="text-slate-600">Total Titip</span>
                         <span class="font-bold text-slate-900">{{ $tripSummary['total_mika_drop'] }} mika</span>
                     </div>
                     <div class="flex justify-between">

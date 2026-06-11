@@ -114,16 +114,16 @@ class StartTrip extends Component
 
         $messageParts = [];
         if ($overdue > 0) {
-            $messageParts[] = "{$overdue} overdue";
+            $messageParts[] = "{$overdue} telat dikunjungi";
         }
         if ($warning > 0) {
-            $messageParts[] = "{$warning} warning";
+            $messageParts[] = "{$warning} hampir telat";
         }
         if ($never > 0) {
-            $messageParts[] = "{$never} belum visit";
+            $messageParts[] = "{$never} belum pernah dikunjungi";
         }
         if (empty($messageParts) && $fresh > 0) {
-            $messageParts[] = 'Semua dalam interval normal';
+            $messageParts[] = 'Semua kios aman';
         }
 
         return [
@@ -144,8 +144,8 @@ class StartTrip extends Component
             'selectedClusterId' => $clusterRule,
             'qtyCarried' => 'required|integer|min:1',
         ], [
-            'selectedClusterId.required' => 'Pilih cluster dulu',
-            'selectedClusterId.exists' => 'Cluster tidak valid',
+            'selectedClusterId.required' => 'Pilih area dulu',
+            'selectedClusterId.exists' => 'Area tidak valid',
             'qtyCarried.required' => 'Isi jumlah mika dulu',
             'qtyCarried.min' => 'Isi jumlah mika dulu',
         ]);

@@ -29,7 +29,7 @@ class KioskImporter extends Importer
 
             // Virtual: di-resolve di resolveRecord() (butuh owner_id dari import).
             ImportColumn::make('cluster')
-                ->label('Cluster')
+                ->label('Area')
                 ->guess(['cluster', 'nomor_cluster', 'b'])
                 ->rules(['nullable', 'string'])
                 ->fillRecordUsing(function (): void {
