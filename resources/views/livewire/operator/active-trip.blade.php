@@ -130,8 +130,9 @@
         @endforelse
     </div>
 
-    {{-- Tombol Akhiri Trip Fix di Bawah --}}
-    <div class="fixed bottom-[48px] left-0 right-0 p-4 bg-white border-t border-slate-200 max-w-md mx-auto z-30 shadow-md">
+    {{-- Tombol Akhiri Trip — selalu terlihat di dasar layar (bottom nav
+         disembunyikan di halaman ini, jadi tidak pernah bertabrakan) --}}
+    <div class="fixed bottom-0 left-0 right-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-white border-t border-slate-200 max-w-md mx-auto z-30 shadow-md">
         <button type="button" wire:click="openEndTripModal" wire:loading.attr="disabled" wire:target="openEndTripModal" class="w-full bg-red-600 text-white font-bold text-lg py-3 rounded-xl shadow-sm active:bg-red-700">
             <span wire:loading.remove wire:target="openEndTripModal">Akhiri Trip</span>
             <span wire:loading wire:target="openEndTripModal">Memuat...</span>
