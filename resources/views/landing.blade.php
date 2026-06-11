@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Cemilan Qontas — Sistem Distribusi Dodol</title>
-    <meta name="description" content="Platform manajemen distribusi dodol modern: kelola kios, trip, settlement, dan laporan dalam satu sistem.">
+    <meta name="description" content="Platform manajemen distribusi dodol modern: kelola kios, trip, tagihan titipan, dan laporan dalam satu sistem.">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -94,7 +94,7 @@
                     <span class="gradient-text animate-gradient-pan">Dodol</span> Tanpa Ribet.
                 </h1>
                 <p class="mt-6 text-lg md:text-xl text-slate-300/90 leading-relaxed max-w-2xl">
-                    Satu platform untuk mengatur kios, trip operator, settlement biji-ke-mika,
+                    Satu platform untuk mengatur kios, trip operator, tagihan biji-ke-mika,
                     komisi, hingga laporan bulanan — semuanya rapi, real-time, dan terukur.
                 </p>
                 <div class="mt-9 flex flex-col sm:flex-row gap-4">
@@ -120,7 +120,7 @@
                 $stats = [
                     ['n' => 217, 'suffix' => '+', 'label' => 'Kios Terdaftar'],
                     ['n' => 15,  'suffix' => '',  'label' => 'Biji per Mika'],
-                    ['n' => 100, 'suffix' => '%', 'label' => 'Settlement Akurat'],
+                    ['n' => 100, 'suffix' => '%', 'label' => 'Hitungan Akurat'],
                     ['n' => 24,  'suffix' => '/7', 'label' => 'Akses Real-time'],
                 ];
             @endphp
@@ -145,11 +145,11 @@
             @php
                 $features = [
                     ['icon' => 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z', 'title' => 'Manajemen Kios', 'desc' => 'Daftar kios baru langsung dari lapangan, lengkap dengan komisi kios baru dan status cash-only.'],
-                    ['icon' => 'M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1', 'title' => 'Trip Operator', 'desc' => 'Mulai trip, drop dodol, extension terkontrol (maks 2x), hingga settlement otomatis biji-ke-mika.'],
+                    ['icon' => 'M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1', 'title' => 'Trip Operator', 'desc' => 'Mulai trip, titip dodol, tunda bayar terkontrol (maks 2x), hingga tagihan otomatis biji-ke-mika.'],
                     ['icon' => 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', 'title' => 'Laporan Bulanan', 'desc' => 'Rekap penjualan, HPP, dan komisi per owner. Export PDF & Excel siap pakai untuk pembukuan.'],
-                    ['icon' => 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z', 'title' => 'Settlement Akurat', 'desc' => 'Hitung otomatis 1 mika = 15 biji @ Rp 800. Kelebihan drop terdeteksi sebagai cash sale.'],
+                    ['icon' => 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z', 'title' => 'Tagihan Akurat', 'desc' => 'Hitung otomatis 1 mika = 15 biji @ Rp 800. Kelebihan titipan otomatis tercatat sebagai penjualan cash.'],
                     ['icon' => 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z', 'title' => 'Multi-Tenant', 'desc' => 'Setiap owner punya data terisolasi: kios, trip, supplier, dan operator-nya sendiri. Aman & rapi.'],
-                    ['icon' => 'M13 10V3L4 14h7v7l9-11h-7z', 'title' => 'Komisi Otomatis', 'desc' => 'Komisi reguler Rp 500/mika & kios baru Rp 1.000/mika dihitung tanpa salah, tanpa manual.'],
+                    ['icon' => 'M13 10V3L4 14h7v7l9-11h-7z', 'title' => 'Komisi Otomatis', 'desc' => 'Komisi reguler & kios baru dihitung otomatis sesuai aturan tiap owner — tanpa salah, tanpa manual.'],
                 ];
             @endphp
             @foreach ($features as $f)
@@ -178,9 +178,9 @@
                 <div class="absolute left-5 md:left-1/2 top-2 bottom-2 w-px bg-gradient-to-b from-amber-400/60 via-orange-500/40 to-transparent md:-translate-x-1/2"></div>
                 @php
                     $steps = [
-                        ['t' => 'Procurement', 'd' => 'Owner input batch dodol dari supplier dengan HPP sesuai. Stok gudang siap didistribusi.'],
-                        ['t' => 'Mulai Trip', 'd' => 'Operator memulai trip, membawa stok mika, dan mendrop ke kios-kios sesuai rute.'],
-                        ['t' => 'Settlement', 'd' => 'Penjualan dihitung per biji, dikonversi ke mika. Cash-only langsung lunas saat itu juga.'],
+                        ['t' => 'Pengadaan', 'd' => 'Owner input batch dodol dari supplier dengan HPP sesuai. Stok gudang siap didistribusi.'],
+                        ['t' => 'Mulai Trip', 'd' => 'Operator memulai trip, membawa stok mika, dan menitipkan ke kios-kios sesuai rute.'],
+                        ['t' => 'Tagihan', 'd' => 'Penjualan dihitung per biji, dikonversi ke mika. Kios cash langsung lunas saat itu juga.'],
                         ['t' => 'Laporan', 'd' => 'Komisi, HPP, dan omzet otomatis terekap. Owner tinggal export PDF/Excel.'],
                     ];
                 @endphp
@@ -209,7 +209,7 @@
             @php
                 $quotes = [
                     ['q' => 'Dulu hitung setoran biji ke mika selalu meleset. Sekarang tinggal input, sistemnya yang hitung. Komisi operator nggak pernah ribut lagi.', 'n' => 'Bu Qontas', 'r' => 'Owner — Cemilan Qontas'],
-                    ['q' => 'Mulai trip, drop ke kios, settlement, semua dari HP. Akhir bulan laporan langsung jadi PDF. Distribusi 200-an kios terasa ringan.', 'n' => 'Operator Lapangan', 'r' => 'Tim Distribusi'],
+                    ['q' => 'Mulai trip, titip ke kios, tagih, semua dari HP. Akhir bulan laporan langsung jadi PDF. Distribusi 200-an kios terasa ringan.', 'n' => 'Operator Lapangan', 'r' => 'Tim Distribusi'],
                 ];
             @endphp
             @foreach ($quotes as $q)
