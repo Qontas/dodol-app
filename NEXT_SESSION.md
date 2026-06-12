@@ -1,134 +1,107 @@
 # NEXT_SESSION.md — Dodol-App
+*Sesi terakhir: 12 Juni 2026*
 
-_Sesi terakhir: 11 Juni 2026_
-
-## TRIGGER SENTENCE
-
-Bg, lanjut dodol-app. 130 PASS. Audit Fable 5 selesai.
-GitHub: Qontas/dodol-app synced, HEAD: 36e6dd2.
-PRIORITAS: Fix 5 issue + HPP custom per owner + Deploy Railway.
+## TRIGGER SENTENCE (untuk sesi baru)
+Bg, lanjut dodol-app. 136 PASS. UX overhaul Fable 5 selesai.
+GitHub: Qontas/dodol-app synced, HEAD: 9f42b5c.
+PRIORITAS: Fix 4 issue pending + Deploy Railway.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS TERAKHIR
-
-- 130 PASS, 428 assertions
-- 36e6dd2 chore: untrack PROMPT temporary
-- 0f31a38 ux(owner): prediksi dodol habis + bahasa sehari-hari + fix overdue
-- b24d727 ux(operator): banner offline + touch target
-- 5ad7688 perf(dashboard): live trip progress sekali di render
-- 1793763 perf(operator): hapus N+1 urgency cluster
-- 5da6c82 fix(resilience): guard idempotensi saveVisit
+- 136 PASS, 458 assertions
+- HEAD: 9f42b5c ux(landing): sinkronkan istilah
+- b7e4ef1 ux(terms): sinkronisasi istilah seluruh aplikasi
+- 6ed3bb1 ux(trip): tombol Akhiri Trip fix
+- 401a7e1 ux(visit-modal): alur 2 langkah
+- 0f31a38 ux(owner): prediksi dodol habis + overdue fix
 - GitHub: https://github.com/Qontas/dodol-app
 
 ## CREDENTIALS
-
 - Super Admin: admin@cemilanqontas.id / password → /admin
-- Owner Ismi: owner@cemilanqontas.id / password → /owner/dashboard + /owner-panel
+- Owner Ismi: owner@cemilanqontas.id / password → /owner/dashboard
 - Operator: operator@cemilanqontas.id / password → /operator/dashboard
 
-## ISSUE YANG HARUS DI-FIX (PRIORITAS TINGGI)
-
-### ISSUE 1: HPP + Komisi + Harga Modal Mika Custom Per Owner
-
-Sekarang: HPP dan harga_mika sudah bisa custom per owner via /owner/settings.
-Yang kurang: komisi_per_mika (Rp 500) dan komisi_kios_baru (Rp 1.000) masih hardcode di Trip model.
-Yang harus dilakukan:
-
-- Tambah kolom ke users table: komisi_per_mika (default 500), komisi_kios_baru_per_mika (default 1000)
-- Update Trip model: ganti konstanta 500 dan 1000 → ambil dari owner
-- Update /owner/settings view: tambah field untuk custom komisi
-- Update UserSeeder: set default untuk owner Ismi
-- Default semua nilai = punya owner Ismi (HPP 9500, harga_mika 200, komisi 500, komisi_kios_baru 1000)
-- Owner lain bisa custom sendiri
-- Test: 130+ PASS
-
-### ISSUE 2: Tombol "Akhiri Trip" Tenggelam/Tidak Terlihat
-
-Di mobile dan PC, tombol Akhiri Trip tertutup/tidak nampak.
+## ISSUE 1 (PRIORITAS TINGGI): Tombol Kios Baru Hilang Saat Trip Aktif
+Saat trip aktif, bottom nav disembunyikan (fix tabrakan tombol Akhiri Trip).
+Akibatnya operator kehilangan akses menu Kios Baru saat sedang ngantar.
+Fix: tambah tombol "+ Kios Baru" di header area "DAFTAR KUNJUNGAN" di
+active-trip.blade.php, sejajar tombol "Urutkan Jarak". Touch target min 44px.
+Link ke route create kiosk. Setelah daftar kios baru, operator harus bisa
+kembali ke trip aktif (cek halaman create-kiosk punya back link yang benar).
 File: resources/views/livewire/operator/active-trip.blade.php
-Kemungkinan: tombol sticky bottom tertutup bottom nav atau z-index conflict.
-Fix: pastikan tombol Akhiri Trip selalu visible di atas bottom nav (z-index lebih tinggi, padding bottom cukup).
 
-### ISSUE 3: Tunda Bayar (Perpanjangan) Masih Bisa Input Drop Baru
+## ISSUE 2 (PRIORITAS TINGGI): Owner Panel Terpisah Membingungkan
+Saat ini ada DUA sisi owner yang terpisah:
+- /owner/dashboard — dashboard utama owner (Livewire, custom)
+- /owner-panel — Filament panel terpisah (berisi: Area, Supplier, Kios, Operator,
+  Pengadaan, Dashboard kosong)
 
-Ketika operator centang "Tunda bayar & ambil BS (perpanjangan)", seharusnya:
+Masalah: owner harus berpindah "dunia" untuk akses manajemen data.
+Menu di /owner/dashboard (Manajemen Kios, Area, Supplier, Anggota) saat diklik
+malah redirect ke /owner-panel — terasa seperti masuk ke aplikasi lain.
+Dashboard di /owner-panel kosong tidak berguna.
 
-- Tidak perlu input drop titipan baru (karena tujuannya cuma perpanjang, tidak ada titipan baru)
-- Input "Drop Titipan Baru (Mika)" harus disembunyikan atau di-disabled
-  File: resources/views/livewire/operator/active-trip.blade.php
-  Fix: kalau extensionGranted = true, sembunyikan section "Drop Titipan Baru"
+Yang diinginkan: SATU pengalaman owner yang mulus.
+Solusi yang disarankan:
+- Pertahankan /owner/dashboard sebagai halaman utama owner
+- Dari /owner/dashboard, menu navigasi (Kios, Area, Supplier, Operator/Anggota,
+  Pengadaan) langsung link ke /owner-panel/[resource] yang sudah ada
+  (Filament resources sudah scoped per owner_id — tidak perlu rebuild)
+- ATAU: embed link Filament resources langsung di sidebar/nav owner custom
+- Hapus atau redirect /owner-panel/dashboard yang kosong → redirect ke /owner/dashboard
+- Pastikan dari /owner-panel user bisa kembali ke /owner/dashboard dengan mudah
+- Jangan rebuild Filament resources dari nol — terlalu riskan, cukup unifikasi navigasi
 
-### ISSUE 4: Turunkan Default Masih Bisa Input Drop Baru
+## ISSUE 3 (PRIORITAS TINGGI): HPP + Komisi Custom Per Owner
+Sekarang: HPP dan harga_mika sudah bisa custom per owner via settings.
+Yang kurang: komisi_per_mika (Rp 500) dan komisi_kios_baru_per_mika (Rp 1.000)
+masih hardcode di Trip model.
+Fix:
+- Tambah kolom ke users table: komisi_per_mika (default 500),
+  komisi_kios_baru_per_mika (default 1000)
+- Update Trip model: ganti konstanta → ambil dari owner
+- Update /owner/settings: tambah field untuk custom komisi
+- Default semua nilai = punya owner Ismi
+- Owner lain bisa custom sendiri
+- Test: 136+ PASS
 
-Ketika operator centang "Turunkan default qty kios ini":
+## ISSUE 4: Deploy Railway
+Steps:
+1. Login railway.app → New Project → Deploy from GitHub → Qontas/dodol-app
+2. Add MySQL plugin
+3. Set environment variables:
+   APP_KEY, DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD,
+   APP_URL=https://your-app.up.railway.app, APP_ENV=production, APP_DEBUG=false
+4. php artisan migrate --force
+5. php artisan db:seed --force
+6. Copy map picker assets:
+   Copy-Item vendor/dotswan/filament-map-picker/resources/... (known issue)
+7. Verify semua fitur 3 role
 
-- Ini terjadi saat settle — artinya operator sedang bayar titipan lama
-- Input drop titipan baru seharusnya tetap bisa (owner mungkin mau turunkan default tapi tetap titip baru)
-- TAPI kalau turunkan default dicentang + input drop baru > default baru → perlu warning
-  Clarifikasi: issue ini mungkin bukan bug, tapi UX yang membingungkan.
-  Fix: tambah helper text "Default baru berlaku untuk pengantaran BERIKUTNYA, bukan drop sekarang"
-  Sehingga operator paham bahwa drop sekarang dan default baru adalah 2 hal terpisah.
-
-### ISSUE 5: Kata-kata Teknis Masih Ada
-
-Ganti semua kata teknis yang tersisa di halaman operator:
-
-- "Settle" → "Tagih" atau "Ambil Bayaran"
-- "Extension" → "Tunda Bayar"
-- "Drop" → "Titip" atau "Antar Dodol"
-- "BS" → "Sisa BS" atau "Dodol Sisa" (tapi tetap catat sebagai BS di sistem)
-- "Settlement" → "Tagihan"
-- "Delivery" → tidak tampil ke operator
-  Scan semua file operator blade dan Livewire component untuk kata-kata ini.
-
-## SETELAH FIX — DEPLOY RAILWAY
-
-### Steps Railway:
-
-1. Daftar/login railway.app
-2. New project → Deploy from GitHub → Qontas/dodol-app
-3. Add MySQL plugin
-4. Set environment variables:
-    - APP_KEY (php artisan key:generate --show)
-    - DB\_\* dari Railway MySQL
-    - APP_URL = https://your-app.up.railway.app
-    - APP_ENV=production
-    - APP_DEBUG=false
-5. php artisan migrate --force
-6. php artisan db:seed --force
-7. Copy map picker assets (known issue)
-8. Verify semua fitur
-
-## BUSINESS RULES LOCKED
-
+## BUSINESS RULES LOCKED (JANGAN DISENTUH)
 - 1 mika = 15 biji, Rp 800/biji = Rp 12.000/mika
-- Settlement qty BIJI, delivery qty_delivered MIKA
-- HPP per owner (default Rp 9.500, custom via /owner/settings)
-- harga_mika per owner (default Rp 200, custom)
-- Komisi reguler per owner (default Rp 500/mika, custom)
-- Komisi kios baru per owner (default Rp 1.000/mika, custom)
-- Kios cash only: is_cash_only = true
-- Drop extra cash: toggle cash/konsinyasi
-- Extension max 2x → warning cut off
+- Settlement qty BIJI, delivery qty MIKA
+- HPP per owner (default Rp 9.500)
+- harga_mika per owner (default Rp 200)
+- Komisi reguler per owner (default Rp 500/mika)
+- Komisi kios baru per owner (default Rp 1.000/mika)
+- Semua skenario visit: tagih+titip, tagih saja, titip saja, tunda bayar (max 2x),
+  cek saja, BS redistribusi, turunkan default — JANGAN ubah logika
 - Multi-tenant: owner_id scoping semua tabel bisnis
 
-## KNOWN ISSUES
-
-1. Map picker assets copy manual saat deploy baru
-2. MariaDB XAMPP start manual setiap sesi
-3. ext-gd aktif manual di C:\xampp\php\php.ini
-
 ## TECH STACK
-
-- Laravel 11.52.0, PHP 8.2.12 (XAMPP)
-- Filament v3.3.50, Livewire 3.8, Breeze v2.4.1
+- Laravel 11.52.0, PHP 8.2.12 (XAMPP Windows)
+- Filament v3.3.50, Livewire 3.8
 - MariaDB 10.4.32
-- barryvdh/laravel-dompdf ^3.1, maatwebsite/excel ^3.1
 - Working dir: C:\Users\Qontas\Projects\dodol-app
 
 ## DAILY DEV ROUTINE
-
 1. XAMPP → Start MySQL (WAJIB)
 2. php artisan serve
 3. npm run dev
 4. php artisan optimize:clear
+
+## KNOWN ISSUES LINGKUNGAN
+1. Map picker assets copy manual saat deploy baru
+2. MariaDB XAMPP start manual
+3. ext-gd aktif manual di C:\xampp\php\php.ini
