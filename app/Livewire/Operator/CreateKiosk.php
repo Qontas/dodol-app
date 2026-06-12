@@ -77,6 +77,16 @@ class CreateKiosk extends Component
 
         session()->flash('kios_saved', 'Kios baru berhasil ditambahkan.');
 
+        $activeTrip = \App\Models\Trip::where('operator_id', auth()->id())
+            ->whereDate('trip_date', today())
+            ->whereNotNull('started_at')
+            ->whereNull('ended_at')
+            ->first();
+
+        if ($activeTrip) {
+            return $this->redirect(route('operator.trip.active', $activeTrip->id), navigate: true);
+        }
+
         return $this->redirect(route('operator.dashboard'), navigate: true);
     }
 

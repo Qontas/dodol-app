@@ -16,7 +16,7 @@ class OwnerPanelAccessTest extends TestCase
     {
         $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
 
-        $this->actingAs($owner)->get('/owner-panel')->assertOk();
+        $this->actingAs($owner)->get('/owner-panel')->assertRedirect('/owner/dashboard');
         $this->actingAs($owner)->get('/owner-panel/kiosks')->assertOk();
         $this->actingAs($owner)->get('/owner-panel/clusters')->assertOk();
         $this->actingAs($owner)->get('/owner-panel/suppliers')->assertOk();
