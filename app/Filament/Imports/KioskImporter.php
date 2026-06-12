@@ -122,17 +122,8 @@ class KioskImporter extends Importer
         $value = trim($value);
 
         // Case 1: DMS format — "3° 36' 15.5196" N 98° 39' 54.072" E"
-        if (preg_match('/(\d+)°\s*(\d+)\'\s*([\d.]+)"\s*([NS])\s+(\d+)°\s*(\d+)\'\s*([\d.]+)"\s*([EW])/u', $value, $m)) {
-            $lat = $m[1] + $m[2] / 60 + $m[3] / 3600;
-            $lng = $m[5] + $m[6] / 60 + $m[7] / 3600;
-            if ($m[4] === 'S') {
-                $lat = -$lat;
-            }
-            if ($m[8] === 'W') {
-                $lng = -$lng;
-            }
-
-            return ['lat' => round($lat, 6), 'lng' => round($lng, 6), 'notes' => null];
+        if (($dms = \App\Support\KioskLocationParser::dmsToDecimal($value)) !== null) {
+            return ['lat' => $dms['lat'], 'lng' => $dms['lng'], 'notes' => null];
         }
 
         // Case 2: Google Maps link — tidak bisa resolve tanpa API, simpan di notes.
