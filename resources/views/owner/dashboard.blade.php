@@ -301,7 +301,7 @@
         </div>
 
         <div class="mt-6">
-            <a href="{{ route('filament.owner.pages.dashboard') }}"
+            <a href="{{ route('filament.owner.resources.kiosks.index') }}"
                class="inline-block bg-amber-600 text-white px-6 py-3 rounded-lg hover:bg-amber-700 font-medium">
                 Buka Panel Manajemen Data
             </a>

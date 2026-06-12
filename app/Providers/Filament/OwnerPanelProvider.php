@@ -51,7 +51,13 @@ class OwnerPanelProvider extends PanelProvider
                 OperatorResource::class,
             ])
             ->pages([
-                Pages\Dashboard::class,
+                \App\Filament\Pages\Dashboard::class,
+            ])
+            ->navigationItems([
+                \Filament\Navigation\NavigationItem::make('Kembali ke Dashboard')
+                    ->url(fn() => route('owner.dashboard'))
+                    ->icon('heroicon-o-arrow-left')
+                    ->sort(-1),
             ])
             ->middleware([
                 EncryptCookies::class,
