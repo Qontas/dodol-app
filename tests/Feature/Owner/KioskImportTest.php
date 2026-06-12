@@ -4,6 +4,7 @@ namespace Tests\Feature\Owner;
 
 use App\Filament\Resources\KioskResource\Pages\ListKiosks;
 use App\Models\User;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -22,6 +23,9 @@ class KioskImportTest extends TestCase
 
         $this->actingAs($user);
 
+        // KioskResource hidup di owner panel; set konteks panel agar URL tabel
+        // ter-resolve ke route owner.
+        Filament::setCurrentPanel(Filament::getPanel('owner'));
         Livewire::test(ListKiosks::class)
             ->assertActionExists('import');
     }

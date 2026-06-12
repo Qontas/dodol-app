@@ -6,6 +6,8 @@ use App\Filament\Resources\ClusterResource;
 use App\Filament\Resources\KioskResource;
 use App\Filament\Resources\OperatorResource;
 use App\Filament\Resources\ProcurementBatchResource;
+use App\Filament\Resources\ProductResource;
+use App\Filament\Resources\ProductVariantResource;
 use App\Filament\Resources\SupplierResource;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -47,6 +49,8 @@ class OwnerPanelProvider extends PanelProvider
                 KioskResource::class,
                 ClusterResource::class,
                 SupplierResource::class,
+                ProductResource::class,
+                ProductVariantResource::class,
                 ProcurementBatchResource::class,
                 OperatorResource::class,
             ])

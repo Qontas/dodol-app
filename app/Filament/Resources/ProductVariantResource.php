@@ -35,7 +35,11 @@ class ProductVariantResource extends Resource
             ->schema([
                 Forms\Components\Select::make('product_id')
                     ->label('Produk')
-                    ->relationship('product', 'name', fn ($query) => $query->where('is_active', true))
+                    ->relationship('product', 'name', fn ($query) => $query
+                        ->where('is_active', true)
+                        // Owner hanya boleh memilih produk miliknya; super admin lihat semua.
+                        ->when(! (auth()->user()?->isSuperAdmin() ?? false),
+                            fn ($q) => $q->where('owner_id', auth()->id())))
                     ->searchable()
                     ->preload()
                     ->required()
