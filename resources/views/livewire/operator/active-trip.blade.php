@@ -261,6 +261,15 @@
             </div>
 
             <div class="p-5 space-y-5">
+                {{-- Foto kios di puncak modal: bantu operator pastikan kios yang benar --}}
+                @if($selectedKiosk->photo_path)
+                    <div class="mb-3 -mx-4 -mt-2">
+                        <img src="{{ Storage::url($selectedKiosk->photo_path) }}"
+                             alt="Foto {{ $selectedKiosk->name }}"
+                             class="w-full max-h-36 object-cover">
+                    </div>
+                @endif
+
                 {{-- Error umum --}}
                 @error('general')
                     <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{{ $message }}</div>
@@ -269,29 +278,19 @@
                 @if(is_null($chosenAction))
                     {{-- ============ LAYAR 1: PILIH AKSI ============ --}}
 
-                    {{-- Foto + Navigasi hanya di layar pertama (bantu konfirmasi kios yang benar) --}}
-                    @if($selectedKiosk->photo_path || ($selectedKiosk->latitude && $selectedKiosk->longitude))
-                        <div class="space-y-3">
-                            @if($selectedKiosk->photo_path)
-                                <img src="{{ Storage::url($selectedKiosk->photo_path) }}"
-                                     alt="Foto {{ $selectedKiosk->name }}"
-                                     class="w-full rounded-xl object-cover" style="max-height: 140px;">
-                            @endif
-
-                            @if($selectedKiosk->latitude && $selectedKiosk->longitude)
-                                <a href="https://www.google.com/maps?q={{ $selectedKiosk->latitude }},{{ $selectedKiosk->longitude }}"
-                                   target="_blank"
-                                   class="inline-flex items-center gap-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 hover:bg-amber-100">
-                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                              d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                              d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                    </svg>
-                                    Navigasi ke Kios
-                                </a>
-                            @endif
-                        </div>
+                    {{-- Navigasi hanya di layar pertama (foto sudah tampil di puncak modal) --}}
+                    @if($selectedKiosk->latitude && $selectedKiosk->longitude)
+                        <a href="https://www.google.com/maps?q={{ $selectedKiosk->latitude }},{{ $selectedKiosk->longitude }}"
+                           target="_blank"
+                           class="inline-flex items-center gap-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 hover:bg-amber-100">
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                            Navigasi ke Kios
+                        </a>
                     @endif
 
                     @if($pendingDelivery)
