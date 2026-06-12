@@ -12,6 +12,9 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 
 class SuperAdminStatsOverview extends BaseWidget
 {
+    // Tampil paling atas: ini ringkasan utama super admin, jangan terkubur di bawah.
+    protected static ?int $sort = -3;
+
     public static function canView(): bool
     {
         return auth()->user()?->isSuperAdmin() ?? false;

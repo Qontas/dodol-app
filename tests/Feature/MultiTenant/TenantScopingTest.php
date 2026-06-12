@@ -6,6 +6,7 @@ use App\Filament\Resources\ClusterResource\Pages\ListClusters;
 use App\Filament\Resources\UserResource\Pages\ListUsers;
 use App\Models\Cluster;
 use App\Models\User;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -50,6 +51,9 @@ class TenantScopingTest extends TestCase
         $this->actingAs($ownerB);
         Cluster::create(['name' => 'Milik B']);
 
+        // ClusterResource kini hidup di owner panel; set konteks panel agar URL
+        // tabel (edit/index) ter-resolve ke route owner, bukan admin yang sudah dibersihkan.
+        Filament::setCurrentPanel(Filament::getPanel('owner'));
         Livewire::actingAs($ownerA);
         Livewire::test(ListClusters::class)
             ->assertCanSeeTableRecords(Cluster::where('owner_id', $ownerA->id)->get())
@@ -64,6 +68,7 @@ class TenantScopingTest extends TestCase
         $this->actingAs($owner);
         Cluster::create(['name' => 'Milik Owner']);
 
+        Filament::setCurrentPanel(Filament::getPanel('owner'));
         Livewire::actingAs($admin);
         Livewire::test(ListClusters::class)
             ->assertCanSeeTableRecords(Cluster::all());

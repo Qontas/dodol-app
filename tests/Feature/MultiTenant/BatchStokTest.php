@@ -6,6 +6,7 @@ use App\Filament\Resources\ProcurementBatchResource\Pages\ListProcurementBatches
 use App\Models\Delivery;
 use App\Models\ProcurementBatch;
 use App\Models\User;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -68,6 +69,9 @@ class BatchStokTest extends TestCase
         $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
         ProcurementBatch::factory()->create(['owner_id' => $owner->id, 'qty_packs' => 72]);
 
+        // ProcurementBatchResource hidup di owner panel; set konteks panel agar
+        // URL tabel ter-resolve ke route owner.
+        Filament::setCurrentPanel(Filament::getPanel('owner'));
         Livewire::actingAs($owner);
         Livewire::test(ListProcurementBatches::class)
             ->assertOk();
