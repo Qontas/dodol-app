@@ -158,6 +158,32 @@
             @enderror
         </div>
 
+        {{-- Foto Kios --}}
+        <div>
+            <label class="block text-sm font-bold text-slate-900 mb-2">
+                Foto Kios <span class="text-slate-400 font-normal">(opsional)</span>
+            </label>
+            <input
+                type="file"
+                wire:model="foto"
+                accept="image/*"
+                class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4
+                       file:rounded-lg file:border-0 file:text-sm file:font-semibold
+                       file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100">
+            <div wire:loading wire:target="foto" class="mt-2 text-xs text-amber-600">Mengunggah foto…</div>
+            @if($foto)
+                <div class="mt-2">
+                    <img
+                        src="{{ $foto->temporaryUrl() }}"
+                        alt="Pratinjau foto kios"
+                        class="w-full max-h-48 object-cover rounded-xl border border-slate-200">
+                </div>
+            @endif
+            @error('foto')
+                <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+            @enderror
+        </div>
+
         {{-- Tombol Simpan — sticky bottom --}}
         <div class="fixed bottom-16 inset-x-0 px-4 z-30">
             <div class="max-w-md mx-auto">

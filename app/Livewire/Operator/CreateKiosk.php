@@ -7,10 +7,13 @@ use App\Models\Kiosk;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 #[Layout('layouts.operator')]
 class CreateKiosk extends Component
 {
+    use WithFileUploads;
+
     public string $namaKios = '';
     public string $namaPemilik = '';
     public string $telepon = '';
@@ -18,6 +21,7 @@ class CreateKiosk extends Component
     public int $defaultQtyMika = 1;
     public ?float $latitude = null;
     public ?float $longitude = null;
+    public $foto = null;
 
     public function mount(): void
     {
@@ -49,6 +53,7 @@ class CreateKiosk extends Component
             'latitude' => 'required|numeric|between:-90,90',
             'longitude' => 'required|numeric|between:-180,180',
             'telepon' => 'nullable|string|max:20',
+            'foto' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
         ], [
             'namaKios.required' => 'Nama kios wajib diisi',
             'namaPemilik.required' => 'Nama pemilik wajib diisi',
@@ -59,8 +64,8 @@ class CreateKiosk extends Component
             'longitude.required' => 'Tandai lokasi kios di peta dulu',
         ]);
 
-        DB::transaction(function () {
-            Kiosk::create([
+        $kiosk = DB::transaction(function () {
+            return Kiosk::create([
                 'name' => $this->namaKios,
                 'owner_name' => $this->namaPemilik,
                 'phone' => $this->telepon ?: null,
@@ -75,6 +80,14 @@ class CreateKiosk extends Component
             ]);
         });
 
+        // Foto opsional dari lapangan: simpan, perkecil ke max 800x600 biar hemat
+        // storage & cepat di koneksi operator, lalu tautkan ke kios.
+        if ($this->foto) {
+            $path = $this->foto->store('kiosks', 'public');
+            $this->resizeImage($path, 800, 600);
+            $kiosk->update(['photo_path' => $path]);
+        }
+
         session()->flash('kios_saved', 'Kios baru berhasil ditambahkan.');
 
         $activeTrip = \App\Models\Trip::where('operator_id', auth()->id())
@@ -88,6 +101,41 @@ class CreateKiosk extends Component
         }
 
         return $this->redirect(route('operator.dashboard'), navigate: true);
+    }
+
+    private function resizeImage(string $path, int $maxW, int $maxH): void
+    {
+        $fullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($path);
+        $info = getimagesize($fullPath);
+        if (!$info) {
+            return;
+        }
+        [$origW, $origH, $type] = [$info[0], $info[1], $info[2]];
+        if ($origW <= $maxW && $origH <= $maxH) {
+            return;
+        }
+        $ratio = min($maxW / $origW, $maxH / $origH);
+        $newW = (int) round($origW * $ratio);
+        $newH = (int) round($origH * $ratio);
+        $src = match ($type) {
+            IMAGETYPE_JPEG => imagecreatefromjpeg($fullPath),
+            IMAGETYPE_PNG => imagecreatefrompng($fullPath),
+            IMAGETYPE_WEBP => imagecreatefromwebp($fullPath),
+            default => null,
+        };
+        if (!$src) {
+            return;
+        }
+        $dst = imagecreatetruecolor($newW, $newH);
+        imagecopyresampled($dst, $src, 0, 0, 0, 0, $newW, $newH, $origW, $origH);
+        match ($type) {
+            IMAGETYPE_JPEG => imagejpeg($dst, $fullPath, 85),
+            IMAGETYPE_PNG => imagepng($dst, $fullPath),
+            IMAGETYPE_WEBP => imagewebp($dst, $fullPath, 85),
+            default => null,
+        };
+        imagedestroy($src);
+        imagedestroy($dst);
     }
 
     public function render()
