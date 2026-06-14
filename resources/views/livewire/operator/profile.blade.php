@@ -7,12 +7,12 @@
     <div class="space-y-5">
         {{-- Info Profil --}}
         <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-            <livewire:profile.update-profile-information-form />
+            <livewire:operator.update-profile-form />
         </div>
 
         {{-- Ganti Password --}}
         <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-            <livewire:profile.update-password-form />
+            <livewire:operator.update-password-form />
         </div>
     </div>
 </div>
