@@ -82,6 +82,31 @@ class ActiveTripStopKiosTest extends TestCase
         $this->assertEquals(0, KioskVisit::where('kiosk_id', $kiosk->id)->count());
     }
 
+    public function test_stop_kios_reachable_from_cek_saja_action(): void
+    {
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'is_active' => true]);
+
+        $this->actingAs($this->operator);
+
+        Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $kiosk->id)
+            ->call('chooseAction', 'cek')
+            ->assertSet('chosenAction', 'cek')
+            ->set('showStopConfirm', true)
+            ->set('stopReason', 'tutup_permanen')
+            ->call('stopKios')
+            ->assertHasNoErrors();
+
+        $kiosk->refresh();
+        $this->assertFalse($kiosk->is_active);
+        $this->assertEquals('tutup_permanen', $kiosk->stop_reason);
+        $this->assertEquals('operator', $kiosk->stopped_by);
+
+        $visit = KioskVisit::where('trip_id', $this->trip->id)->where('kiosk_id', $kiosk->id)->first();
+        $this->assertNotNull($visit);
+        $this->assertEquals('stop_titipan', $visit->alasan_check);
+    }
+
     public function test_stop_kios_blocked_when_pending_delivery_exists(): void
     {
         $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'is_active' => true]);
