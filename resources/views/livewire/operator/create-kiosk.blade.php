@@ -123,17 +123,23 @@
         {{-- Lokasi Kios — MAP PICKER --}}
         <div>
             <label class="block text-sm font-bold text-slate-900 mb-2">
-                Lokasi Kios <span class="text-red-500">*</span>
+                Lokasi Kios <span class="text-slate-400 font-normal">(opsional)</span>
             </label>
             <p class="text-xs text-slate-500 mb-2">
-                Klik titik di peta untuk menandai lokasi kios
+                Klik titik di peta atau pakai tombol GPS di bawah
             </p>
+
+            <button type="button" id="btn-gps"
+                class="mb-2 w-full py-2 rounded-xl border border-amber-400 text-amber-700
+                       text-sm font-semibold bg-amber-50 hover:bg-amber-100 transition">
+                📍 Pakai Lokasi Saya (GPS)
+            </button>
 
             {{-- Map container — wire:ignore biar Livewire ga reset DOM peta saat update --}}
             <div wire:ignore>
                 <div
                     id="operator-map"
-                    style="height: 300px; border-radius: 12px; border: 1px solid #e2e8f0;"
+                    style="height: 300px; border-radius: 12px; border: 1px solid #e2e8f0; z-index: 1; position: relative;"
                 ></div>
             </div>
 
@@ -185,7 +191,7 @@
         </div>
 
         {{-- Tombol Simpan — sticky bottom --}}
-        <div class="fixed bottom-16 inset-x-0 px-4 z-30">
+        <div class="fixed bottom-16 inset-x-0 px-4 z-[9999]">
             <div class="max-w-md mx-auto">
                 <button
                     type="submit"
@@ -205,10 +211,13 @@
         </div>
     </form>
 
-    {{-- Leaflet --}}
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    {{-- Leaflet (lokal — tidak bergantung internet) --}}
+    <link rel="stylesheet" href="{{ asset('vendor/leaflet/leaflet.css') }}" />
+    <script src="{{ asset('vendor/leaflet/leaflet.js') }}"></script>
     <script>
+        let operatorMap = null;
+        let operatorMarker = null;
+
         document.addEventListener('livewire:navigated', initOperatorMap);
         document.addEventListener('DOMContentLoaded', initOperatorMap);
 
@@ -220,30 +229,49 @@
             const startLat = {{ $latitude ?: 3.5952 }};
             const startLng = {{ $longitude ?: 98.6722 }};
 
-            const map = L.map('operator-map').setView([startLat, startLng], 15);
+            operatorMap = L.map('operator-map').setView([startLat, startLng], 15);
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '© OpenStreetMap'
-            }).addTo(map);
+            }).addTo(operatorMap);
 
-            let marker = null;
             @if ($latitude && $longitude)
-                marker = L.marker([startLat, startLng]).addTo(map);
+                operatorMarker = L.marker([startLat, startLng]).addTo(operatorMap);
             @endif
 
-            map.on('click', function (e) {
-                const lat = e.latlng.lat;
-                const lng = e.latlng.lng;
-
-                if (marker) {
-                    marker.setLatLng([lat, lng]);
-                } else {
-                    marker = L.marker([lat, lng]).addTo(map);
-                }
-
-                @this.set('latitude', lat);
-                @this.set('longitude', lng);
+            operatorMap.on('click', function (e) {
+                setMapLocation(e.latlng.lat, e.latlng.lng);
             });
+
+            document.getElementById('btn-gps').addEventListener('click', function () {
+                if (!navigator.geolocation) {
+                    alert('GPS tidak didukung browser ini.');
+                    return;
+                }
+                this.textContent = '⏳ Mencari lokasi...';
+                const btn = this;
+                navigator.geolocation.getCurrentPosition(
+                    function (pos) {
+                        setMapLocation(pos.coords.latitude, pos.coords.longitude);
+                        operatorMap.setView([pos.coords.latitude, pos.coords.longitude], 17);
+                        btn.textContent = '📍 Pakai Lokasi Saya (GPS)';
+                    },
+                    function () {
+                        alert('Gagal mendapatkan lokasi. Pastikan GPS aktif dan izin lokasi diberikan.');
+                        btn.textContent = '📍 Pakai Lokasi Saya (GPS)';
+                    }
+                );
+            });
+        }
+
+        function setMapLocation(lat, lng) {
+            if (operatorMarker) {
+                operatorMarker.setLatLng([lat, lng]);
+            } else {
+                operatorMarker = L.marker([lat, lng]).addTo(operatorMap);
+            }
+            @this.set('latitude', lat);
+            @this.set('longitude', lng);
         }
     </script>
 </div>
