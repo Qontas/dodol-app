@@ -50,8 +50,8 @@ class CreateKiosk extends Component
             'namaPemilik' => 'required|string|max:255',
             'clusterId' => 'nullable|exists:clusters,id',
             'defaultQtyMika' => 'required|integer|min:1',
-            'latitude' => 'required|numeric|between:-90,90',
-            'longitude' => 'required|numeric|between:-180,180',
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
             'telepon' => 'nullable|string|max:20',
             'foto' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
         ], [
@@ -60,8 +60,6 @@ class CreateKiosk extends Component
             'clusterId.exists' => 'Area tidak valid',
             'defaultQtyMika.required' => 'Isi default jumlah mika',
             'defaultQtyMika.min' => 'Minimal 1 mika',
-            'latitude.required' => 'Tandai lokasi kios di peta dulu',
-            'longitude.required' => 'Tandai lokasi kios di peta dulu',
         ]);
 
         $kiosk = DB::transaction(function () {
