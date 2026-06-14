@@ -89,6 +89,10 @@ class ActiveTrip extends Component
     public bool $extensionGranted = false;
     public int $extensionCount = 0;
 
+    // --- STATE STOP TITIPAN (cut off kios) ---
+    public bool $showStopConfirm = false;
+    public string $stopReason = '';
+
     // --- STATE END TRIP ---
     public bool $isEndTripModalOpen = false;
     public string $endReason = '';
@@ -316,6 +320,10 @@ class ActiveTrip extends Component
 
         $this->resetVisitForm();
 
+        // Reset state stop titipan tiap buka modal.
+        $this->showStopConfirm = false;
+        $this->stopReason = '';
+
         // Kios cash only tidak punya pilihan aksi — langsung ke form jual cash.
         $this->chosenAction = $this->isCashOnly ? 'cash' : null;
 
@@ -379,6 +387,58 @@ class ActiveTrip extends Component
         $this->selectedKiosk = null;
         $this->pendingDelivery = null;
         $this->chosenAction = null;
+        $this->showStopConfirm = false;
+        $this->stopReason = '';
+    }
+
+    /**
+     * Stop titipan (cut off) kios oleh operator dari modal kunjungan.
+     * Kios di-nonaktifkan (is_active=false) + jejak stop, lalu hilang dari
+     * daftar trip (loadKiosks() sudah filter is_active=true). Kunjungan
+     * dicatat sebagai check_only beralasan 'stop_titipan' untuk jejak audit.
+     */
+    public function stopKios(): void
+    {
+        if (! $this->selectedKiosk) {
+            $this->addError('stopReason', 'Kios tidak valid. Tutup form dan coba lagi.');
+            return;
+        }
+
+        if (! array_key_exists($this->stopReason, Kiosk::STOP_REASONS)) {
+            $this->addError('stopReason', 'Pilih alasan dulu');
+            return;
+        }
+
+        // Masih ada titipan aktif (belum di-settle) → tidak boleh stop dulu.
+        // Operator harus selesaikan tagihan / catat loss sebelum cut off.
+        if ($this->pendingDelivery) {
+            $this->addError('stopReason', 'Kios masih punya titipan aktif. Selesaikan tagihan dulu sebelum stop.');
+            return;
+        }
+
+        DB::transaction(function () {
+            $this->selectedKiosk->update([
+                'is_active' => false,
+                'stopped_at' => now(),
+                'stop_reason' => $this->stopReason,
+                'stopped_by' => 'operator',
+            ]);
+
+            // Catat sebagai kunjungan check_only dengan alasan stop (jejak audit).
+            KioskVisit::create([
+                'trip_id' => $this->trip->id,
+                'kiosk_id' => $this->selectedKiosk->id,
+                'visited_at' => now(),
+                'visit_action' => 'check_only',
+                'alasan_check' => 'stop_titipan',
+                'extension_granted' => false,
+            ]);
+        });
+
+        $name = $this->selectedKiosk->name;
+        $this->closeVisitModal();
+        $this->loadKiosks();
+        session()->flash('visit_saved', "Kios {$name} dihentikan titipannya.");
     }
 
     public function updated($propertyName)
