@@ -3,6 +3,7 @@
 namespace Tests\Unit\Observers;
 
 use App\Models\Delivery;
+use App\Models\Kiosk;
 use App\Models\Settlement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use InvalidArgumentException;
@@ -106,5 +107,46 @@ class DeliveryObserverTest extends TestCase
         $this->expectExceptionMessageMatches('/must not have delivery_origins rows/');
 
         $delivery->validateOrigins();
+    }
+
+    public function test_first_consignment_sets_first_titip_date_when_null(): void
+    {
+        $kiosk = Kiosk::factory()->create(['first_titip_date' => null]);
+
+        $delivery = Delivery::factory()->create([
+            'kiosk_id' => $kiosk->id,
+            'delivery_type' => 'consignment',
+        ]);
+
+        $this->assertSame(
+            $delivery->created_at->toDateString(),
+            $kiosk->fresh()->first_titip_date->toDateString(),
+        );
+    }
+
+    public function test_existing_first_titip_date_is_not_overridden(): void
+    {
+        $kiosk = Kiosk::factory()->create(['first_titip_date' => '2025-01-15']);
+
+        Delivery::factory()->create([
+            'kiosk_id' => $kiosk->id,
+            'delivery_type' => 'consignment',
+        ]);
+
+        $this->assertSame('2025-01-15', $kiosk->fresh()->first_titip_date->toDateString());
+    }
+
+    public function test_non_consignment_does_not_set_first_titip_date(): void
+    {
+        foreach (['cash_sale', 'bs_redistribution'] as $type) {
+            $kiosk = Kiosk::factory()->create(['first_titip_date' => null]);
+
+            Delivery::factory()->create([
+                'kiosk_id' => $kiosk->id,
+                'delivery_type' => $type,
+            ]);
+
+            $this->assertNull($kiosk->fresh()->first_titip_date, "type {$type} should not set first_titip_date");
+        }
     }
 }

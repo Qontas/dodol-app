@@ -22,6 +22,32 @@ class DeliveryObserver
         $delivery->validateOrigins();
     }
 
+    public function created(Delivery $delivery): void
+    {
+        $this->maybeSetFirstTitipDate($delivery);
+    }
+
+    /**
+     * Tandai "mulai dititipi" saat titipan konsinyasi pertama tiba di kios yang
+     * belum punya first_titip_date (mis. kios hasil bulk-import yang tak lewat
+     * alur CreateKiosk). cash_sale / bs_redistribution bukan awal titipan →
+     * tidak menyetel. Tidak meng-override tanggal yang sudah ada.
+     */
+    private function maybeSetFirstTitipDate(Delivery $delivery): void
+    {
+        if ($delivery->delivery_type !== 'consignment') {
+            return;
+        }
+
+        $kiosk = $delivery->kiosk;
+        if (! $kiosk || $kiosk->first_titip_date !== null) {
+            return;
+        }
+
+        $kiosk->first_titip_date = ($delivery->created_at ?? now())->toDateString();
+        $kiosk->save();
+    }
+
     private function validateFields(Delivery $delivery): void
     {
         $id = $delivery->id ?? 'new';
