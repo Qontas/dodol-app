@@ -1,3 +1,9 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Sembunyikan elemen ber-x-cloak sampai Alpine selesai init. Tanpa aturan ini
+   dropdown akun & backdrop sidebar tampil sekejap (seolah "terbuka") saat load. */
+[x-cloak] {
+    display: none !important;
+}
