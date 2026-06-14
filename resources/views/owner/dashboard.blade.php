@@ -165,6 +165,46 @@
             </div>
         @endif
 
+        {{-- Kios Berhenti (cut off / stop titipan) --}}
+        @if ($stoppedKiosks->isNotEmpty())
+            <div class="bg-white rounded-lg border border-slate-200 mt-6">
+                <div class="px-5 py-4 border-b border-slate-100">
+                    <h3 class="font-bold text-slate-900">Kios Berhenti</h3>
+                    <p class="text-xs text-slate-500 mt-0.5">Kios yang dihentikan titipannya — bisa diaktifkan kembali</p>
+                </div>
+                @if (session('kiosk_reactivated'))
+                    <div class="mx-5 mt-3 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
+                        {{ session('kiosk_reactivated') }}
+                    </div>
+                @endif
+                <div class="divide-y divide-slate-100">
+                    @foreach ($stoppedKiosks as $sk)
+                        <div class="px-5 py-3 flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-sm font-medium text-slate-900">{{ $sk['name'] }}</p>
+                                <p class="text-xs text-slate-500">
+                                    {{ $sk['reason'] }}
+                                    @if ($sk['stopped_at'])
+                                        — {{ $sk['stopped_at']->translatedFormat('d M Y') }}
+                                    @endif
+                                    @if ($sk['stopped_by'])
+                                        (oleh {{ ucfirst($sk['stopped_by']) }})
+                                    @endif
+                                </p>
+                            </div>
+                            <form method="POST" action="{{ route('owner.kiosks.reactivate', $sk['id']) }}" class="shrink-0">
+                                @csrf
+                                <button type="submit"
+                                    class="text-xs font-bold text-emerald-600 border border-emerald-200 bg-emerald-50 rounded-lg px-3 py-1.5 active:bg-emerald-100">
+                                    Aktifkan Kembali
+                                </button>
+                            </form>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+
         {{-- Live Trip Progress --}}
         <livewire:owner.live-trip-progress />
 

@@ -28,6 +28,9 @@ class Kiosk extends Model
         'first_titip_date',
         'is_active',
         'is_cash_only',
+        'stopped_at',
+        'stop_reason',
+        'stopped_by',
         'notes',
     ];
 
@@ -37,8 +40,27 @@ class Kiosk extends Model
         'first_titip_date' => 'date',
         'is_active' => 'boolean',
         'is_cash_only' => 'boolean',
+        'stopped_at' => 'datetime',
         'fast_mover_threshold_days' => 'integer',
     ];
+
+    /**
+     * Label manusiawi untuk alasan stop titipan (lihat brief Cut Off Kios).
+     */
+    public const STOP_REASONS = [
+        'pemilik_minta_stop' => 'Pemilik minta berhenti sementara',
+        'tutup_permanen' => 'Kedai tutup permanen',
+        'kurang_laku' => 'Penjualan kurang jalan',
+        'pindah_lokasi' => 'Pindah lokasi',
+        'lainnya' => 'Alasan lain',
+    ];
+
+    public function getStopReasonLabelAttribute(): ?string
+    {
+        return $this->stop_reason
+            ? (self::STOP_REASONS[$this->stop_reason] ?? $this->stop_reason)
+            : null;
+    }
 
     public function cluster(): BelongsTo
     {

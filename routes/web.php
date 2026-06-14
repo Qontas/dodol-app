@@ -38,6 +38,9 @@ Route::middleware(['auth', 'verified', 'role:owner'])
         Route::get('/dashboard', [OwnerDashboardController::class, 'index'])
             ->name('dashboard');
 
+        Route::post('/kiosks/{kiosk}/reactivate', [OwnerDashboardController::class, 'reactivateKiosk'])
+            ->name('kiosks.reactivate');
+
         Route::get('/settings', [OwnerSettingsController::class, 'index'])
             ->name('settings');
         Route::put('/settings', [OwnerSettingsController::class, 'update'])

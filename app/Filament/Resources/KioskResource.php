@@ -189,6 +189,24 @@ class KioskResource extends Resource
                             ->helperText('Aktifkan jika kios ini selalu bayar cash langsung (tidak ada konsinyasi)'),
                     ]),
 
+                Section::make('Riwayat Stop Titipan')
+                    ->description('Kios ini sedang dihentikan titipannya.')
+                    ->columns(2)
+                    ->visible(fn (?Kiosk $record): bool => $record !== null && ! $record->is_active && $record->stopped_at !== null)
+                    ->schema([
+                        Forms\Components\Placeholder::make('stopped_at_display')
+                            ->label('Tanggal Stop')
+                            ->content(fn (?Kiosk $record): string => $record?->stopped_at?->translatedFormat('d M Y H:i') ?? '—'),
+
+                        Forms\Components\Placeholder::make('stop_reason_display')
+                            ->label('Alasan')
+                            ->content(fn (?Kiosk $record): string => $record?->stop_reason_label ?? '—'),
+
+                        Forms\Components\Placeholder::make('stopped_by_display')
+                            ->label('Dihentikan Oleh')
+                            ->content(fn (?Kiosk $record): string => $record?->stopped_by ? ucfirst($record->stopped_by) : '—'),
+                    ]),
+
                 Section::make('Catatan')
                     ->collapsed()
                     ->schema([
@@ -239,9 +257,11 @@ class KioskResource extends Resource
                     ->wrap()
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                Tables\Columns\IconColumn::make('is_active')
-                    ->label('Aktif')
-                    ->boolean()
+                Tables\Columns\TextColumn::make('is_active')
+                    ->label('Status')
+                    ->badge()
+                    ->formatStateUsing(fn (bool $state): string => $state ? 'Aktif' : 'Stop')
+                    ->color(fn (bool $state): string => $state ? 'success' : 'danger')
                     ->sortable(),
 
                 Tables\Columns\IconColumn::make('is_cash_only')
@@ -295,8 +315,8 @@ class KioskResource extends Resource
                 TernaryFilter::make('is_active')
                     ->label('Status')
                     ->placeholder('Semua')
-                    ->trueLabel('Hanya Aktif')
-                    ->falseLabel('Hanya Nonaktif'),
+                    ->trueLabel('Aktif')
+                    ->falseLabel('Stop'),
 
                 TernaryFilter::make('has_gps')
                     ->label('GPS')
@@ -309,6 +329,46 @@ class KioskResource extends Resource
                     ),
             ])
             ->actions([
+                Tables\Actions\Action::make('stop')
+                    ->label('Stop Titipan')
+                    ->icon('heroicon-o-no-symbol')
+                    ->color('danger')
+                    ->visible(fn (Kiosk $record): bool => $record->is_active)
+                    ->requiresConfirmation()
+                    ->modalHeading('Stop Titipan Kios')
+                    ->modalDescription('Kios akan dihentikan titipannya dan tidak muncul di daftar kunjungan trip. Data historis tetap ada.')
+                    ->form([
+                        Forms\Components\Select::make('stop_reason')
+                            ->label('Alasan Stop')
+                            ->options(Kiosk::STOP_REASONS)
+                            ->required(),
+                    ])
+                    ->action(function (Kiosk $record, array $data): void {
+                        $record->update([
+                            'is_active' => false,
+                            'stopped_at' => now(),
+                            'stop_reason' => $data['stop_reason'],
+                            'stopped_by' => 'owner',
+                        ]);
+                    }),
+
+                Tables\Actions\Action::make('reactivate')
+                    ->label('Aktifkan Kembali')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('success')
+                    ->visible(fn (Kiosk $record): bool => ! $record->is_active)
+                    ->requiresConfirmation()
+                    ->modalHeading('Aktifkan Kembali Kios')
+                    ->modalDescription('Kios akan kembali muncul di daftar kunjungan trip.')
+                    ->action(function (Kiosk $record): void {
+                        $record->update([
+                            'is_active' => true,
+                            'stopped_at' => null,
+                            'stop_reason' => null,
+                            'stopped_by' => null,
+                        ]);
+                    }),
+
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()

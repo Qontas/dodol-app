@@ -10,6 +10,7 @@ use App\Models\Settlement;
 use App\Models\Supplier;
 use App\Models\Trip;
 use App\Models\User;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
 class OwnerDashboardController extends Controller
@@ -147,6 +148,21 @@ class OwnerDashboardController extends Controller
             ])
             ->values();
 
+        // Widget — Kios berhenti (cut off): kios non-aktif milik owner, max 20
+        // terbaru. Kosong → section tidak tampil (sama seperti prediksi habis).
+        $stoppedKiosks = Kiosk::whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId))
+            ->where('is_active', false)
+            ->orderByDesc('stopped_at')
+            ->take(20)
+            ->get()
+            ->map(fn ($k) => [
+                'id' => $k->id,
+                'name' => $k->name,
+                'reason' => $k->stop_reason_label ?? '—',
+                'stopped_at' => $k->stopped_at,
+                'stopped_by' => $k->stopped_by,
+            ]);
+
         return view('owner.dashboard', compact(
             'user',
             'stats',
@@ -160,7 +176,26 @@ class OwnerDashboardController extends Controller
             'completedTrips',
             'batchStok',
             'totalStokTersisa',
-            'prediksiKios'
+            'prediksiKios',
+            'stoppedKiosks'
         ));
+    }
+
+    /**
+     * Aktifkan kembali kios yang di-stop (dari section "Kios Berhenti").
+     * Reset jejak stop. Otorisasi: kios harus milik owner yang login.
+     */
+    public function reactivateKiosk(Kiosk $kiosk): RedirectResponse
+    {
+        abort_unless($kiosk->owner_id === auth()->id(), 403);
+
+        $kiosk->update([
+            'is_active' => true,
+            'stopped_at' => null,
+            'stop_reason' => null,
+            'stopped_by' => null,
+        ]);
+
+        return back()->with('kiosk_reactivated', "Kios {$kiosk->name} diaktifkan kembali.");
     }
 }
