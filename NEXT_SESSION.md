@@ -3,13 +3,13 @@
 
 ## TRIGGER SENTENCE
 Bg, lanjut dodol-app. 155 PASS. Semua fitur selesai, siap deploy Railway.
-GitHub: Qontas/dodol-app synced, HEAD: 013d696.
+GitHub: Qontas/dodol-app synced, HEAD: a356b6b.
 PRIORITAS: Deploy Railway.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
 - 155 PASS, 548 assertions
-- HEAD: 013d696
+- HEAD: a356b6b
 - Semua fitur complete, tidak ada bug pending
 
 ## CREDENTIALS
@@ -34,8 +34,14 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - UX operator (alur 2 langkah modal visit, istilah bahasa Indonesia)
 - Prediksi dodol habis di dashboard owner
 - Widget untung bersih hari ini
+- Fix tombol simpan kios (kios baru dari lapangan)
+- Session 8 jam (operator tidak ke-logout di tengah trip)
+- Leaflet lokal (map picker tanpa CDN eksternal)
+- Lokasi kios opsional + ambil GPS otomatis
+- Halaman profil operator selaras layout operator + form bertema amber (tanpa ubah /profile owner & super admin)
 
 ## DEPLOY RAILWAY (PRIORITAS UTAMA)
+> Tunggu konfirmasi user dulu sebelum mulai deploy.
 Steps:
 1. Daftar/login railway.app → New Project → Deploy from GitHub → Qontas/dodol-app
 2. Add MySQL plugin
