@@ -9,12 +9,55 @@ use App\Models\Kiosk;
 use App\Models\Delivery;
 use App\Models\Commission;
 use App\Models\ProductVariant;
+use App\Models\Settlement;
+use App\Http\Controllers\Owner\MonthlyReportController;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class MonthlyReportTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_kios_baru_excludes_seeded_kiosks_without_settlement()
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
+        $cluster = Cluster::create(['name' => 'Cluster Baru', 'owner_id' => $owner->id]);
+        $variant = ProductVariant::factory()->create(['is_active' => true]);
+
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id,
+            'operator_id' => $operator->id,
+            'starting_cluster_id' => $cluster->id,
+            'trip_date' => '2026-06-15',
+            'ended_at' => now(),
+            'qty_carried_total' => 50,
+        ]);
+
+        // Kios seeding: first_titip_date Juni, delivery saldo awal TANPA settlement.
+        $kiosSeed = Kiosk::factory()->create(['cluster_id' => $cluster->id, 'first_titip_date' => '2026-06-10']);
+        Delivery::factory()->create([
+            'trip_id' => $trip->id,
+            'kiosk_id' => $kiosSeed->id,
+            'product_variant_id' => $variant->id,
+            'qty_delivered' => 2,
+        ]);
+
+        // Kios baru asli: first_titip_date Juni, delivery yang SUDAH ter-settle.
+        $kiosReal = Kiosk::factory()->create(['cluster_id' => $cluster->id, 'first_titip_date' => '2026-06-12']);
+        $deliveryReal = Delivery::factory()->create([
+            'trip_id' => $trip->id,
+            'kiosk_id' => $kiosReal->id,
+            'product_variant_id' => $variant->id,
+            'qty_delivered' => 1,
+        ]);
+        Settlement::factory()->create(['delivery_id' => $deliveryReal->id, 'visit_date' => '2026-06-12']);
+
+        $data = MonthlyReportController::buildMonthlyData('2026-06', $owner->id);
+
+        // Hanya kios asli (ada settlement) yang dihitung; kios seeding diabaikan.
+        $this->assertEquals(1, $data['analisisKios']['kios_baru']);
+    }
 
     public function test_monthly_report_calculations_are_accurate_and_scoped_properly()
     {
