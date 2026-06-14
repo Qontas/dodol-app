@@ -36,7 +36,7 @@
                 ['label' => 'Beranda', 'route' => 'operator.dashboard', 'active' => request()->routeIs('operator.dashboard')],
                 ['label' => 'Mulai Trip', 'route' => 'operator.trip.start', 'active' => request()->routeIs('operator.trip.*')],
                 ['label' => 'Kios Baru', 'route' => 'operator.kiosks.create', 'active' => request()->routeIs('operator.kiosks.*')],
-                ['label' => 'Profil', 'route' => 'profile', 'active' => request()->routeIs('profile')],
+                ['label' => 'Profil', 'route' => 'operator.profile', 'active' => request()->routeIs('operator.profile')],
             ];
         @endphp
         @foreach ($items as $item)
