@@ -76,6 +76,7 @@ Route::middleware(['auth', 'verified', 'role:operator'])
         Route::get('/trip/start', \App\Livewire\Operator\StartTrip::class)->name('trip.start');
         Route::get('/trip/{tripId}', \App\Livewire\Operator\ActiveTrip::class)->name('trip.active');
         Route::get('/kiosks/create', \App\Livewire\Operator\CreateKiosk::class)->name('kiosks.create');
+        Route::get('/profile', \App\Livewire\Operator\Profile::class)->name('profile');
     });
 
 Route::view('profile', 'profile')
