@@ -88,9 +88,14 @@ class MonthlyReportController extends Controller
             'settle' => $g->whereNotNull('settled_delivery_id')->count(),
         ])->sortByDesc('kunjungan')->values();
 
+        // Kios baru bulan ini = first_titip_date di bulan laporan DAN sudah punya
+        // transaksi nyata (delivery yang ter-settle). Tanpa filter settlement,
+        // kios hasil seeding saldo awal (delivery pending tanpa settlement,
+        // first_titip_date = tanggal migrasi) ikut terhitung — itu bukan kios baru.
         $kiosBaruCount = Kiosk::whereYear('first_titip_date', $year)
             ->whereMonth('first_titip_date', $mon)
             ->whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId))
+            ->whereHas('deliveries.settlement')
             ->count();
 
         $owner = \App\Models\User::find($ownerId);
