@@ -123,4 +123,18 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Media Disk
+    |--------------------------------------------------------------------------
+    |
+    | Disk penyimpanan foto/media (kios, dll). Default 'public' (lokal) agar app
+    | tetap jalan tanpa konfigurasi cloud. Saat object storage siap (Cloudflare
+    | R2 / S3 — lihat disk 's3' di config/filesystems.php), set MEDIA_DISK=s3
+    | agar foto persist melewati redeploy (filesystem Railway bersifat ephemeral).
+    |
+    */
+
+    'media_disk' => env('MEDIA_DISK', 'public'),
+
 ];

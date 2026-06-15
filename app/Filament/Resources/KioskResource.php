@@ -135,11 +135,16 @@ class KioskResource extends Resource
                             ->label('Foto Kios')
                             ->image()
                             ->imageEditor()
-                            ->maxSize(2048)
-                            ->disk('public')
+                            // Kompres di browser sebelum upload (Filepond): perkecil ke
+                            // sisi maks 1280px supaya hemat & cepat, selaras form operator.
+                            ->imageResizeMode('contain')
+                            ->imageResizeTargetWidth('1280')
+                            ->imageResizeTargetHeight('1280')
+                            ->maxSize(5120)
+                            ->disk(config('app.media_disk', 'public'))
                             ->directory('kiosks')
                             ->visibility('public')
-                            ->helperText('Maksimal 2MB. Format: JPG, PNG. Optional.')
+                            ->helperText('Foto akan dikecilkan otomatis. Maksimal 5MB. Format: JPG, PNG, WEBP. Opsional.')
                             ->columnSpan(2),
 
                         Forms\Components\TextInput::make('warning_visit_interval_days')
@@ -226,7 +231,7 @@ class KioskResource extends Resource
             ->columns([
                 Tables\Columns\ImageColumn::make('photo_path')
                     ->label('')
-                    ->disk('public')
+                    ->disk(config('app.media_disk', 'public'))
                     ->square()
                     ->size(50),
 

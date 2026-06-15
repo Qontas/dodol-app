@@ -41,6 +41,7 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Halaman profil operator selaras layout operator + form bertema amber (tanpa ubah /profile owner & super admin)
 - Jual Cash Cepat (walk-in): operator catat penjualan cash ke pembeli non-kios via kios sentinel tersembunyi per owner; omset masuk komisi, sentinel di-exclude dari listing & laporan per-kios (artisan walkin:ensure-sentinel untuk provisi owner lama)
 - Koreksi angka visit (SELESAI — backend + UI): operator bisa koreksi angka (drop mika, uang diterima, retur) pada kunjungan TERAKHIR ke kios selama trip aktif lewat tombol "Koreksi" di kartu kios yang sudah dikunjungi (form ke-isi angka lama, badge "Dikoreksi"). Prinsip reversal: record finansial lama dihapus, baris kiosk_visits lama disimpan + ditandai corrected_at (audit trail), angka baru ditulis ulang via persistVisitFromState (1 sumber kebenaran dgn saveVisit). Linkage deterministik deliveries.kiosk_visit_id. Larangan: trip ended, bukan visit terakhir, visit yang ubah default_qty_mika, kios walk-in, check_only tanpa angka. Semua agregat kiosk_visits pakai scope ->active().
+- Foto kios R2-ready (SELESAI): disk foto configurable via env MEDIA_DISK (default 'public' lokal; set 's3' saat R2/S3 siap → foto persist melewati redeploy Railway). Kompres otomatis di browser sebelum upload — operator: canvas vanilla (sisi maks 1280px, JPEG 0.7, fallback file asli kalau gagal); owner panel Filament: Filepond imageResize 1280. Accessor Kiosk::photo_url (baca disk media), dipakai di view. resize server-side jadi jaring pengaman & hanya jalan di disk lokal. Kredensial R2 BELUM diisi (env kosong, app tetap jalan di lokal).
 
 ## DEPLOY RAILWAY (PRIORITAS UTAMA)
 > Tunggu konfirmasi user dulu sebelum mulai deploy.
@@ -61,6 +62,14 @@ Steps:
 7. npm run build
 8. php artisan filament:assets
 9. Verify semua fitur 3 role
+10. (Foto kios persist) Set object storage Cloudflare R2/S3 — kalau dilewati, foto
+    HILANG tiap redeploy (filesystem Railway ephemeral). Langkah:
+    - Buat bucket R2 + API token (Access Key/Secret), aktifkan public URL bucket
+    - Set env: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_BUCKET,
+      AWS_DEFAULT_REGION=auto, AWS_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com,
+      AWS_URL=<public bucket URL>, AWS_USE_PATH_STYLE_ENDPOINT=true
+    - Set MEDIA_DISK=s3 (mengaktifkan disk media ke R2; default tetap 'public' lokal)
+    - Kode sudah R2-ready (config app.media_disk + Kiosk::photo_url); tak ada perubahan kode
 
 ## BUSINESS RULES LOCKED
 - 1 mika = 15 biji, Rp 800/biji = Rp 12.000/mika
