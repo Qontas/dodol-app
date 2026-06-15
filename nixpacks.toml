@@ -1,0 +1,41 @@
+# Konfigurasi build & start Railway (Nixpacks) untuk dodol-app.
+# Catatan: `php artisan filament:assets` TIDAK dijalankan di sini — aset Filament
+# sudah ter-commit di public/css/filament & public/js/filament (begitu juga Leaflet
+# lokal di public/vendor/leaflet). Hanya aset Vite (public/build) yang di-build saat
+# deploy karena di-gitignore.
+
+[phases.setup]
+nixPkgs = [
+    "php82",
+    "php82Extensions.gd",
+    "php82Extensions.pdo",
+    "php82Extensions.pdo_mysql",
+    "php82Extensions.mbstring",
+    "php82Extensions.tokenizer",
+    "php82Extensions.xml",
+    "php82Extensions.ctype",
+    "php82Extensions.json",
+    "php82Extensions.bcmath",
+    "php82Extensions.curl",
+    "php82Extensions.zip",
+    "php82Extensions.fileinfo",
+    "nodejs_20",
+]
+
+[phases.install]
+cmds = [
+    "composer install --no-dev --optimize-autoloader --prefer-dist",
+    "npm ci",
+    "npm run build",
+]
+
+[phases.build]
+cmds = [
+    "php artisan config:cache",
+    "php artisan route:cache",
+    "php artisan view:cache",
+]
+
+# Seeding TIDAK di sini (manual sekali setelah deploy pertama biar tak overwrite data).
+[start]
+cmd = "php artisan migrate --force && php artisan storage:link && php artisan serve --host=0.0.0.0 --port=$PORT"

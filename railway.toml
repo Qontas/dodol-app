@@ -1,0 +1,13 @@
+# Konfigurasi Railway untuk dodol-app. Build via Nixpacks (lihat nixpacks.toml).
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[healthcheck]
+httpPath = "/login"
+intervalSeconds = 30
+timeoutSeconds = 10
