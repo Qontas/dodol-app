@@ -49,7 +49,8 @@ class StartTrip extends Component
             ->where('is_active', true)
             ->get(['id', 'cluster_id', 'target_visit_interval_days', 'warning_visit_interval_days']);
 
-        $lastVisits = KioskVisit::whereIn('kiosk_id', $allKiosks->pluck('id'))
+        $lastVisits = KioskVisit::active()
+            ->whereIn('kiosk_id', $allKiosks->pluck('id'))
             ->groupBy('kiosk_id')
             ->selectRaw('kiosk_id, MAX(visited_at) as last_visit')
             ->pluck('last_visit', 'kiosk_id');

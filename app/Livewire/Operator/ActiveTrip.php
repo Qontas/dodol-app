@@ -138,8 +138,9 @@ class ActiveTrip extends Component
             $query->where('cluster_id', $this->starting_cluster_id);
         }
 
-        // Kios yang sudah dikunjungi pada trip ini
-        $this->visitedKioskIds = KioskVisit::where('trip_id', $this->trip->id)
+        // Kios yang sudah dikunjungi pada trip ini (abaikan kunjungan yang dikoreksi)
+        $this->visitedKioskIds = KioskVisit::active()
+            ->where('trip_id', $this->trip->id)
             ->pluck('kiosk_id')
             ->all();
 
@@ -151,6 +152,7 @@ class ActiveTrip extends Component
         // Operator terakhir yang mengunjungi tiap kios (1 query, hindari N+1)
         $kioskIds = $kiosks->pluck('id')->all();
         $lastOperatorData = KioskVisit::whereIn('kiosk_id', $kioskIds)
+            ->whereNull('kiosk_visits.corrected_at')
             ->join('trips', 'kiosk_visits.trip_id', '=', 'trips.id')
             ->join('users', 'trips.operator_id', '=', 'users.id')
             ->groupBy('kiosk_visits.kiosk_id')
@@ -217,7 +219,8 @@ class ActiveTrip extends Component
         $thirtyDaysAgo = $today->copy()->subDays(30)->toDateString();
 
         // Kunjungan terakhir per kios (MAX(visited_at)) — pakai index (kiosk_id, visited_at).
-        $lastVisits = KioskVisit::whereIn('kiosk_id', $kioskIds)
+        $lastVisits = KioskVisit::active()
+            ->whereIn('kiosk_id', $kioskIds)
             ->groupBy('kiosk_id')
             ->selectRaw('kiosk_id, MAX(visited_at) as last_visit')
             ->pluck('last_visit', 'kiosk_id');
@@ -315,7 +318,8 @@ class ActiveTrip extends Component
         // Hitung berapa kali titipan ini sudah diperpanjang
         $this->extensionGranted = false;
         if ($this->pendingDelivery) {
-            $this->extensionCount = KioskVisit::where('settled_delivery_id', $this->pendingDelivery->id)
+            $this->extensionCount = KioskVisit::active()
+                ->where('settled_delivery_id', $this->pendingDelivery->id)
                 ->where('extension_granted', true)
                 ->count();
         } else {
@@ -560,6 +564,164 @@ class ActiveTrip extends Component
             return;
         }
 
+        $message = $this->persistVisitFromState();
+        if ($message === null) {
+            return;
+        }
+
+        $this->loadKiosks();
+        $this->extraDropMode = 'cash';
+        $this->closeVisitModal();
+        session()->flash('visit_saved', $message);
+    }
+
+    /**
+     * Koreksi angka kunjungan TERAKHIR ke sebuah kios pada trip aktif (reversal).
+     * Prinsip: record finansial visit lama DIHAPUS (angka lama hilang dari hitungan),
+     * baris kiosk_visits lama DISIMPAN + ditandai corrected_at (audit trail), lalu
+     * angka baru ditulis ulang lewat persistVisitFromState() (satu sumber kebenaran).
+     *
+     * Hanya ANGKA yang dikoreksi (drop mika, retur fresh/expired, uang diterima);
+     * bukan ganti kios / aksi / BS / default kios.
+     */
+    public function correctVisit(int $visitId, int $dropBaru, int $returnFresh, int $returnExpired, int $uangDiterima): void
+    {
+        $this->resetErrorBag('correction');
+
+        $visit = KioskVisit::with('kiosk')->find($visitId);
+
+        // --- Validasi batasan koreksi ---
+        if (! $visit || $visit->trip_id !== $this->trip->id) {
+            $this->addError('correction', 'Kunjungan tidak ditemukan pada trip ini.');
+            return;
+        }
+        if ($this->trip->ended_at !== null) {
+            $this->addError('correction', 'Trip sudah diakhiri, koreksi tidak bisa dilakukan.');
+            return;
+        }
+        if ($visit->corrected_at !== null) {
+            $this->addError('correction', 'Kunjungan ini sudah dikoreksi sebelumnya.');
+            return;
+        }
+        if ($visit->kiosk && $visit->kiosk->name === Kiosk::WALKIN_SENTINEL_NAME) {
+            $this->addError('correction', 'Penjualan walk-in tidak bisa dikoreksi.');
+            return;
+        }
+        if ($visit->changed_default) {
+            $this->addError('correction', 'Kunjungan yang mengubah default kios tidak bisa dikoreksi.');
+            return;
+        }
+
+        // Hanya visit TERAKHIR (tidak ada kunjungan aktif lebih baru ke kios yang sama).
+        $adaLebihBaru = KioskVisit::active()
+            ->where('trip_id', $this->trip->id)
+            ->where('kiosk_id', $visit->kiosk_id)
+            ->where('id', '!=', $visit->id)
+            ->where('visited_at', '>=', $visit->visited_at)
+            ->exists();
+        if ($adaLebihBaru) {
+            $this->addError('correction', 'Hanya kunjungan terakhir ke kios ini yang bisa dikoreksi.');
+            return;
+        }
+
+        // Determinisme: visit yang membuat delivery harus punya linkage lengkap
+        // (data sebelum fitur koreksi tidak punya kiosk_visit_id → tidak bisa direversal).
+        if ($visit->new_delivery_id !== null
+            && ! Delivery::where('kiosk_visit_id', $visit->id)->whereKey($visit->new_delivery_id)->exists()) {
+            $this->addError('correction', 'Kunjungan ini dibuat sebelum fitur koreksi dan tidak bisa dikoreksi.');
+            return;
+        }
+
+        // --- Siapkan state untuk penyimpanan ulang ---
+        $this->selectedKiosk = $visit->kiosk()->first();
+        $this->isCashOnly = (bool) ($this->selectedKiosk?->is_cash_only);
+        // Titipan lama yang akan di-settle ulang = yang dulu di-settle visit ini
+        // (settlement-nya dihapus di transaksi → titipan aktif lagi).
+        $this->pendingDelivery = $visit->settled_delivery_id
+            ? Delivery::find($visit->settled_delivery_id)
+            : null;
+
+        $this->dropBaru = $dropBaru;
+        $this->returnFresh = $returnFresh;
+        $this->returnExpired = $returnExpired;
+        $this->uangDiterima = $uangDiterima;
+        // Koreksi hanya angka — flag perilaku lain dinetralkan.
+        $this->extensionGranted = false;
+        $this->turunkanDefault = false;
+        $this->qtyDefaultBaru = 0;
+        $this->adaBsRedistribusi = false;
+        $this->qtyBsMika = 0;
+        $this->extraDropMode = 'cash';
+        $this->alasanCheck = '';
+        $this->sisaBiji = 0;
+
+        $this->validate([
+            'returnFresh' => 'nullable|integer|min:0',
+            'returnExpired' => 'nullable|integer|min:0',
+            'dropBaru' => 'nullable|integer|min:0',
+            'uangDiterima' => 'nullable|integer|min:0',
+        ]);
+
+        try {
+            DB::transaction(function () use ($visit) {
+                // a. Hapus settlement milik delivery yang dibuat visit ini.
+                $linkedDeliveryIds = Delivery::where('kiosk_visit_id', $visit->id)->pluck('id');
+                if ($linkedDeliveryIds->isNotEmpty()) {
+                    Settlement::whereIn('delivery_id', $linkedDeliveryIds)->delete();
+                }
+
+                // b. Hapus settlement penagihan titipan lama → titipan lama aktif lagi.
+                if ($visit->settled_delivery_id) {
+                    Settlement::where('delivery_id', $visit->settled_delivery_id)->delete();
+                }
+
+                // BS: kembalikan counter trip sebelum delivery BS dihapus.
+                $bsQty = (int) Delivery::where('kiosk_visit_id', $visit->id)
+                    ->where('delivery_type', 'bs_redistribution')
+                    ->sum('qty_delivered');
+                if ($bsQty > 0) {
+                    $this->trip->decrement('qty_bs_redistributed', $bsQty);
+                }
+
+                // c. Hapus semua delivery yang dibuat visit ini (settlement-nya sudah dihapus).
+                Delivery::where('kiosk_visit_id', $visit->id)->delete();
+
+                // d. Tandai visit lama sebagai dikoreksi (audit trail, baris disimpan).
+                $visit->update(['corrected_at' => now()]);
+
+                // e. Tulis ulang dengan angka baru — visit baru menaut ke visit lama.
+                $message = $this->persistVisitFromState($visit->id);
+                if ($message === null) {
+                    // Error sudah di-addError oleh persist → rollback semuanya.
+                    throw new \RuntimeException('Penyimpanan ulang gagal.');
+                }
+            });
+        } catch (\Throwable $e) {
+            if ($this->getErrorBag()->isNotEmpty()) {
+                return; // error spesifik sudah ditambahkan
+            }
+            $this->addError('correction', 'Gagal mengoreksi kunjungan. Coba lagi.');
+            return;
+        }
+
+        $this->loadKiosks();
+        $this->extraDropMode = 'cash';
+        $this->closeVisitModal();
+        session()->flash('visit_saved', 'Kunjungan berhasil dikoreksi.');
+    }
+
+    /**
+     * Inti penyimpanan kunjungan dari state komponen ($selectedKiosk, $pendingDelivery,
+     * dropBaru/returnFresh/returnExpired/uangDiterima + flag). SATU sumber kebenaran:
+     * dipakai saveVisit() DAN correctVisit(). Mengembalikan pesan sukses, atau null bila
+     * gagal (error sudah di-addError). TIDAK memanggil loadKiosks/flash/closeModal —
+     * itu tugas pemanggil. Semua delivery yang dibuat ditaut ke KioskVisit lewat
+     * kiosk_visit_id (linkage deterministik untuk reversal koreksi).
+     *
+     * @param int|null $correctionOfVisitId  Bila ini hasil koreksi: id visit yang dikoreksi.
+     */
+    private function persistVisitFromState(?int $correctionOfVisitId = null): ?string
+    {
         $drop = (int) $this->dropBaru;
         $fresh = (int) $this->returnFresh;
         $expired = (int) $this->returnExpired;
@@ -573,18 +735,18 @@ class ActiveTrip extends Component
         if ($this->isCashOnly) {
             if ($drop <= 0) {
                 $this->addError('general', 'Jumlah mika harus lebih dari 0 untuk penjualan cash.');
-                return;
+                return null;
             }
 
             try {
                 $variant = $this->resolveActiveVariant();
             } catch (\RuntimeException $e) {
                 $this->addError('general', $e->getMessage());
-                return;
+                return null;
             }
 
             try {
-                DB::transaction(function () use ($drop, $variant) {
+                DB::transaction(function () use ($drop, $variant, $correctionOfVisitId) {
                     $delivery = Delivery::create([
                         'kiosk_id' => $this->selectedKiosk->id,
                         'trip_id' => $this->trip->id,
@@ -610,7 +772,7 @@ class ActiveTrip extends Component
                         'amount_paid' => $amountDue, // langsung lunas
                     ]);
 
-                    KioskVisit::create([
+                    $visit = KioskVisit::create([
                         'trip_id' => $this->trip->id,
                         'kiosk_id' => $this->selectedKiosk->id,
                         'visited_at' => now(),
@@ -618,17 +780,17 @@ class ActiveTrip extends Component
                         'new_delivery_id' => $delivery->id,
                         'settled_delivery_id' => $delivery->id,
                         'extension_granted' => false,
+                        'correction_of_visit_id' => $correctionOfVisitId,
                     ]);
+
+                    $delivery->update(['kiosk_visit_id' => $visit->id]);
                 });
             } catch (\Throwable $e) {
                 $this->addError('general', 'Gagal menyimpan. Coba lagi.');
-                return;
+                return null;
             }
 
-            $this->loadKiosks();
-            $this->closeVisitModal();
-            session()->flash('visit_saved', 'Kunjungan cash berhasil disimpan.');
-            return;
+            return 'Kunjungan cash berhasil disimpan.';
         }
 
         // Deteksi drop melebihi default_qty_mika. Operator memilih perlakuan kelebihan:
@@ -652,6 +814,13 @@ class ActiveTrip extends Component
         $extension = $this->extensionGranted && $hasPending && $isSettleAction;
         $createSettlement = $isSettleAction && !$extension;
 
+        // Visit yang mengubah default_qty_mika (turunkan default / konsinyasi penuh)
+        // ditandai → DILARANG dikoreksi (nilai default lama tak tersimpan untuk revert).
+        $willLowerDefault = $isSettleAction && $this->turunkanDefault
+            && $this->qtyDefaultBaru > 0
+            && $this->qtyDefaultBaru < (int) $this->selectedKiosk->default_qty_mika;
+        $changedDefault = $willLowerDefault || $isKonsinyasiFull;
+
         // --- Hitung ulang terjual & tagihan dari server (jangan percaya client),
         //     TANPA menimpa uangDiterima yang diinput operator ---
         if ($createSettlement) {
@@ -659,7 +828,7 @@ class ActiveTrip extends Component
 
             if (($fresh + $expired) > $totalBiji) {
                 $this->addError('general', 'Total retur melebihi jumlah titipan sebelumnya.');
-                return;
+                return null;
             }
 
             $this->terjual = max(0, $totalBiji - $fresh - $expired);
@@ -668,7 +837,7 @@ class ActiveTrip extends Component
 
         if ((int) $this->uangDiterima < 0) {
             $this->addError('uangDiterima', 'Uang diterima tidak boleh negatif.');
-            return;
+            return null;
         }
 
         // --- Resolve varian aktif SEBELUM transaksi (tidak ada block stok batch) ---
@@ -676,13 +845,14 @@ class ActiveTrip extends Component
             $variant = $isDrop ? $this->resolveActiveVariant() : null;
         } catch (\RuntimeException $e) {
             $this->addError('general', $e->getMessage());
-            return;
+            return null;
         }
 
         try {
-            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $extraQty, $hasCashExtra, $isKonsinyasiFull, $bsMika) {
+            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $extraQty, $hasCashExtra, $isKonsinyasiFull, $bsMika, $willLowerDefault, $changedDefault, $correctionOfVisitId) {
                 $newDeliveryId = null;
                 $settledDeliveryId = null;
+                $createdDeliveryIds = [];
 
                 // Aksi settle-type selalu menandai delivery lama (agar extension count
                 // & jejak kunjungan terhitung), meski settlement-nya ditunda.
@@ -706,9 +876,7 @@ class ActiveTrip extends Component
 
                 // SKENARIO 4: turunkan default qty kios saat settle (harus lebih kecil
                 // dari default saat ini agar tidak bentrok dengan logika naik-default).
-                if ($isSettleAction && $this->turunkanDefault
-                    && $this->qtyDefaultBaru > 0
-                    && $this->qtyDefaultBaru < (int) $this->selectedKiosk->default_qty_mika) {
+                if ($willLowerDefault) {
                     $this->selectedKiosk->update(['default_qty_mika' => $this->qtyDefaultBaru]);
                 }
 
@@ -729,6 +897,7 @@ class ActiveTrip extends Component
                         'cost_snapshot' => null,
                     ]);
                     $newDeliveryId = $newDelivery->id;
+                    $createdDeliveryIds[] = $newDelivery->id;
 
                     // Konsinyasi penuh: kelebihan tidak dijual cash, melainkan dinaikkan
                     // jadi default baru kios (semua mika di-drop sebagai konsinyasi).
@@ -749,6 +918,7 @@ class ActiveTrip extends Component
                             'unit_price' => $variant->sale_price_per_pack,
                             'cost_snapshot' => null,
                         ]);
+                        $createdDeliveryIds[] = $cashDelivery->id;
 
                         $totalBijiCash = $extraQty * self::BIJI_PER_MIKA;
                         $amountDueCash = $totalBijiCash * self::HARGA_PER_BIJI;
@@ -768,7 +938,7 @@ class ActiveTrip extends Component
                     // konsinyasi biasa (HPP 0 karena loss sudah dihitung di kios asal).
                     // TIDAK di-settle sekarang — dibayar nanti saat terjual, seperti titipan normal.
                     if ($bsMika > 0) {
-                        Delivery::create([
+                        $bsDelivery = Delivery::create([
                             'kiosk_id' => $this->selectedKiosk->id,
                             'trip_id' => $this->trip->id,
                             'product_variant_id' => $variant->id,
@@ -779,6 +949,7 @@ class ActiveTrip extends Component
                             'unit_price' => $variant->sale_price_per_pack,
                             'cost_snapshot' => 0,
                         ]);
+                        $createdDeliveryIds[] = $bsDelivery->id;
 
                         // qty BS tidak berasal dari qty_carried → dicatat terpisah.
                         $this->trip->increment('qty_bs_redistributed', $bsMika);
@@ -786,7 +957,7 @@ class ActiveTrip extends Component
                 }
 
                 // 3. Catat kunjungan (alasan & sisa biji hanya untuk check_only)
-                KioskVisit::create([
+                $visit = KioskVisit::create([
                     'trip_id' => $this->trip->id,
                     'kiosk_id' => $this->selectedKiosk->id,
                     'visited_at' => now(),
@@ -796,24 +967,24 @@ class ActiveTrip extends Component
                     'new_delivery_id' => $newDeliveryId,
                     'settled_delivery_id' => $settledDeliveryId,
                     'extension_granted' => $extension,
+                    'changed_default' => $changedDefault,
+                    'correction_of_visit_id' => $correctionOfVisitId,
                 ]);
+
+                // Linkage deterministik: semua delivery yang dibuat visit ini → visit.id.
+                if (! empty($createdDeliveryIds)) {
+                    Delivery::whereIn('id', $createdDeliveryIds)->update(['kiosk_visit_id' => $visit->id]);
+                }
             });
         } catch (\Throwable $e) {
             // DB::transaction() auto-rollback; jangan rollback manual
             $this->addError('general', 'Gagal menyimpan. Coba lagi.');
-            return;
+            return null;
         }
 
-        // 4. Refresh daftar + reset form + tutup modal
-        $this->loadKiosks();
-
-        $message = $isKonsinyasiFull
+        return $isKonsinyasiFull
             ? "Kunjungan disimpan. Default kios diperbarui ke {$drop} mika."
             : 'Kunjungan berhasil disimpan.';
-
-        $this->extraDropMode = 'cash';
-        $this->closeVisitModal();
-        session()->flash('visit_saved', $message);
     }
 
     // --- WALK-IN CASH FLOW ---
@@ -900,7 +1071,7 @@ class ActiveTrip extends Component
                     'amount_paid' => $amountDue, // langsung lunas
                 ]);
 
-                KioskVisit::create([
+                $visit = KioskVisit::create([
                     'trip_id' => $this->trip->id,
                     'kiosk_id' => $sentinel->id,
                     'visited_at' => now(),
@@ -909,6 +1080,8 @@ class ActiveTrip extends Component
                     'settled_delivery_id' => $delivery->id,
                     'extension_granted' => false,
                 ]);
+
+                $delivery->update(['kiosk_visit_id' => $visit->id]);
             });
         } catch (\Throwable $e) {
             $this->addError('general', 'Gagal menyimpan. Coba lagi.');
@@ -931,7 +1104,7 @@ class ActiveTrip extends Component
         $totalAmountCash = $totalMikaCash * self::BIJI_PER_MIKA * self::HARGA_PER_BIJI;
 
         $this->tripSummary = [
-            'kios_visited' => KioskVisit::where('trip_id', $this->trip->id)->count(),
+            'kios_visited' => KioskVisit::active()->where('trip_id', $this->trip->id)->count(),
             'kios_lama' => (int) $this->trip->kios_lama_count,
             'kios_baru' => (int) $this->trip->kios_baru_count,
             'qty_carried' => $qtyCarried,

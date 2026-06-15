@@ -18,6 +18,7 @@ class Delivery extends Model
     protected $fillable = [
         'kiosk_id',
         'trip_id',
+        'kiosk_visit_id',
         'product_variant_id',
         'procurement_batch_id',
         'source_type',

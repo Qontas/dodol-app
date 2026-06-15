@@ -71,6 +71,7 @@ class Trip extends Model
     public function getMikaTerjualAttribute(): float
     {
         $settledDeliveryIds = $this->visits()
+            ->active()
             ->whereNotNull('settled_delivery_id')
             ->pluck('settled_delivery_id');
 
@@ -83,6 +84,7 @@ class Trip extends Model
     public function getMikaKiosBaruAttribute(): float
     {
         $newKioskVisits = $this->visits()
+            ->active()
             ->where('visit_action', 'drop_only')
             ->whereHas('kiosk', function ($q) {
                 // Kios baru = first_titip_date sama dengan tanggal trip ini.
@@ -103,6 +105,7 @@ class Trip extends Model
     public function getOmsetValAttribute(): float
     {
         $settledDeliveryIds = $this->visits()
+            ->active()
             ->whereNotNull('settled_delivery_id')
             ->pluck('settled_delivery_id');
 
@@ -167,6 +170,7 @@ class Trip extends Model
     public function getKiosBaruCountAttribute(): int
     {
         return $this->visits()
+            ->active()
             ->where('visit_action', 'drop_only')
             ->whereHas('kiosk', function ($q) {
                 // Kios baru = first_titip_date sama dengan tanggal trip ini.
@@ -177,7 +181,7 @@ class Trip extends Model
 
     public function getKiosLamaCountAttribute(): int
     {
-        $totalVisited = $this->visits()->count();
+        $totalVisited = $this->visits()->active()->count();
         return max(0, $totalVisited - $this->kios_baru_count);
     }
 }

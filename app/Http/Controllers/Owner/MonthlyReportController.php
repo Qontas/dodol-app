@@ -76,7 +76,8 @@ class MonthlyReportController extends Controller
             ->filter()
             ->unique();
 
-        $monthVisits = KioskVisit::whereHas('trip', fn ($q) => $q->where('owner_id', $ownerId)
+        $monthVisits = KioskVisit::active()
+            ->whereHas('trip', fn ($q) => $q->where('owner_id', $ownerId)
             ->whereYear('trip_date', $year)
             ->whereMonth('trip_date', $mon))
             ->whereHas('kiosk', fn ($q) => $q->excludeWalkInSentinel())

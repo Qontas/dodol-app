@@ -33,7 +33,7 @@ class Dashboard extends Component
             ->whereDate('trip_date', today())
             ->count();
 
-        $this->kiosksVisitedToday = KioskVisit::whereHas('trip', function ($query) {
+        $this->kiosksVisitedToday = KioskVisit::active()->whereHas('trip', function ($query) {
             $query->where('operator_id', auth()->id())
                 ->whereDate('trip_date', today());
         })->count();
