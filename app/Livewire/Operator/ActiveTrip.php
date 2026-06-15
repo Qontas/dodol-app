@@ -34,6 +34,9 @@ class ActiveTrip extends Component
     public array $visitedKioskIds = [];
     public array $pendingKioskIds = [];
 
+    // Kios yang punya kunjungan dikoreksi pada trip ini (untuk badge "Dikoreksi").
+    public array $correctedKioskIds = [];
+
     // Flag pintar per kios: ['kioskId' => ['urgent','warning','fast_mover','slow_mover','new']]
     public array $kioskFlags = [];
 
@@ -97,6 +100,13 @@ class ActiveTrip extends Component
     public bool $isWalkInModalOpen = false;
     public int $walkInMika = 0;
 
+    // --- STATE KOREKSI ANGKA VISIT (UI Tahap 3; logic reversal di correctVisit) ---
+    public bool $isCorrectionModalOpen = false;
+    public ?int $correctionVisitId = null;
+    public bool $correctionHasDrop = false;     // tampilkan field drop mika
+    public bool $correctionHasSettle = false;   // tampilkan field uang + retur
+    public ?string $correctionKioskName = null;
+
     // --- STATE END TRIP ---
     public bool $isEndTripModalOpen = false;
     public string $endReason = '';
@@ -142,6 +152,14 @@ class ActiveTrip extends Component
         $this->visitedKioskIds = KioskVisit::active()
             ->where('trip_id', $this->trip->id)
             ->pluck('kiosk_id')
+            ->all();
+
+        // Kios yang pernah dikoreksi pada trip ini (badge informasional).
+        $this->correctedKioskIds = KioskVisit::where('trip_id', $this->trip->id)
+            ->whereNotNull('corrected_at')
+            ->pluck('kiosk_id')
+            ->unique()
+            ->values()
             ->all();
 
         $kiosks = $query->get();
@@ -573,6 +591,135 @@ class ActiveTrip extends Component
         $this->extraDropMode = 'cash';
         $this->closeVisitModal();
         session()->flash('visit_saved', $message);
+    }
+
+    // --- UI KOREKSI ANGKA VISIT ---
+    /**
+     * Buka form koreksi untuk kunjungan aktif TERAKHIR ke sebuah kios. Menjalankan
+     * pre-check yang sama seperti correctVisit() agar operator tahu lebih awal bila
+     * visit tak bisa dikoreksi, lalu mengisi form dengan angka LAMA yang direkonstruksi
+     * dari record (delivery + settlement). Tidak menyentuh logic reversal.
+     */
+    public function openCorrectionModal(int $kioskId): void
+    {
+        $this->resetErrorBag('correction');
+
+        $visit = KioskVisit::active()
+            ->where('trip_id', $this->trip->id)
+            ->where('kiosk_id', $kioskId)
+            ->orderByDesc('visited_at')
+            ->first();
+
+        if (! $visit) {
+            $this->addError('correction', 'Belum ada kunjungan aktif ke kios ini.');
+            return;
+        }
+
+        // Pre-check (selaras correctVisit) — gagal mana pun: jangan buka modal.
+        if ($this->trip->ended_at !== null) {
+            $this->addError('correction', 'Trip sudah diakhiri, koreksi tidak bisa dilakukan.');
+            return;
+        }
+
+        $kiosk = Kiosk::find($kioskId);
+        if ($kiosk && $kiosk->name === Kiosk::WALKIN_SENTINEL_NAME) {
+            $this->addError('correction', 'Penjualan walk-in tidak bisa dikoreksi.');
+            return;
+        }
+        if ($visit->changed_default) {
+            $this->addError('correction', 'Kunjungan yang mengubah default kios tidak bisa dikoreksi.');
+            return;
+        }
+        if ($visit->new_delivery_id !== null
+            && ! Delivery::where('kiosk_visit_id', $visit->id)->whereKey($visit->new_delivery_id)->exists()) {
+            $this->addError('correction', 'Kunjungan ini dibuat sebelum fitur koreksi dan tidak bisa dikoreksi.');
+            return;
+        }
+
+        // --- Rekonstruksi angka lama dari record ---
+        $isCashOnly = (bool) ($kiosk?->is_cash_only);
+
+        // Drop mika = total konsinyasi + cash-extra yang dibuat visit ini (BS dikecualikan).
+        $linkedDeliveries = Delivery::where('kiosk_visit_id', $visit->id)->get();
+        $dropQty = (int) $linkedDeliveries
+            ->whereIn('delivery_type', ['consignment', 'cash_sale'])
+            ->sum('qty_delivered');
+        $hasDrop = $dropQty > 0;
+
+        // Penagihan titipan lama: settled_delivery_id menunjuk titipan lama (bukan delivery
+        // yang dibuat visit ini, dan bukan kios cash-only yang lunas otomatis).
+        $hasSettle = ! $isCashOnly
+            && $visit->settled_delivery_id !== null
+            && ! $linkedDeliveries->pluck('id')->contains($visit->settled_delivery_id);
+
+        $uang = 0;
+        $fresh = 0;
+        $expired = 0;
+        if ($hasSettle) {
+            $settlement = Settlement::where('delivery_id', $visit->settled_delivery_id)->first();
+            if ($settlement) {
+                $uang = (int) $settlement->amount_paid;
+                $fresh = (int) $settlement->qty_returned_fresh;
+                $expired = (int) $settlement->qty_returned_expired;
+            }
+        }
+
+        if (! $hasDrop && ! $hasSettle) {
+            $this->addError('correction', 'Kunjungan ini tidak punya angka untuk dikoreksi.');
+            return;
+        }
+
+        // Isi form dengan angka lama (operator tinggal ubah yang salah).
+        $this->dropBaru = $dropQty;
+        $this->returnFresh = $fresh;
+        $this->returnExpired = $expired;
+        $this->uangDiterima = $uang;
+
+        $this->correctionVisitId = $visit->id;
+        $this->correctionHasDrop = $hasDrop;
+        $this->correctionHasSettle = $hasSettle;
+        $this->correctionKioskName = $kiosk?->name;
+        $this->isCorrectionModalOpen = true;
+    }
+
+    public function closeCorrectionModal(): void
+    {
+        $this->isCorrectionModalOpen = false;
+        $this->correctionVisitId = null;
+        $this->correctionHasDrop = false;
+        $this->correctionHasSettle = false;
+        $this->correctionKioskName = null;
+        $this->dropBaru = 0;
+        $this->returnFresh = 0;
+        $this->returnExpired = 0;
+        $this->uangDiterima = 0;
+        $this->resetErrorBag('correction');
+    }
+
+    /**
+     * Submit form koreksi → delegasi ke correctVisit() (logic reversal yang sudah ada
+     * & lulus test). Tutup modal hanya bila sukses; bila ada error, modal tetap terbuka.
+     */
+    public function submitCorrection(): void
+    {
+        if ($this->correctionVisitId === null) {
+            return;
+        }
+
+        $this->correctVisit(
+            $this->correctionVisitId,
+            (int) $this->dropBaru,
+            (int) $this->returnFresh,
+            (int) $this->returnExpired,
+            (int) $this->uangDiterima,
+        );
+
+        // correctVisit menambahkan error ke bag 'correction' bila gagal → biarkan modal terbuka.
+        if ($this->getErrorBag()->has('correction')) {
+            return;
+        }
+
+        $this->closeCorrectionModal();
     }
 
     /**

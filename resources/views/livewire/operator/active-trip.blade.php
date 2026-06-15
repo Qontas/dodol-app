@@ -97,6 +97,9 @@
                         @else
                             <span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Belum</span>
                         @endif
+                        @if(in_array($kiosk->id, $correctedKioskIds))
+                            <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">✎ Dikoreksi</span>
+                        @endif
                         @if($hasPending)
                             <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Ada Titipan</span>
                         @endif
@@ -129,6 +132,16 @@
                     <svg class="h-5 w-5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                     </svg>
+                @else
+                    {{-- Tombol koreksi angka — hanya untuk kios yang sudah dikunjungi --}}
+                    <button type="button" wire:click="openCorrectionModal({{ $kiosk->id }})"
+                            wire:loading.attr="disabled" wire:target="openCorrectionModal"
+                            class="shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 ring-1 ring-inset ring-amber-600/20 hover:bg-amber-100 active:bg-amber-200">
+                        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                        </svg>
+                        Koreksi
+                    </button>
                 @endif
             </div>
         @empty
@@ -212,6 +225,80 @@
                     <span wire:loading wire:target="saveWalkInCash">Menyimpan...</span>
                 </button>
                 <button type="button" wire:click="closeWalkInModal" class="w-full bg-slate-100 text-slate-700 font-bold py-3 rounded-xl border border-slate-200 active:bg-slate-200">
+                    Batal
+                </button>
+            </div>
+        </div>
+    </div>
+    @endif
+
+    {{-- MODAL KOREKSI ANGKA KUNJUNGAN --}}
+    @if($isCorrectionModalOpen)
+    <div class="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+        <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" wire:click="closeCorrectionModal"></div>
+
+        <div class="relative bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-lg text-slate-900">Koreksi Kunjungan</h3>
+                    <p class="text-xs text-slate-500">{{ $correctionKioskName ?? 'Kios' }} — perbaiki angka yang salah.</p>
+                </div>
+                <button type="button" wire:click="closeCorrectionModal" class="p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-slate-200">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="px-5 py-5 space-y-4">
+                @error('correction')
+                    <div class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{{ $message }}</div>
+                @enderror
+
+                {{-- Drop mika (kalau visit ini mendrop titipan/cash) --}}
+                @if($correctionHasDrop)
+                    <div class="bg-white border border-slate-200 rounded-xl p-4">
+                        <label class="block text-sm font-bold text-slate-900 mb-2">Jumlah Mika</label>
+                        <input type="number" min="0" wire:model="dropBaru"
+                               class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-2xl font-bold">
+                    </div>
+                @endif
+
+                {{-- Penagihan titipan lama (kalau visit ini menagih titipan) --}}
+                @if($correctionHasSettle)
+                    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-4">
+                        <span class="text-xs font-bold text-amber-800 uppercase tracking-wider">Penagihan Titipan</span>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-700 mb-1">Sisa Bagus (Biji)</label>
+                                <input type="number" min="0" wire:model="returnFresh"
+                                       class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-700 mb-1">Dodol Sisa/Basi (Biji)</label>
+                                <input type="number" min="0" wire:model="returnExpired"
+                                       class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold text-red-600">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Uang Diterima (Rp)</label>
+                            <input type="number" min="0" wire:model="uangDiterima"
+                                   class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-xl font-bold text-green-700 bg-white">
+                            @error('uangDiterima')
+                                <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+                @endif
+            </div>
+
+            <div class="px-5 py-4 border-t border-slate-100 space-y-2.5">
+                <button type="button" wire:click="submitCorrection" wire:loading.attr="disabled" wire:target="submitCorrection"
+                        class="w-full bg-amber-500 text-white font-bold py-3 rounded-xl shadow-sm active:bg-amber-600 disabled:opacity-50">
+                    <span wire:loading.remove wire:target="submitCorrection">Simpan Koreksi</span>
+                    <span wire:loading wire:target="submitCorrection">Menyimpan...</span>
+                </button>
+                <button type="button" wire:click="closeCorrectionModal" class="w-full bg-slate-100 text-slate-700 font-bold py-3 rounded-xl border border-slate-200 active:bg-slate-200">
                     Batal
                 </button>
             </div>
