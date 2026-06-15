@@ -12,6 +12,7 @@ use Filament\Http\Responses\Auth\Contracts\LoginResponse as LoginResponseContrac
 use Filament\Http\Responses\Auth\Contracts\LogoutResponse as LogoutResponseContract;
 use Filament\Support\Facades\FilamentView;
 use Filament\View\PanelsRenderHook;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -30,6 +31,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Produksi (Railway di balik proxy HTTPS): paksa skema https agar URL & aset
+        // Vite tidak ter-generate http → cegah mixed content / aset gagal load.
+        if (config('app.env') === 'production') {
+            URL::forceScheme('https');
+        }
+
         Settlement::observe(SettlementObserver::class);
         Delivery::observe(DeliveryObserver::class);
 
