@@ -45,6 +45,10 @@ Baca NEXT_SESSION.md untuk context lengkap.
 
 ## DEPLOY RAILWAY (PRIORITAS UTAMA)
 > Tunggu konfirmasi user dulu sebelum mulai deploy.
+> CONFIG SIAP: nixpacks.toml + railway.toml sudah di repo. Repo siap di-connect ke Railway.
+> Build: composer install --no-dev + npm ci + npm run build → cache config/route/view.
+> Start: migrate --force + storage:link + serve di $PORT. Aset Filament & Leaflet sudah
+> ter-commit (tidak di-build saat deploy). Seeding MANUAL sekali setelah deploy pertama.
 Steps:
 1. Daftar/login railway.app → New Project → Deploy from GitHub → Qontas/dodol-app
 2. Add MySQL plugin
