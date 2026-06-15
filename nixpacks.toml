@@ -19,6 +19,7 @@ nixPkgs = [
     "php82Extensions.zip",
     "php82Extensions.fileinfo",
     "php82Extensions.intl",
+    "php82Packages.composer",
     "nodejs_20",
 ]
 
