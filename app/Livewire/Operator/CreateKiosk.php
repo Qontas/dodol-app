@@ -78,11 +78,14 @@ class CreateKiosk extends Component
             ]);
         });
 
-        // Foto opsional dari lapangan: simpan, perkecil ke max 800x600 biar hemat
-        // storage & cepat di koneksi operator, lalu tautkan ke kios.
+        // Foto opsional dari lapangan: disimpan ke disk media (configurable via
+        // MEDIA_DISK — lokal default, R2/S3 saat siap). Kompres utama dilakukan di
+        // browser sebelum upload; resize server-side hanya jaring pengaman & hanya
+        // jalan di disk lokal (Storage::path() local-only).
         if ($this->foto) {
-            $path = $this->foto->store('kiosks', 'public');
-            $this->resizeImage($path, 800, 600);
+            $disk = config('app.media_disk', 'public');
+            $path = $this->foto->store('kiosks', $disk);
+            $this->resizeImageIfLocal($path, $disk, 1280, 1280);
             $kiosk->update(['photo_path' => $path]);
         }
 
@@ -101,9 +104,18 @@ class CreateKiosk extends Component
         return $this->redirect(route('operator.dashboard'), navigate: true);
     }
 
-    private function resizeImage(string $path, int $maxW, int $maxH): void
+    /**
+     * Resize server-side sebagai jaring pengaman. Hanya disk lokal (driver 'local')
+     * yang mendukung Storage::path(); pada disk cloud (R2/S3) dilewati karena foto
+     * sudah dikompres di browser sebelum upload.
+     */
+    private function resizeImageIfLocal(string $path, string $disk, int $maxW, int $maxH): void
     {
-        $fullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($path);
+        if (config("filesystems.disks.{$disk}.driver") !== 'local') {
+            return;
+        }
+
+        $fullPath = \Illuminate\Support\Facades\Storage::disk($disk)->path($path);
         $info = getimagesize($fullPath);
         if (!$info) {
             return;

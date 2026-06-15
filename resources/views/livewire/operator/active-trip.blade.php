@@ -420,9 +420,9 @@
 
             <div class="p-5 space-y-5">
                 {{-- Foto kios di puncak modal: bantu operator pastikan kios yang benar --}}
-                @if($selectedKiosk->photo_path)
+                @if($selectedKiosk->photo_url)
                     <div class="mb-3 -mx-4 -mt-2">
-                        <img src="{{ Storage::url($selectedKiosk->photo_path) }}"
+                        <img src="{{ $selectedKiosk->photo_url }}"
                              alt="Foto {{ $selectedKiosk->name }}"
                              class="w-full max-h-36 object-cover">
                     </div>

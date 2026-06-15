@@ -170,6 +170,20 @@ class Kiosk extends Model
         return "{$hariLagi} hari lagi";
     }
 
+    /**
+     * URL publik foto kios dari disk media (configurable, lihat config app.media_disk).
+     * Null kalau belum ada foto. Jangan hardcode /storage/... di view — pakai ini.
+     */
+    public function getPhotoUrlAttribute(): ?string
+    {
+        if (! $this->photo_path) {
+            return null;
+        }
+
+        return \Illuminate\Support\Facades\Storage::disk(config('app.media_disk', 'public'))
+            ->url($this->photo_path);
+    }
+
     public function getMapsUrlAttribute(): ?string
     {
         if (is_null($this->latitude) || is_null($this->longitude)) {
