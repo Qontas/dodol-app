@@ -93,6 +93,10 @@ class ActiveTrip extends Component
     public bool $showStopConfirm = false;
     public string $stopReason = '';
 
+    // --- STATE WALK-IN CASH (penjualan cash ke pembeli random, bukan kios) ---
+    public bool $isWalkInModalOpen = false;
+    public int $walkInMika = 0;
+
     // --- STATE END TRIP ---
     public bool $isEndTripModalOpen = false;
     public string $endReason = '';
@@ -810,6 +814,110 @@ class ActiveTrip extends Component
         $this->extraDropMode = 'cash';
         $this->closeVisitModal();
         session()->flash('visit_saved', $message);
+    }
+
+    // --- WALK-IN CASH FLOW ---
+    public function openWalkInModal(): void
+    {
+        $this->walkInMika = 0;
+        $this->resetErrorBag(['walkInMika', 'general']);
+        $this->isWalkInModalOpen = true;
+    }
+
+    public function closeWalkInModal(): void
+    {
+        $this->isWalkInModalOpen = false;
+        $this->walkInMika = 0;
+    }
+
+    /**
+     * Catat penjualan cash walk-in (pembeli random, bukan kios terdaftar).
+     * Disimpan ke kios sentinel tersembunyi milik owner trip ini, mengikuti
+     * persis pola cash-only saveVisit(): Delivery cash_sale + Settlement lunas
+     * + KioskVisit. Omset otomatis masuk komisi operator karena dihitung dari
+     * settled_delivery_id per-trip (lihat Trip::omset_val).
+     */
+    public function saveWalkInCash(): void
+    {
+        $this->validate([
+            'walkInMika' => 'required|integer|min:1',
+        ], [
+            'walkInMika.required' => 'Isi jumlah mika dulu.',
+            'walkInMika.min' => 'Jumlah mika minimal 1.',
+        ]);
+
+        $this->resetErrorBag('general');
+
+        $sentinel = Kiosk::walkInSentinelFor($this->trip->owner_id);
+
+        // Guard idempotensi: submit ganda (koneksi lambat / retry) tidak boleh
+        // membuat penjualan walk-in duplikat dalam jeda singkat.
+        $alreadySaved = KioskVisit::where('trip_id', $this->trip->id)
+            ->where('kiosk_id', $sentinel->id)
+            ->where('visited_at', '>=', now()->subSeconds(10))
+            ->exists();
+
+        if ($alreadySaved) {
+            $this->loadKiosks();
+            $this->closeWalkInModal();
+            session()->flash('visit_saved', 'Penjualan cash sudah tercatat.');
+            return;
+        }
+
+        try {
+            $variant = $this->resolveActiveVariant();
+        } catch (\RuntimeException $e) {
+            $this->addError('general', $e->getMessage());
+            return;
+        }
+
+        $mika = (int) $this->walkInMika;
+
+        try {
+            DB::transaction(function () use ($mika, $variant, $sentinel) {
+                $delivery = Delivery::create([
+                    'kiosk_id' => $sentinel->id,
+                    'trip_id' => $this->trip->id,
+                    'product_variant_id' => $variant->id,
+                    'procurement_batch_id' => null,
+                    'source_type' => 'new_procurement',
+                    'delivery_type' => 'cash_sale',
+                    'qty_delivered' => $mika,
+                    'unit_price' => $variant->sale_price_per_pack,
+                    'cost_snapshot' => null,
+                ]);
+
+                $totalBiji = $mika * self::BIJI_PER_MIKA;
+                $amountDue = $totalBiji * self::HARGA_PER_BIJI;
+
+                Settlement::create([
+                    'delivery_id' => $delivery->id,
+                    'visit_date' => today(),
+                    'qty_sold' => $totalBiji,
+                    'qty_returned_fresh' => 0,
+                    'qty_returned_expired' => 0,
+                    'amount_due' => $amountDue,
+                    'amount_paid' => $amountDue, // langsung lunas
+                ]);
+
+                KioskVisit::create([
+                    'trip_id' => $this->trip->id,
+                    'kiosk_id' => $sentinel->id,
+                    'visited_at' => now(),
+                    'visit_action' => 'cash_sale',
+                    'new_delivery_id' => $delivery->id,
+                    'settled_delivery_id' => $delivery->id,
+                    'extension_granted' => false,
+                ]);
+            });
+        } catch (\Throwable $e) {
+            $this->addError('general', 'Gagal menyimpan. Coba lagi.');
+            return;
+        }
+
+        $this->loadKiosks();
+        $this->closeWalkInModal();
+        session()->flash('visit_saved', 'Penjualan cash berhasil dicatat.');
     }
 
     // --- END TRIP FLOW ---

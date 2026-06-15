@@ -29,8 +29,8 @@ class OwnerDashboardController extends Controller
         );
 
         $stats = [
-            'total_kios' => Kiosk::whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId))->count(),
-            'total_cluster' => Cluster::where('owner_id', $ownerId)->count(),
+            'total_kios' => Kiosk::excludeWalkInSentinel()->whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId))->count(),
+            'total_cluster' => Cluster::excludeWalkInSentinel()->where('owner_id', $ownerId)->count(),
             'total_supplier' => Supplier::where('owner_id', $ownerId)->count(),
             'total_operator' => User::where('role', 'operator')->where('owner_id', $ownerId)->count(),
         ];
@@ -150,7 +150,8 @@ class OwnerDashboardController extends Controller
 
         // Widget — Kios berhenti (cut off): kios non-aktif milik owner, max 20
         // terbaru. Kosong → section tidak tampil (sama seperti prediksi habis).
-        $stoppedKiosks = Kiosk::whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId))
+        $stoppedKiosks = Kiosk::excludeWalkInSentinel()
+            ->whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId))
             ->where('is_active', false)
             ->orderByDesc('stopped_at')
             ->take(20)

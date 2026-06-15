@@ -39,6 +39,7 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Leaflet lokal (map picker tanpa CDN eksternal)
 - Lokasi kios opsional + ambil GPS otomatis
 - Halaman profil operator selaras layout operator + form bertema amber (tanpa ubah /profile owner & super admin)
+- Jual Cash Cepat (walk-in): operator catat penjualan cash ke pembeli non-kios via kios sentinel tersembunyi per owner; omset masuk komisi, sentinel di-exclude dari listing & laporan per-kios (artisan walkin:ensure-sentinel untuk provisi owner lama)
 
 ## DEPLOY RAILWAY (PRIORITAS UTAMA)
 > Tunggu konfirmasi user dulu sebelum mulai deploy.

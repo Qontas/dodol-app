@@ -141,12 +141,83 @@
 
     {{-- Tombol Akhiri Trip — selalu terlihat di dasar layar (bottom nav
          disembunyikan di halaman ini, jadi tidak pernah bertabrakan) --}}
-    <div class="fixed bottom-0 left-0 right-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-white border-t border-slate-200 max-w-md mx-auto z-30 shadow-md">
+    <div class="fixed bottom-0 left-0 right-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-white border-t border-slate-200 max-w-md mx-auto z-30 shadow-md space-y-2.5">
+        {{-- Jual Cash Cepat: penjualan ke pembeli walk-in (bukan kios terdaftar) --}}
+        <button type="button" wire:click="openWalkInModal" wire:loading.attr="disabled" wire:target="openWalkInModal"
+                class="w-full bg-amber-500 text-white font-bold text-lg py-3 rounded-xl shadow-sm active:bg-amber-600 flex items-center justify-center gap-2">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span>Jual Cash Cepat</span>
+        </button>
         <button type="button" wire:click="openEndTripModal" wire:loading.attr="disabled" wire:target="openEndTripModal" class="w-full bg-red-600 text-white font-bold text-lg py-3 rounded-xl shadow-sm active:bg-red-700">
             <span wire:loading.remove wire:target="openEndTripModal">Akhiri Trip</span>
             <span wire:loading wire:target="openEndTripModal">Memuat...</span>
         </button>
     </div>
+
+    {{-- MODAL JUAL CASH CEPAT (WALK-IN) --}}
+    @if($isWalkInModalOpen)
+    <div class="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+        <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" wire:click="closeWalkInModal"></div>
+
+        <div class="relative bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-lg text-slate-900">Jual Cash Cepat</h3>
+                    <p class="text-xs text-slate-500">Penjualan langsung ke pembeli (bukan kios titipan).</p>
+                </div>
+                <button type="button" wire:click="closeWalkInModal" class="p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-slate-200">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="px-5 py-5 space-y-4">
+                @error('general')
+                    <div class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{{ $message }}</div>
+                @enderror
+
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1.5">Jumlah Mika</label>
+                    <div class="flex items-center justify-center gap-3">
+                        <button type="button" x-on:click="$wire.walkInMika = Math.max(0, ($wire.walkInMika || 0) - 1)"
+                                class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">-</button>
+                        <input type="number" min="1" wire:model.live="walkInMika"
+                               class="w-24 text-center text-2xl font-bold rounded-lg border-slate-300 focus:border-amber-500 focus:ring-amber-500">
+                        <button type="button" x-on:click="$wire.walkInMika = ($wire.walkInMika || 0) + 1"
+                                class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
+                    </div>
+                    @error('walkInMika')
+                        <p class="text-sm text-red-600 mt-1.5 text-center">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                {{-- Total otomatis: mika × 15 biji × Rp 800 --}}
+                <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+                    <p class="text-xs text-amber-700 font-semibold uppercase tracking-wide">Total Harga (Lunas Cash)</p>
+                    <p class="text-2xl font-bold text-amber-800 mt-1">
+                        Rp {{ number_format(max(0, (int) $walkInMika) * 15 * 800, 0, ',', '.') }}
+                    </p>
+                    <p class="text-[11px] text-amber-600 mt-1">{{ max(0, (int) $walkInMika) }} mika × 15 biji × Rp 800</p>
+                </div>
+            </div>
+
+            <div class="px-5 py-4 border-t border-slate-100 space-y-2.5">
+                <button type="button" wire:click="saveWalkInCash" wire:loading.attr="disabled" wire:target="saveWalkInCash"
+                        @disabled((int) $walkInMika < 1)
+                        class="w-full bg-amber-500 text-white font-bold py-3 rounded-xl shadow-sm active:bg-amber-600 disabled:opacity-50">
+                    <span wire:loading.remove wire:target="saveWalkInCash">Simpan Penjualan</span>
+                    <span wire:loading wire:target="saveWalkInCash">Menyimpan...</span>
+                </button>
+                <button type="button" wire:click="closeWalkInModal" class="w-full bg-slate-100 text-slate-700 font-bold py-3 rounded-xl border border-slate-200 active:bg-slate-200">
+                    Batal
+                </button>
+            </div>
+        </div>
+    </div>
+    @endif
 
     {{-- MODAL AKHIRI TRIP --}}
     @if($isEndTripModalOpen)

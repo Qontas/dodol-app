@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,15 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class Kiosk extends Model
 {
     use HasFactory;
+
+    /**
+     * Penjualan walk-in (pembeli random di jalan, bukan kios terdaftar) dicatat
+     * lewat 1 "kios sentinel" tersembunyi per owner. Penanda yang dipakai untuk
+     * exclude dari listing/laporan per-kios: NAMA kios = WALKIN_SENTINEL_NAME
+     * (tanpa kolom baru). Cluster induknya juga sentinel (lihat WALKIN_CLUSTER_PREFIX).
+     */
+    public const WALKIN_SENTINEL_NAME = 'Penjualan Walk-in';
+    public const WALKIN_CLUSTER_PREFIX = '__walkin_owner_';
 
     protected $fillable = [
         'name',
@@ -65,6 +75,34 @@ class Kiosk extends Model
     public function cluster(): BelongsTo
     {
         return $this->belongsTo(Cluster::class);
+    }
+
+    /**
+     * Resolve (buat jika belum ada) kios sentinel walk-in milik $ownerId.
+     * Idempoten: dipanggil berkali-kali tetap menghasilkan tepat 1 sentinel
+     * + 1 cluster sentinel per owner. cluster_id WAJIB agar kios tetap
+     * ter-scope ke owner yang benar (owner kios = cluster.owner_id).
+     */
+    public static function walkInSentinelFor(?int $ownerId): self
+    {
+        $cluster = Cluster::firstOrCreate(
+            ['owner_id' => $ownerId, 'name' => self::WALKIN_CLUSTER_PREFIX . ($ownerId ?? 0)],
+            ['is_active' => false, 'notes' => 'Cluster sistem untuk penjualan walk-in. Jangan hapus/ubah.']
+        );
+
+        return self::firstOrCreate(
+            ['cluster_id' => $cluster->id, 'name' => self::WALKIN_SENTINEL_NAME],
+            ['is_cash_only' => true, 'is_active' => false, 'notes' => 'Kios sistem untuk penjualan cash walk-in. Jangan hapus/ubah.']
+        );
+    }
+
+    /**
+     * Keluarkan kios sentinel walk-in dari listing & laporan per-kios.
+     * (Omset walk-in tetap masuk perhitungan komisi — itu lewat trip, bukan kios.)
+     */
+    public function scopeExcludeWalkInSentinel(Builder $query): Builder
+    {
+        return $query->where($query->getModel()->getTable() . '.name', '!=', self::WALKIN_SENTINEL_NAME);
     }
 
     /**

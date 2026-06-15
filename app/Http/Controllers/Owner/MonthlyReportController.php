@@ -67,6 +67,7 @@ class MonthlyReportController extends Controller
 
         // Analisis kios
         $settledKioskIds = Settlement::whereHas('delivery.kiosk.cluster', fn ($q) => $q->where('owner_id', $ownerId))
+            ->whereHas('delivery.kiosk', fn ($q) => $q->excludeWalkInSentinel())
             ->whereYear('visit_date', $year)
             ->whereMonth('visit_date', $mon)
             ->with('delivery:id,kiosk_id')
@@ -78,6 +79,7 @@ class MonthlyReportController extends Controller
         $monthVisits = KioskVisit::whereHas('trip', fn ($q) => $q->where('owner_id', $ownerId)
             ->whereYear('trip_date', $year)
             ->whereMonth('trip_date', $mon))
+            ->whereHas('kiosk', fn ($q) => $q->excludeWalkInSentinel())
             ->with('kiosk.cluster')
             ->get();
 

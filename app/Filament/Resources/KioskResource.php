@@ -386,6 +386,9 @@ class KioskResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
+        // Kios sentinel walk-in tidak pernah ditampilkan/diedit di panel — bahkan untuk super admin.
+        $query->excludeWalkInSentinel();
+
         if (auth()->user()?->isSuperAdmin()) {
             return $query;
         }
