@@ -112,6 +112,9 @@ class ClusterResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
+        // Cluster sentinel walk-in tersembunyi dari panel — termasuk super admin.
+        $query->excludeWalkInSentinel();
+
         if (auth()->user()?->isSuperAdmin()) {
             return $query;
         }
