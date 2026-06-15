@@ -46,7 +46,8 @@ class OwnerDashboardController extends Controller
             ->whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId))
             ->get();
 
-        $lastVisitPerKiosk = KioskVisit::whereIn('kiosk_id', $ownerKiosks->pluck('id'))
+        $lastVisitPerKiosk = KioskVisit::active()
+            ->whereIn('kiosk_id', $ownerKiosks->pluck('id'))
             ->groupBy('kiosk_id')
             ->selectRaw('kiosk_id, MAX(visited_at) as last_visit')
             ->pluck('last_visit', 'kiosk_id');

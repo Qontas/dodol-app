@@ -129,6 +129,7 @@ class Kiosk extends Model
     public function latestCheckVisit(): HasOne
     {
         return $this->hasOne(KioskVisit::class)
+            ->whereNull('corrected_at')
             ->where('visit_action', 'check_only')
             ->whereNotNull('sisa_biji')
             ->latestOfMany('visited_at');
