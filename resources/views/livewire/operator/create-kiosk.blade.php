@@ -288,24 +288,43 @@
             });
 
             document.getElementById('btn-gps').addEventListener('click', function () {
-                if (!navigator.geolocation) {
-                    alert('GPS tidak didukung browser ini.');
-                    return;
-                }
-                this.textContent = '⏳ Mencari lokasi...';
-                const btn = this;
-                navigator.geolocation.getCurrentPosition(
-                    function (pos) {
-                        setMapLocation(pos.coords.latitude, pos.coords.longitude);
-                        operatorMap.setView([pos.coords.latitude, pos.coords.longitude], 17);
-                        btn.textContent = '📍 Pakai Lokasi Saya (GPS)';
-                    },
-                    function () {
-                        alert('Gagal mendapatkan lokasi. Pastikan GPS aktif dan izin lokasi diberikan.');
-                        btn.textContent = '📍 Pakai Lokasi Saya (GPS)';
-                    }
-                );
+                triggerGps(false);
             });
+
+            // Auto-GPS SEKALI saat form pertama kebuka & koordinat masih kosong (kios
+            // baru). Dataset flag mencegah berulang tiap re-render/livewire:navigated.
+            // JANGAN auto-trigger kalau sudah ada koordinat (mis. koreksi manual / edit) —
+            // supaya titik yang sudah di-set operator tidak ketimpa.
+            @if (! ($latitude && $longitude))
+                if (!mapEl.dataset.autoGpsTried) {
+                    mapEl.dataset.autoGpsTried = '1';
+                    triggerGps(true);
+                }
+            @endif
+        }
+
+        // Ambil lokasi GPS, dipakai tombol manual & auto-trigger.
+        // isAuto=true  (auto saat form kebuka): senyap kalau gagal/ditolak — jangan ganggu
+        //              operator dengan popup; mereka masih bisa pencet tombol / klik peta.
+        // isAuto=false (tombol dipencet): tampilkan alert kalau gagal (operator sengaja minta).
+        function triggerGps(isAuto) {
+            const btn = document.getElementById('btn-gps');
+            if (!navigator.geolocation) {
+                if (!isAuto) alert('GPS tidak didukung browser ini.');
+                return;
+            }
+            if (btn) btn.textContent = '⏳ Mencari lokasi...';
+            navigator.geolocation.getCurrentPosition(
+                function (pos) {
+                    setMapLocation(pos.coords.latitude, pos.coords.longitude);
+                    if (operatorMap) operatorMap.setView([pos.coords.latitude, pos.coords.longitude], 17);
+                    if (btn) btn.textContent = '📍 Pakai Lokasi Saya (GPS)';
+                },
+                function () {
+                    if (!isAuto) alert('Gagal mendapatkan lokasi. Pastikan GPS aktif dan izin lokasi diberikan.');
+                    if (btn) btn.textContent = '📍 Pakai Lokasi Saya (GPS)';
+                }
+            );
         }
 
         function setMapLocation(lat, lng) {
