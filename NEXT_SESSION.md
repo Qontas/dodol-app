@@ -1,16 +1,29 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 14 Juni 2026*
+*Sesi terakhir: 16 Juni 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 155 PASS. Semua fitur selesai, siap deploy Railway.
-GitHub: Qontas/dodol-app synced, HEAD: a356b6b.
-PRIORITAS: Deploy Railway.
+Bg, lanjut dodol-app. 177 PASS. Sudah deploy Railway (produksi jalan).
+GitHub: Qontas/dodol-app synced.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 155 PASS, 548 assertions
-- HEAD: a356b6b
-- Semua fitur complete, tidak ada bug pending
+- 177 PASS, 678 assertions
+- Sudah live di Railway: https://dodol-app-production.up.railway.app
+- Semua fitur complete
+
+## FIX TERAKHIR (16 Juni 2026)
+- Anti-flash (FOUC) Filament admin panel saat load pertama / cold cache di
+  PRODUKSI. Penyebab: timing first-paint — layout Filament sempat berantakan
+  sebelum CSS eksternal ter-apply (normal setelah refresh / aset ter-cache).
+  Solusi (Opsi 3): renderHook PanelsRenderHook::HEAD_START di AdminPanelProvider
+  inject inline CSS+JS. Body disembunyikan (opacity:0) lalu fade-in saat event
+  `load` (semua aset selesai). FALLBACK aman: (1) class fi-flash-guard hanya
+  ditambah JS — JS mati = body tetap tampil; (2) reveal dipicu DUA jalur:
+  event `load` + setTimeout 2 detik darurat; (3) tidak pakai Alpine, jadi
+  kegagalan Alpine tak menyembunyikan halaman. TIDAK pakai ->spa().
+  Owner panel (ada Leaflet) sengaja TIDAK diubah — render hook scoped ke admin.
+- MASIH PENDING (lihat PROMPT_FIX_FOUC.md): FOUC sidebar di layout CUSTOM
+  super-admin/owner dashboard (beda dari panel Filament ini).
 
 ## CREDENTIALS
 - Super Admin: admin@cemilanqontas.id / password → /admin
