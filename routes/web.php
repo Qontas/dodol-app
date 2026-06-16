@@ -8,7 +8,14 @@ use App\Http\Controllers\OwnerSettingsController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
-Route::view('/', 'landing');
+// Root auth-aware: sudah login → dashboard sesuai role; belum → landing (marketing).
+Route::get('/', function () {
+    if (auth()->check()) {
+        return redirect()->route('dashboard');
+    }
+
+    return view('landing');
+})->name('home');
 
 Route::post('logout', function () {
     Auth::guard('web')->logout();
@@ -20,14 +27,8 @@ Route::post('logout', function () {
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', function () {
-        $role = auth()->user()->role;
-
-        // Super admin diarahkan ke Filament admin panel (lihat semua owner).
-        if ($role === 'super_admin') {
-            return redirect('/admin');
-        }
-
-        return redirect()->route("{$role}.dashboard");
+        // Role-aware: super_admin→/admin, owner/operator→{role}.dashboard.
+        return redirect(auth()->user()->homePath());
     })->name('dashboard');
 });
 

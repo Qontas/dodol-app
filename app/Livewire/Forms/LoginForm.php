@@ -18,8 +18,10 @@ class LoginForm extends Form
     #[Validate('required|string')]
     public string $password = '';
 
+    // Default true: app internal operator → login persist (tak logout tiap tutup
+    // app). Checkbox "Ingat Saya" tetap ada agar user bisa uncheck di perangkat publik.
     #[Validate('boolean')]
-    public bool $remember = false;
+    public bool $remember = true;
 
     /**
      * Attempt to authenticate the request's credentials.

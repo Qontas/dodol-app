@@ -9,6 +9,8 @@ class LoginResponse implements LoginResponseContract
 {
     public function toResponse($request): RedirectResponse
     {
-        return redirect()->route('owner.dashboard');
+        // Role-aware (sama dgn route "/dashboard"): super_admin→/admin,
+        // owner→owner.dashboard, operator→operator.dashboard.
+        return redirect($request->user()->homePath());
     }
 }

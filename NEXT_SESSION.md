@@ -11,6 +11,23 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
+## FIX TERAKHIR (17 Juni 2026) — PWA Auto-login & Redirect Role
+- Buka PWA → langsung dashboard sesuai role (tak mampir landing), login persist.
+- routes/web.php "/": sekarang AUTH-AWARE — auth()->check() → redirect route('dashboard')
+  (role-aware); belum login → tetap tampilkan landing (marketing TIDAK dihapus).
+- manifest start_url "/" → "/dashboard" (scope tetap "/"). Belum login di /dashboard
+  → middleware auth otomatis lempar ke /login (aman).
+- Satu sumber kebenaran redirect role: User::homePath() (super_admin→/admin,
+  owner→owner.dashboard, operator→operator.dashboard). Dipakai route /dashboard
+  DAN LoginResponse (Filament) — sebelumnya LoginResponse hardcode owner.dashboard
+  (bug minor) kini role-aware konsisten.
+- LoginForm $remember default true (app internal operator → tak logout tiap tutup
+  app; remember cookie Laravel ~5 thn). Checkbox "Ingat Saya" tetap ada untuk uncheck
+  di perangkat publik. SESSION_LIFETIME tetap 480 (8 jam), expire_on_close false.
+- 177 PASS (tak ada test yang assert "/" landing untuk user login).
+- ⚠️ PWA yang SUDAH ter-install di HP perlu re-install / clear data agar start_url
+  baru (/dashboard) terbaca — manifest di-cache OS. Install baru langsung dapat.
+
 ## FIX TERAKHIR (17 Juni 2026) — PWA Setup
 - PWA penuh (installable + offline shell) SELESAI. Operator bisa install ke home
   screen HP, buka fullscreen tanpa address bar, app shell tetap kebuka saat sinyal jelek.

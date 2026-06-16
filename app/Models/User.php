@@ -81,6 +81,20 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * URL dashboard sesuai role — satu sumber kebenaran dipakai oleh route
+     * "/dashboard" dan LoginResponse (Filament) agar tidak divergent.
+     * Super admin diarahkan ke Filament admin panel.
+     */
+    public function homePath(): string
+    {
+        if ($this->isSuperAdmin()) {
+            return '/admin';
+        }
+
+        return route("{$this->role}.dashboard");
+    }
+
+    /**
      * HPP per mika owner ini, fallback ke default Rp 9.500.
      */
     public function getHppPerMikaValue(): float
