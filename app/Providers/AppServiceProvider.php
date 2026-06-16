@@ -41,6 +41,20 @@ class AppServiceProvider extends ServiceProvider
         Delivery::observe(DeliveryObserver::class);
 
         $this->fixFilamentMapPickerZIndex();
+        $this->injectPwaHeadIntoFilament();
+    }
+
+    /**
+     * Suntik manifest + meta PWA + registrasi service worker ke <head> SEMUA
+     * panel Filament (admin & owner-panel) lewat render hook, karena panel
+     * Filament tidak memakai layout Blade kustom kita (operator/owner/guest).
+     */
+    private function injectPwaHeadIntoFilament(): void
+    {
+        FilamentView::registerRenderHook(
+            PanelsRenderHook::HEAD_END,
+            fn (): string => view('partials.pwa-head')->render(),
+        );
     }
 
     /**

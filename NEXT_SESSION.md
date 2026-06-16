@@ -1,15 +1,41 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 16 Juni 2026*
+*Sesi terakhir: 17 Juni 2026*
 
 ## TRIGGER SENTENCE
 Bg, lanjut dodol-app. 177 PASS. Sudah deploy Railway (produksi jalan).
-GitHub: Qontas/dodol-app synced.
+GitHub: Qontas/dodol-app synced. PWA sudah installable + offline shell.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
 - 177 PASS, 678 assertions
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
+
+## FIX TERAKHIR (17 Juni 2026) — PWA Setup
+- PWA penuh (installable + offline shell) SELESAI. Operator bisa install ke home
+  screen HP, buka fullscreen tanpa address bar, app shell tetap kebuka saat sinyal jelek.
+- Ikon amber tipografi "Q" (gradient #F59E0B→#D97706) di-generate via
+  scripts/generate-pwa-icons.php (PHP GD). File di public/: icon-192/512.png,
+  icon-maskable-192/512.png (safe-area padding biar tak kepotong squircle Android),
+  apple-touch-icon.png (180px iOS), favicon.png + favicon.ico (ganti favicon 0-byte).
+- public/manifest.webmanifest: name/short_name Cemilan Qontas, display standalone,
+  orientation portrait, theme_color #F59E0B, icons any + maskable. start_url & scope "/".
+- public/sw.js (vanilla, tanpa dependency): NETWORK-FIRST untuk navigasi HTML/data
+  (data kios/settlement selalu fresh saat online; fallback cache → offline.html cuma
+  saat benar-benar offline). Aset Vite ber-hash (/build/*) cache-on-fetch (TIDAK
+  hardcode nama file hash → tak perlu update sw.js tiap deploy). POST/non-GET
+  (Livewire update) TIDAK pernah di-cache. Versioning CACHE_NAME='dodol-v1' +
+  cleanup cache lama saat activate. public/offline.html = fallback page.
+- Head tags (manifest, theme-color, apple-touch-icon, meta iOS) + registrasi SW
+  via partial resources/views/partials/pwa-head.blade.php, di-include di layout
+  operator + guest (login) + app + owner. Panel Filament (admin & owner-panel)
+  dapat head PWA via render hook PanelsRenderHook::HEAD_END di AppServiceProvider
+  (reuse partial yang sama). Registrasi SW guarded ('serviceWorker' in navigator).
+- Verifikasi: 177 PASS, manifest valid JSON, semua ikon non-0-byte, tak ada file
+  PWA ke-exclude gitignore (*.sql tidak kena public/*.png).
+- CARA INSTALL DI HP: buka https://dodol-app-production.up.railway.app di Chrome
+  Android → menu ⋮ → "Install app" / "Add to Home screen". iOS Safari → Share →
+  "Add to Home Screen". (Wajib HTTPS — Railway sudah HTTPS.)
 
 ## FIX TERAKHIR (16 Juni 2026)
 - Anti-flash (FOUC) Filament admin panel saat load pertama / cold cache di
