@@ -16,6 +16,9 @@ Homestead.yaml
 npm-debug.log
 yarn-error.log
 /auth.json
+# Dump database lokal (berisi data sensitif: email, password hash) — jangan commit
+backup_lokal.sql
+*.sql
 /.fleet
 /.idea
 /.nova
