@@ -484,6 +484,11 @@
                                 </span>
                                 <span class="text-xs text-slate-500 mt-0.5 block">Kios belum bisa bayar — tagih di kunjungan berikutnya (max 2x)</span>
                             </button>
+                            <button type="button" wire:click="chooseAction('cek')"
+                                class="w-full text-left p-4 rounded-xl bg-white border-2 border-slate-200 active:bg-slate-50">
+                                <span class="font-bold text-base text-slate-900 block">👀 Cek Sisa (tanpa tagih)</span>
+                                <span class="text-xs text-slate-500 mt-0.5 block">Catat sisa dodol &amp; kondisi kios. Titipan TETAP berjalan (tidak ditagih, tidak dilunasi). Dodol tetap dijual sampai habis.</span>
+                            </button>
                         </div>
                     @else
                         <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Mau ngapain di kios ini?</p>

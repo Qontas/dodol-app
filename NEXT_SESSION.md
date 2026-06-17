@@ -2,12 +2,12 @@
 *Sesi terakhir: 17 Juni 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 177 PASS. Sudah deploy Railway (produksi jalan).
+Bg, lanjut dodol-app. 179 PASS. Sudah deploy Railway (produksi jalan).
 GitHub: Qontas/dodol-app synced. PWA sudah installable + offline shell.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 177 PASS, 678 assertions
+- 179 PASS, 693 assertions
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
@@ -48,9 +48,31 @@ Baca NEXT_SESSION.md untuk context lengkap.
   (POST Livewire round-trip) terasa beberapa detik. Itu latency JARINGAN, bukan
   kode (sudah dipastikan SW & query bersih). Opsi: pindah region Railway ke Asia
   Tenggara (Singapore) — perlu keputusan + kemungkinan re-deploy + migrasi DB.
-- PENDING — Menu operator "cek kedai / kedai tutup" tidak muncul (per screenshot
-  user). Belum dicek. Investigasi di komponen visit operator (skenario cek/tunda)
-  + blade active-trip.
+- ~~PENDING — Menu operator "cek kedai / kedai tutup" tidak muncul~~ → SELESAI
+  (17 Juni 2026). Hasil investigasi: 3 opsi (Tagih+Titip/Tagih Saja/Tunda) untuk
+  kios bertitipan memang BY-DESIGN, bukan bug. DITAMBAH fitur baru di bawah.
+
+## FIX TERAKHIR (17 Juni 2026) — Opsi "Cek Sisa" untuk kios BERTITIPAN
+- BARU: operator bisa pilih "👀 Cek Sisa (tanpa tagih)" pada kios yang masih punya
+  titipan aktif → catat sisa dodol (biji) + alasan kunjungan (Kios Tutup / Minta
+  Tunggu / Tidak Ada Uang / Dodol Masih Ada) TANPA menyelesaikan/mengubah titipan.
+  Skenario: kios tutup / pemilik minta tunggu sampai dodol habis → titipan tetap
+  jadi tunggakan, sisa biji dipakai prediksi habis di dashboard owner.
+- Sebelumnya "Cek Sisa" cuma ada untuk kios TANPA titipan (cabang @else).
+- JEBAKAN yang diatasi: resolveVisitAction() auto-detect → kios bertitipan + drop=0
+  SELALU resolve ke settle_only (akan menutup titipan tak sengaja). Ditambah guard
+  PALING ATAS: if (chosenAction === 'cek') return 'check_only'. Titipan TIDAK
+  ter-settle (no Settlement, no Delivery, settled_delivery_id null → tetap pending).
+- EDGE-CASE koreksi (poin penting): correctVisit() kini set chosenAction=null saat
+  netralisasi flag — supaya guard 'cek' tak pernah keliru memaksa check_only saat
+  mengoreksi visit tagih/settle (yang akan merusak titipan). Koreksi visit
+  check_only sendiri sudah diblokir openCorrectionModal ("tidak punya angka").
+- File: ActiveTrip.php (guard resolveVisitAction + whitelist chooseAction + reset
+  chosenAction di correctVisit), active-trip.blade.php (tombol ke-4 cabang bertitipan).
+- TEST BARU: ActiveTripCekSisaBertitipanTest — buktikan kios bertitipan + Cek Sisa
+  → TIDAK buat Settlement/Delivery, titipan TETAP pending, check_only ber-sisa_biji
+  terisi, prediksi habis terbaca. ActiveTripActionPickerTest diperbarui ('cek' kini
+  valid utk kios bertitipan). 179 PASS (693 assertions).
 
 ## FIX TERAKHIR (17 Juni 2026) — PWA Auto-login & Redirect Role
 - Buka PWA → langsung dashboard sesuai role (tak mampir landing), login persist.

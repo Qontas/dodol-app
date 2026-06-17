@@ -383,7 +383,7 @@ class ActiveTrip extends Component
     public function chooseAction(string $action): void
     {
         $valid = $this->pendingDelivery
-            ? ['tagih_titip', 'tagih', 'tunda']
+            ? ['tagih_titip', 'tagih', 'tunda', 'cek']
             : ['titip', 'cek'];
 
         if (! in_array($action, $valid, true)) {
@@ -515,6 +515,14 @@ class ActiveTrip extends Component
         // Kios cash only selalu penjualan cash langsung.
         if ($this->isCashOnly) {
             return 'cash_sale';
+        }
+
+        // Niat eksplisit "Cek Sisa" → SELALU check_only, walau kios masih punya
+        // titipan. Tanpa guard ini, kios bertitipan + drop=0 akan auto-detect ke
+        // settle_only dan menutup titipan tak sengaja. correctVisit() menetralkan
+        // chosenAction=null, jadi guard ini tak pernah keliru menyala saat koreksi.
+        if ($this->chosenAction === 'cek') {
+            return 'check_only';
         }
 
         $drop = (int) $this->dropBaru;
@@ -793,6 +801,9 @@ class ActiveTrip extends Component
         $this->returnExpired = $returnExpired;
         $this->uangDiterima = $uangDiterima;
         // Koreksi hanya angka — flag perilaku lain dinetralkan.
+        // chosenAction=null WAJIB: cegah guard 'cek' di resolveVisitAction() keliru
+        // memaksa check_only saat koreksi visit tagih/settle (akan merusak titipan).
+        $this->chosenAction = null;
         $this->extensionGranted = false;
         $this->turunkanDefault = false;
         $this->qtyDefaultBaru = 0;

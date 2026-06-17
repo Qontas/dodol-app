@@ -88,11 +88,13 @@ class ActiveTripActionPickerTest extends TestCase
             ->assertSee('Tagih + Titip Baru')
             ->assertSee('Tunda Bayar');
 
-        // Aksi yang tidak valid untuk kios bertitipan diabaikan.
+        // 'titip' tidak valid untuk kios bertitipan → diabaikan.
         $component->call('chooseAction', 'titip')
             ->assertSet('chosenAction', null)
+            // 'cek' (Cek Sisa) kini DIIZINKAN untuk kios bertitipan (catat sisa
+            // tanpa menyentuh titipan).
             ->call('chooseAction', 'cek')
-            ->assertSet('chosenAction', null);
+            ->assertSet('chosenAction', 'cek');
     }
 
     public function test_choose_tunda_sets_extension_and_clears_drop(): void
