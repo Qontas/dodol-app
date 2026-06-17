@@ -69,6 +69,12 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
+    // Endpoint token CSRF -> BYPASS total. JANGAN pernah di-cache: token usang dari
+    // cache = 419. Selalu ambil dari server (sesi terkini).
+    if (url.pathname === '/csrf-token') {
+        return;
+    }
+
     // Aset build Vite ber-hash -> cache-first (immutable, aman & cepat).
     if (url.pathname.startsWith('/build/')) {
         event.respondWith(cacheFirst(request));

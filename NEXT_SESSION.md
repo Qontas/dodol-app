@@ -2,12 +2,12 @@
 *Sesi terakhir: 17 Juni 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 179 PASS. Sudah deploy Railway (produksi jalan).
+Bg, lanjut dodol-app. 182 PASS. Sudah deploy Railway (produksi jalan).
 GitHub: Qontas/dodol-app synced. PWA sudah installable + offline shell.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 179 PASS, 693 assertions
+- 182 PASS, 704 assertions
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
@@ -51,6 +51,39 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - ~~PENDING — Menu operator "cek kedai / kedai tutup" tidak muncul~~ → SELESAI
   (17 Juni 2026). Hasil investigasi: 3 opsi (Tagih+Titip/Tagih Saja/Tunda) untuk
   kios bertitipan memang BY-DESIGN, bukan bug. DITAMBAH fitur baru di bawah.
+
+## FIX TERAKHIR (17 Juni 2026) — 419 "Page Expired" TUNTAS (operator lapangan)
+- GEJALA: operator close PWA → buka lagi → GET dashboard OK → klik LOGOUT (POST)
+  → 419, walau sesi baru beberapa menit (BUKAN idle 8 jam).
+- AKAR: token @csrf beku di DOM saat render. remember-me (~5thn) merotasi sesi+token
+  diam-diam saat PWA dibuka ulang (cookie sesi mobile sering drop saat app close →
+  remember-me re-auth → sesi+token BARU). GET aman (re-auth mulus), POST logout kirim
+  token LAMA ≠ token baru → 419. DIPERPARAH no-store kemarin (mematikan bfcache →
+  pwa-bfcache-guard reload-on-persisted TAK PERNAH menyala). Bukan soal SESSION_LIFETIME.
+  (SESSION_EXPIRE_ON_CLOSE tidak di-set di Railway → default false; diagnosis tetap
+  valid, akar = remember-me rotasi + token statis.)
+- FIX #2 (logout kebal CSRF): bootstrap/app.php validateCsrfTokens(except: ['logout']).
+  Logout tetap butuh auth+POST, hanya CSRF di-skip → klik logout token APAPUN → mulus,
+  tidak 419. (Kegagalan CSRF logout itu jinak: paling buruk = ter-logout.)
+- FIX #1 (AKAR: token selalu sinkron): endpoint GET /csrf-token (auth, no-store)
+  balikin {token, uid}. Partial partials/pwa-token-refresh.blade.php: pada pageshow
+  (SEMUA) + visibilitychange→visible → fetch token segar → update <meta csrf-token>
+  + semua input[name=_token] (termasuk logout). Sesi habis → ke login. Di-include di
+  layout operator/owner/app.
+- FIX #3 (handler 419 ramah, form NON-logout): bootstrap/app.php withExceptions tangkap
+  TokenMismatchException → user auth: redirect homePath() + flash "Sesi diperbarui,
+  silakan ulangi"; tak auth: ke login. Request Livewire (X-Livewire) dilewatkan (status
+  419 → frontend Livewire handle sendiri). ⚠️ SENGAJA TIDAK auto re-submit (cegah
+  transaksi settlement/visit dobel = kerusakan keuangan) — operator ulangi di form segar.
+- FIX #4 (rapikan): pwa-bfcache-guard DIHAPUS (reload-on-persisted impoten karena
+  no-store). Diganti pwa-token-refresh yang juga deteksi identitas: kalau uid sesi
+  terkini ≠ uid render halaman → location.reload() (multi-tenant), BUKAN reload buta.
+- MULTI-TENANT kemarin TIDAK rusak (dikonfirmasi): full-reload login/logout (no
+  navigate:true) utuh, SW dodol-v2 + no-store utuh, role middleware 403 cross-role utuh
+  (RoleMiddlewareTest hijau). Deteksi-identitas pengganti guard malah LEBIH kuat (aktif,
+  tak bergantung e.persisted).
+- TEST BARU: CsrfTokenRefreshTest (endpoint butuh auth, balikin token+uid+no-store,
+  logout route mulus). 182 PASS (704 assertions).
 
 ## FIX TERAKHIR (17 Juni 2026) — AKAR bug multi-tenant: wire:navigate (bukan SW)
 - Bug multi-tenant MASIH terjadi setelah fix SW kemarin: login owner → logout →

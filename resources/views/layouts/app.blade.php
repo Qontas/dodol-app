@@ -14,7 +14,7 @@
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         @include('partials.pwa-head')
-        @include('partials.pwa-bfcache-guard')
+        @include('partials.pwa-token-refresh')
     </head>
     <body class="font-sans antialiased">
         <div class="min-h-screen bg-gray-100">

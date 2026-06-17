@@ -9,7 +9,7 @@
     <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @include('partials.pwa-head')
-    @include('partials.pwa-bfcache-guard')
+    @include('partials.pwa-token-refresh')
     {{-- Alpine datang dari Livewire. Halaman owner non-Livewire (laporan,
          settings) tidak meng-auto-inject script Livewire, jadi muat manual di
          sini agar Alpine selalu ada (dropdown akun & sidebar perlu Alpine). --}}

@@ -25,6 +25,16 @@ Route::post('logout', function () {
     return redirect()->route('login');
 })->middleware('auth')->name('logout');
 
+// Token CSRF sesi terkini + id user — dipakai pwa-token-refresh saat app resume
+// agar token form (termasuk logout) selalu sinkron (akar fix 419) + deteksi
+// pergantian identitas (multi-tenant). Auth wajib; tak boleh di-cache SW.
+Route::get('csrf-token', function () {
+    return response()->json([
+        'token' => csrf_token(),
+        'uid' => auth()->id(),
+    ])->header('Cache-Control', 'no-store, no-cache, private, must-revalidate');
+})->middleware('auth')->name('csrf-token');
+
 Route::middleware(['auth', 'verified', 'no-store'])->group(function () {
     Route::get('/dashboard', function () {
         // Role-aware: super_admin→/admin, owner/operator→{role}.dashboard.
