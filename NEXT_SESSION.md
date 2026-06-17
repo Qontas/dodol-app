@@ -11,6 +11,47 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
+## FIX TERAKHIR (17 Juni 2026) — BUG MULTI-TENANT Cache SW (KRITIS)
+- BUG: setelah logout & login akun lain, dashboard akun SEBELUMNYA yang muncul;
+  refresh → 403. Penyebab: service worker v1 nge-cache halaman HTML ter-auth
+  per-URL TANPA bedakan user. /owner/dashboard di-cache untuk akun A → akun B
+  (tenant lain, URL sama) dapat halaman A. Diperparah: wire:navigate ambil halaman
+  via fetch() (mode 'cors', BUKAN 'navigate') → lolos ke cabang cacheFirst di sw.js
+  v1 → halaman ter-auth tetap tersimpan. Session server sendiri SUDAH benar
+  (logout invalidate + regenerateToken).
+- FIX A (sw.js, akar masalah): CACHE_NAME 'dodol-v1' → 'dodol-v2' (activate purge
+  SEMUA cache lama → bersihkan halaman ter-auth yg terlanjur tersimpan di HP user).
+  Navigasi HTML kini NETWORK-ONLY (networkOnlyPage, tak ada cache.put halaman).
+  Deteksi halaman pakai mode 'navigate' DAN header Accept: text/html (menutup celah
+  wire:navigate). Offline → offline.html generik, bukan dashboard lama. App shell +
+  /build/* + ikon TETAP cache-on-fetch (PWA installable & offline shell utuh).
+- FIX B (klien): partials/pwa-cache-clear.blade.php di guest layout (login). Saat
+  login dimuat: caches.keys() → hapus semua cache KECUALI dodol-v2 (guard
+  'caches' in window). Device yg sudah kena bug langsung bersih saat buka login.
+  SW TIDAK di-unregister.
+- FIX C (jaring pengaman): middleware NoStoreAuthPages (alias 'no-store' di
+  bootstrap/app.php) → Cache-Control: no-store, no-cache, private, must-revalidate
+  + Pragma: no-cache. Di-attach ke grup /dashboard, owner.*, operator.*. Filament
+  TIDAK disentuh.
+- FIX D (delay operator): SW kini BYPASS total request /livewire/* + non-GET; HTML
+  network-only (sebelumnya tiap navigasi tulis HTML ke Cache Storage = overhead).
+  N+1: DICEK, TIDAK ADA (Operator\Dashboard = 3 query agregat; Operator\ActiveTrip
+  sudah bulk whereIn/groupBy/keyBy, foreach cuma olah koleksi termuat). TIDAK
+  di-refactor.
+- 177 PASS tetap hijau. Verifikasi route:list: NoStoreAuthPages terpasang di
+  owner/dashboard.
+
+### ⚠️ CATATAN PENTING / PENDING (per 17 Juni 2026)
+- User WAJIB TUTUP-BUKA APP 2x di HP agar SW update v1→v2 (1x download SW baru +
+  activate, refresh berikutnya pakai v2). Skrip login (B) jadi jaring pengaman.
+- PENDING — Region Railway US WEST: latency dari Medan bikin tiap klik operator
+  (POST Livewire round-trip) terasa beberapa detik. Itu latency JARINGAN, bukan
+  kode (sudah dipastikan SW & query bersih). Opsi: pindah region Railway ke Asia
+  Tenggara (Singapore) — perlu keputusan + kemungkinan re-deploy + migrasi DB.
+- PENDING — Menu operator "cek kedai / kedai tutup" tidak muncul (per screenshot
+  user). Belum dicek. Investigasi di komponen visit operator (skenario cek/tunda)
+  + blade active-trip.
+
 ## FIX TERAKHIR (17 Juni 2026) — PWA Auto-login & Redirect Role
 - Buka PWA → langsung dashboard sesuai role (tak mampir landing), login persist.
 - routes/web.php "/": sekarang AUTH-AWARE — auth()->check() → redirect route('dashboard')
