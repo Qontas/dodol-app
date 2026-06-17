@@ -13,6 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
+            'no-store' => \App\Http\Middleware\NoStoreAuthPages::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

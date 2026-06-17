@@ -1,18 +1,22 @@
 /**
  * Service Worker — Cemilan Qontas (dodol-app)
  *
- * Strategi:
- *  - App shell minimal di-precache saat install (ikon, manifest, offline page).
+ * Strategi (v2 — multi-tenant safe):
+ *  - App shell statis (ikon, manifest, offline page) di-precache saat install.
  *  - Aset Vite ber-hash (/build/assets/*) di-cache RUNTIME (cache-on-fetch),
  *    JANGAN di-hardcode karena namanya berganti tiap build.
- *  - Navigasi HTML & data: NETWORK-FIRST, fallback ke cache / offline.html
- *    hanya saat benar-benar offline (biar data kios/settlement selalu fresh).
- *  - POST & request non-GET (mis. Livewire update) TIDAK pernah di-cache.
+ *  - Halaman HTML ter-AUTENTIKASI (dashboard owner/operator/admin) TIDAK PERNAH
+ *    di-cache. App ini multi-tenant: nge-cache halaman per-URL tanpa bedakan user
+ *    bikin akun B melihat dashboard akun A. Navigasi = NETWORK-ONLY.
+ *  - Saat offline, navigasi hanya jatuh ke offline.html generik (pesan "offline"),
+ *    BUKAN menyajikan ulang dashboard lama.
+ *  - POST & request non-GET (Livewire update, form) TIDAK pernah disentuh SW.
+ *  - Request Livewire (/livewire/*) di-BYPASS total agar tidak menambah latency.
  */
 
-const CACHE_NAME = 'dodol-v1';
+const CACHE_NAME = 'dodol-v2';
 
-// App shell statis & non-hash. Aman di-precache karena URL-nya tetap.
+// App shell statis & non-hash. Aman di-precache karena URL-nya tetap & tidak per-user.
 const APP_SHELL = [
     '/offline.html',
     '/manifest.webmanifest',
@@ -37,6 +41,8 @@ self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((keys) =>
             Promise.all(
+                // Buang SEMUA cache lama (≠ dodol-v2). Ini sekaligus membersihkan
+                // halaman ter-auth yang terlanjur tersimpan di device user (bug v1).
                 keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
             )
         ).then(() => self.clients.claim())
@@ -53,8 +59,13 @@ self.addEventListener('fetch', (event) => {
 
     const url = new URL(request.url);
 
-    // Hanya origin sendiri. Font/CDN eksternal biarkan default browser.
+    // Hanya origin sendiri. Font/CDN eksternal & API eksternal biarkan default browser.
     if (url.origin !== self.location.origin) {
+        return;
+    }
+
+    // Request Livewire -> BYPASS total (jangan diproses SW, biar tidak nambah delay).
+    if (url.pathname.startsWith('/livewire/')) {
         return;
     }
 
@@ -64,9 +75,14 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Navigasi halaman (HTML) -> network-first, fallback offline.html.
-    if (request.mode === 'navigate') {
-        event.respondWith(networkFirstPage(request));
+    // Halaman HTML -> NETWORK-ONLY, tidak pernah dicache.
+    // Deteksi pakai mode 'navigate' DAN header Accept: text/html, karena
+    // wire:navigate mengambil halaman via fetch() biasa (mode 'cors', bukan
+    // 'navigate'). Tanpa cek Accept, halaman ter-auth dari wire:navigate akan
+    // lolos ke cacheFirst dan ikut tersimpan (kebocoran multi-tenant + data basi).
+    const accept = request.headers.get('accept') || '';
+    if (request.mode === 'navigate' || accept.includes('text/html')) {
+        event.respondWith(networkOnlyPage(request));
         return;
     }
 
@@ -92,21 +108,16 @@ async function cacheFirst(request) {
     }
 }
 
-/** Network-first untuk navigasi: selalu coba network dulu, fallback ke cache lalu offline.html. */
-async function networkFirstPage(request) {
+/**
+ * Network-only untuk navigasi halaman.
+ * - SELALU ambil dari network (tidak pernah baca/tulis cache halaman).
+ * - Kalau benar-benar offline, tampilkan offline.html generik sebagai pesan,
+ *   BUKAN dashboard lama. Tidak ada kebocoran data antar-user.
+ */
+async function networkOnlyPage(request) {
     try {
-        const response = await fetch(request);
-        // Simpan salinan shell terakhir yang sukses (untuk fallback saat offline).
-        if (response && response.ok) {
-            const cache = await caches.open(CACHE_NAME);
-            cache.put(request, response.clone());
-        }
-        return response;
+        return await fetch(request);
     } catch (err) {
-        const cached = await caches.match(request);
-        if (cached) {
-            return cached;
-        }
         const offline = await caches.match('/offline.html');
         return offline || Response.error();
     }

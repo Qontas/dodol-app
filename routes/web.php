@@ -25,14 +25,14 @@ Route::post('logout', function () {
     return redirect()->route('login');
 })->middleware('auth')->name('logout');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth', 'verified', 'no-store'])->group(function () {
     Route::get('/dashboard', function () {
         // Role-aware: super_admin→/admin, owner/operator→{role}.dashboard.
         return redirect(auth()->user()->homePath());
     })->name('dashboard');
 });
 
-Route::middleware(['auth', 'verified', 'role:owner'])
+Route::middleware(['auth', 'verified', 'no-store', 'role:owner'])
     ->prefix('owner')
     ->name('owner.')
     ->group(function () {
@@ -49,7 +49,7 @@ Route::middleware(['auth', 'verified', 'role:owner'])
     });
 
 // Laporan & export — owner + super admin (otorisasi per-trip di controller).
-Route::middleware(['auth', 'verified', 'role:owner,super_admin'])
+Route::middleware(['auth', 'verified', 'no-store', 'role:owner,super_admin'])
     ->prefix('owner')
     ->name('owner.')
     ->group(function () {
@@ -69,7 +69,7 @@ Route::middleware(['auth', 'verified', 'role:owner,super_admin'])
             ->name('reports.monthly.excel');
     });
 
-Route::middleware(['auth', 'verified', 'role:operator'])
+Route::middleware(['auth', 'verified', 'no-store', 'role:operator'])
     ->prefix('operator')
     ->name('operator.')
     ->group(function () {
