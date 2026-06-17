@@ -52,6 +52,36 @@ Baca NEXT_SESSION.md untuk context lengkap.
   (17 Juni 2026). Hasil investigasi: 3 opsi (Tagih+Titip/Tagih Saja/Tunda) untuk
   kios bertitipan memang BY-DESIGN, bukan bug. DITAMBAH fitur baru di bawah.
 
+## FIX TERAKHIR (17 Juni 2026) — AKAR bug multi-tenant: wire:navigate (bukan SW)
+- Bug multi-tenant MASIH terjadi setelah fix SW kemarin: login owner → logout →
+  login operator → dashboard owner lama muncul → refresh → 403 "Role tidak sesuai".
+- DIAGNOSIS: AKAR sebenarnya BUKAN service worker (sw.js v2 sudah benar) & BUKAN
+  sesi server (logout invalidate+regenerate sudah benar). Penyebab: `navigate: true`
+  pada redirect login & logout → transisi auth jadi navigasi SPA Livewire tanpa full
+  reload. wire:navigate menyimpan SNAPSHOT halaman di sisi JS (in-memory +
+  history.state) yang KEBAL terhadap Cache-Control: no-store & TAK tersentuh service
+  worker. Snapshot /owner/dashboard bertahan & ditampilkan ke sesi operator.
+  403 = bukti server BENAR (operator), yang salah render cache klien di URL owner.
+- BUG TAMBAHAN kemarin: skrip pwa-cache-clear dipasang di layouts/guest.blade.php,
+  TAPI login pakai #[Layout('layouts.blank')] (blank = {{ $slot }}) → skrip TIDAK
+  pernah jalan di login. Diperbaiki.
+- FIX 1 (akar): HAPUS `navigate: true` di SEMUA batas auth → full document load yang
+  mem-flush snapshot wire:navigate. File: login, register, verify-email (masuk+logout),
+  confirm-password, reset-password→login, navigation (logout Breeze), delete-user.
+  Logout operator/owner sudah pakai POST form (full reload) → tidak diubah.
+  navigate:true INTRA-panel operator (StartTrip/CreateKiosk) DIBIARKAN (bukan lintas akun).
+- FIX 2: pwa-cache-clear kini di-include langsung di <head> login.blade.php (layout
+  yang benar-benar dipakai login).
+- FIX 3 (defensif bfcache mobile): partial pwa-bfcache-guard — listener pageshow,
+  reload HANYA bila e.persisted (dari bfcache) DAN pathname /owner|/operator|
+  /dashboard|/admin. Di-include di layout operator/owner/app (TER-AUTH saja), TIDAK
+  di login/landing → tak ada reload-loop.
+- ALUR BARU: login/logout = full reload → snapshot wire:navigate ter-flush → mustahil
+  lagi menampilkan dashboard akun sebelumnya. 179 PASS tetap hijau (test auth pakai
+  assertRedirect target, tak terpengaruh hilangnya navigate:true).
+- STATUS: RESOLVED pending konfirmasi user di HP (tutup-buka app agar SW v2 + kode
+  baru ter-deploy). Kalau masih muncul, cek bfcache browser spesifik / Railway deploy.
+
 ## FIX TERAKHIR (17 Juni 2026) — Opsi "Cek Sisa" untuk kios BERTITIPAN
 - BARU: operator bisa pilih "👀 Cek Sisa (tanpa tagih)" pada kios yang masih punya
   titipan aktif → catat sisa dodol (biji) + alasan kunjungan (Kios Tutup / Minta

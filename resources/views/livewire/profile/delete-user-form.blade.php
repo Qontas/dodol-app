@@ -19,7 +19,8 @@ new class extends Component
 
         tap(Auth::user(), $logout(...))->delete();
 
-        $this->redirect('/', navigate: true);
+        // Full reload di batas keluar akun (akun dihapus → harus bersih total).
+        $this->redirect('/');
     }
 }; ?>
 

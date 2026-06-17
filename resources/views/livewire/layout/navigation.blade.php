@@ -12,7 +12,9 @@ new class extends Component
     {
         $logout();
 
-        $this->redirect('/', navigate: true);
+        // Full reload (TANPA navigate:true) di batas logout → flush snapshot
+        // wire:navigate/bfcache halaman ter-auth akun ini.
+        $this->redirect('/');
     }
 }; ?>
 

@@ -20,7 +20,9 @@ new #[Layout('layouts.blank')] class extends Component
 
         Session::regenerate();
 
-        $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);
+        // Full reload (TANPA navigate:true) di batas login → flush snapshot
+        // wire:navigate/bfcache, cegah dashboard akun sebelumnya muncul (multi-tenant).
+        $this->redirectIntended(default: route('dashboard', absolute: false));
     }
 }; ?>
 
@@ -31,6 +33,8 @@ new #[Layout('layouts.blank')] class extends Component
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Login - Cemilan Qontas</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    {{-- Bersihkan cache klien lama (device yang sudah terlanjur kena bug SW v1). --}}
+    @include('partials.pwa-cache-clear')
 </head>
 <body class="font-sans text-slate-900 antialiased bg-slate-50 flex items-center justify-center min-h-screen">
     <div class="w-full max-w-md px-6">

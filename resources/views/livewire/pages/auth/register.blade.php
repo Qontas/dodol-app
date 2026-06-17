@@ -32,7 +32,8 @@ new #[Layout('layouts.guest')] class extends Component
 
         Auth::login($user);
 
-        $this->redirect(route('dashboard', absolute: false), navigate: true);
+        // Full reload (TANPA navigate:true) di batas masuk app.
+        $this->redirect(route('dashboard', absolute: false));
     }
 }; ?>
 
