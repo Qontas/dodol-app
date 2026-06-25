@@ -841,7 +841,7 @@
                                     <div>
                                         <label class="flex items-center gap-3 cursor-pointer p-3 rounded-xl border border-slate-200">
                                             <input type="checkbox" wire:model.live="turunkanDefault" class="rounded text-amber-600">
-                                            <span class="text-sm font-medium text-slate-700">Kurangi jatah titipan kios ini</span>
+                                            <span class="text-sm font-medium text-slate-700">Kurangi jatah titipan kios ini<br><span class="text-xs font-normal text-slate-400">(jatah = jumlah mika yang biasa dititip ke kios ini ke depannya, bukan tagihan sekarang)</span></span>
                                         </label>
                                         @if($turunkanDefault)
                                             <div class="mt-2">
