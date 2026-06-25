@@ -689,6 +689,12 @@
                                 Pembayaran ditunda. Dodol sisa &amp; pembayaran diambil di kunjungan berikutnya — titipan ini tetap tercatat sebagai tunggakan.
                             </div>
                         </div>
+
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2">Sisa Dodol Total (Biji)</label>
+                            <input type="number" wire:model="sisaBiji" class="w-full rounded-xl border-slate-300 text-center text-xl font-bold py-3" min="0" placeholder="0">
+                            <p class="text-xs text-slate-400 mt-1">(pendataan saja — tunggakan tetap nyangkut, belum dianggap lunas). Isi 0 kalau tidak tahu.</p>
+                        </div>
                     @endif
 
                     {{-- AREA TAGIHAN (tagih / tagih+titip) --}}

@@ -124,13 +124,15 @@ class Kiosk extends Model
     }
 
     /**
-     * Kunjungan check_only terakhir yang mencatat sisa biji di kios.
+     * Kunjungan terakhir yang mencatat sisa biji di kios — sumber prediksi habis.
+     * sisa_biji hanya pernah ditulis oleh visit catat-sisa (Cek Sisa atau Tunda
+     * Bayar), jadi whereNotNull('sisa_biji') cukup sebagai penanda observasi sisa
+     * tanpa mengikat visit_action tertentu.
      */
     public function latestCheckVisit(): HasOne
     {
         return $this->hasOne(KioskVisit::class)
             ->whereNull('corrected_at')
-            ->where('visit_action', 'check_only')
             ->whereNotNull('sisa_biji')
             ->latestOfMany('visited_at');
     }

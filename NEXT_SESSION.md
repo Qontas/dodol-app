@@ -2,14 +2,33 @@
 *Sesi terakhir: 25 Juni 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 186 PASS. Sudah deploy Railway (produksi jalan).
+Bg, lanjut dodol-app. 187 PASS. Sudah deploy Railway (produksi jalan).
 GitHub: Qontas/dodol-app synced. PWA sudah installable + offline shell.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 186 PASS, 731 assertions
+- 187 PASS, 746 assertions
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
+
+## FIX TERAKHIR (25 Juni 2026) — CATAT SISA DODOL saat TUNDA BAYAR
+- TUJUAN: pas Tunda Bayar, operator bisa catat sisa dodol total (biji) untuk
+  pendataan/prediksi — TAPI tunggakan WAJIB tetap nyangkut (jangan dianggap lunas).
+- CARA: numpang field existing, TANPA kolom/migrasi baru.
+  1. UI (active-trip.blade.php blok Tunda): input "Sisa Dodol Total (Biji)" bind
+     wire:model="sisaBiji" + keterangan "(pendataan saja — tunggakan tetap nyangkut,
+     belum dianggap lunas)".
+  2. persistVisitFromState (ActiveTrip.php ~:1299): sisa_biji kini ditulis saat
+     check_only ATAU $extension (tunda). TIDAK menyentuh $createSettlement/$extension
+     (:1145-1146) → Tunda tetap createSettlement=false → titipan tetap pending,
+     hitungan max 2x (extension_granted=true) tetap jalan.
+  3. Kiosk::latestCheckVisit: filter visit_action='check_only' DILEPAS, cukup
+     whereNotNull('sisa_biji') (sisa_biji cuma ditulis visit catat-sisa). Jadi sisa
+     dari Cek Sisa ATAU Tunda sama-sama jadi sumber prediksi_habis owner dashboard.
+- TEST: test_tunda_bayar_catat_sisa_tanpa_settle_titipan — (a) KioskVisit punya
+  sisa_biji, (b) 0 Settlement + titipan doesntHave('settlement')=true, (c)
+  extensionCount naik, (d) latestCheckVisit/prediksi_habis baca sisa Tunda. Test
+  Cek Sisa & prediksi existing tetap hijau.
 
 ## FIX TERAKHIR (25 Juni 2026) — PERJELAS LABEL "KURANGI JATAH" + audit anti tagih-dobel
 - LABEL UI (active-trip.blade.php): "Kurangi jatah titipan kios ini" kini diberi

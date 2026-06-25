@@ -1289,14 +1289,16 @@ class ActiveTrip extends Component
                     }
                 }
 
-                // 3. Catat kunjungan (alasan & sisa biji hanya untuk check_only)
+                // 3. Catat kunjungan. alasan_check khusus check_only; sisa_biji boleh
+                //    diisi saat Cek Sisa ATAU Tunda Bayar (pendataan sisa — TIDAK
+                //    menutup titipan, tunggakan tetap nyangkut karena tak bikin Settlement).
                 $visit = KioskVisit::create([
                     'trip_id' => $this->trip->id,
                     'kiosk_id' => $this->selectedKiosk->id,
                     'visited_at' => now(),
                     'visit_action' => $action,
                     'alasan_check' => $action === 'check_only' ? ($this->alasanCheck ?: null) : null,
-                    'sisa_biji' => $action === 'check_only' && $this->sisaBiji > 0 ? $this->sisaBiji : null,
+                    'sisa_biji' => (($action === 'check_only' || $extension) && $this->sisaBiji > 0) ? $this->sisaBiji : null,
                     'new_delivery_id' => $newDeliveryId,
                     'settled_delivery_id' => $settledDeliveryId,
                     'extension_granted' => $extension,
