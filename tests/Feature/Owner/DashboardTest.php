@@ -107,6 +107,85 @@ class DashboardTest extends TestCase
         $this->assertEquals(1, $response->viewData('stats')['total_cluster']);
     }
 
+    /**
+     * Widget kerugian titipan: hanya settlement write-off (Stop Tanpa Tagih)
+     * bulan berjalan milik owner ini yang dijumlahkan; mika x HPP per mika.
+     */
+    public function test_kerugian_titipan_aggregates_writeoff_settlements_scoped_to_owner()
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true, 'hpp_per_mika' => 9500]);
+        $cluster = Cluster::create(['name' => 'Cluster Loss', 'owner_id' => $owner->id]);
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $cluster->id, 'is_active' => false]);
+        $variant = ProductVariant::factory()->create(['is_active' => true, 'sale_price_per_pack' => 12000]);
+
+        // Kerugian: 5 mika (75 biji) hilang, uang 0, write-off, bulan ini.
+        $delivery = Delivery::factory()->create([
+            'kiosk_id' => $kiosk->id,
+            'product_variant_id' => $variant->id,
+            'qty_delivered' => 5,
+        ]);
+        Settlement::factory()->create([
+            'delivery_id' => $delivery->id,
+            'visit_date' => today(),
+            'qty_sold' => 0,
+            'qty_returned_fresh' => 0,
+            'qty_returned_expired' => 75,
+            'amount_due' => 0,
+            'amount_paid' => 0,
+            'status' => 'paid',
+            'is_writeoff' => true,
+        ]);
+
+        // Settlement tagih biasa yang semua diretur basi — BUKAN write-off, tak dihitung.
+        $deliveryNormal = Delivery::factory()->create([
+            'kiosk_id' => $kiosk->id,
+            'product_variant_id' => $variant->id,
+            'qty_delivered' => 2,
+        ]);
+        Settlement::factory()->create([
+            'delivery_id' => $deliveryNormal->id,
+            'visit_date' => today(),
+            'qty_sold' => 0,
+            'qty_returned_fresh' => 0,
+            'qty_returned_expired' => 30,
+            'amount_due' => 0,
+            'amount_paid' => 0,
+            'status' => 'paid',
+            'is_writeoff' => false,
+        ]);
+
+        // Write-off owner LAIN — tidak boleh ikut terhitung.
+        $otherOwner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $otherCluster = Cluster::create(['name' => 'Cluster Lain Loss', 'owner_id' => $otherOwner->id]);
+        $otherKiosk = Kiosk::factory()->create(['cluster_id' => $otherCluster->id, 'is_active' => false]);
+        $otherDelivery = Delivery::factory()->create([
+            'kiosk_id' => $otherKiosk->id,
+            'product_variant_id' => $variant->id,
+            'qty_delivered' => 10,
+        ]);
+        Settlement::factory()->create([
+            'delivery_id' => $otherDelivery->id,
+            'visit_date' => today(),
+            'qty_sold' => 0,
+            'qty_returned_fresh' => 0,
+            'qty_returned_expired' => 150,
+            'amount_due' => 0,
+            'amount_paid' => 0,
+            'status' => 'paid',
+            'is_writeoff' => true,
+        ]);
+
+        $response = $this->actingAs($owner)->get('/owner/dashboard');
+
+        $response->assertOk();
+        $kerugian = $response->viewData('kerugianTitipan');
+
+        // Hanya write-off owner ini: 75 biji = 5 mika x Rp 9.500 = Rp 47.500.
+        $this->assertEquals(75, $kerugian['biji']);
+        $this->assertEquals(5.0, $kerugian['mika']);
+        $this->assertEquals(47500, $kerugian['nilai']);
+    }
+
     public function test_owner_dashboard_displays_real_time_trip_progress()
     {
         $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);

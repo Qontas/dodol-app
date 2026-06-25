@@ -21,6 +21,7 @@ class Settlement extends Model
         'amount_paid',
         'paid_at',
         'status',
+        'is_writeoff',
         'notes',
     ];
 
@@ -30,6 +31,7 @@ class Settlement extends Model
         'amount_due' => 'decimal:2',
         'amount_paid' => 'decimal:2',
         'status' => 'string',
+        'is_writeoff' => 'boolean',
     ];
 
     public function delivery(): BelongsTo

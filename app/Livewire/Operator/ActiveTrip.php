@@ -92,9 +92,16 @@ class ActiveTrip extends Component
     public bool $extensionGranted = false;
     public int $extensionCount = 0;
 
-    // --- STATE STOP TITIPAN (cut off kios) ---
-    public bool $showStopConfirm = false;
+    // --- STATE HENTIKAN KEDAI (stop titipan) ---
+    // stopMode: '' = tidak di alur stop. 'pick' = layar pilih cara stop.
+    //           'tagih' = stop + tagih terakhir (jalur a).
+    //           'tanpa_tagih' = stop tanpa tagih / kerugian (jalur b).
+    public string $stopMode = '';
     public string $stopReason = '';
+    // Gerbang konfirmasi tegas: true = tampilkan peringatan "FINAL" sebelum eksekusi.
+    public bool $stopConfirming = false;
+    // Tandai settlement titipan lama sebagai kerugian (jalur b: Stop Tanpa Tagih).
+    public bool $stopWriteOff = false;
 
     // --- STATE WALK-IN CASH (penjualan cash ke pembeli random, bukan kios) ---
     public bool $isWalkInModalOpen = false;
@@ -346,9 +353,10 @@ class ActiveTrip extends Component
 
         $this->resetVisitForm();
 
-        // Reset state stop titipan tiap buka modal.
-        $this->showStopConfirm = false;
+        // Reset state hentikan kedai tiap buka modal.
+        $this->stopMode = '';
         $this->stopReason = '';
+        $this->stopConfirming = false;
 
         // Kios cash only tidak punya pilihan aksi — langsung ke form jual cash.
         $this->chosenAction = $this->isCashOnly ? 'cash' : null;
@@ -373,6 +381,7 @@ class ActiveTrip extends Component
         $this->adaBsRedistribusi = false;
         $this->qtyBsMika = 0;
         $this->extensionGranted = false;
+        $this->stopWriteOff = false;
     }
 
     /**
@@ -413,58 +422,222 @@ class ActiveTrip extends Component
         $this->selectedKiosk = null;
         $this->pendingDelivery = null;
         $this->chosenAction = null;
-        $this->showStopConfirm = false;
+        $this->stopMode = '';
         $this->stopReason = '';
+        $this->stopConfirming = false;
+    }
+
+    // ===================== HENTIKAN KEDAI (stop titipan) =====================
+    // Satu pintu, dua jalur jelas:
+    //   (a) Stop + Tagih Terakhir  → catat tagihan terakhir lalu kedai berhenti.
+    //   (b) Stop Tanpa Tagih       → sisa dodol dicatat sebagai kerugian, lalu berhenti.
+    // Kedua jalur MENUTUP titipan lewat Settlement (reuse persistVisitFromState),
+    // sehingga tidak ada titipan menggantung ("silent loss") di pembukuan.
+
+    /** Layar pilih cara stop ("⛔ Hentikan Kedai Ini" pada layar pilih aksi). */
+    public function startStop(): void
+    {
+        $this->resetVisitForm();
+        $this->chosenAction = null;
+        $this->stopMode = 'pick';
+        $this->stopReason = '';
+        $this->stopConfirming = false;
+        $this->resetErrorBag(['stopReason', 'general']);
+    }
+
+    /** Pilih jalur stop: 'tagih' (a) atau 'tanpa_tagih' (b). */
+    public function chooseStopMode(string $mode): void
+    {
+        if (! in_array($mode, ['tagih', 'tanpa_tagih'], true)) {
+            return;
+        }
+
+        // (a) Stop + Tagih hanya relevan kalau kios MASIH punya titipan aktif.
+        if ($mode === 'tagih' && ! $this->pendingDelivery) {
+            return;
+        }
+
+        $this->resetVisitForm();
+        $this->stopMode = $mode;
+        $this->stopConfirming = false;
+        $this->resetErrorBag(['stopReason', 'general', 'uangDiterima']);
+
+        // Jalur (a): pra-isi hitungan tagihan (anggap belum ada retur) supaya
+        // operator tinggal sesuaikan sisa bagus / dodol sisa.
+        if ($mode === 'tagih') {
+            $this->hitungTagihan();
+        }
+    }
+
+    /** Kembali ke layar pilih cara stop. */
+    public function backToStopPick(): void
+    {
+        $this->stopMode = 'pick';
+        $this->stopConfirming = false;
+        $this->resetErrorBag(['stopReason', 'general', 'uangDiterima']);
+    }
+
+    /** Batal total dari alur stop, kembali ke layar pilih aksi. */
+    public function cancelStop(): void
+    {
+        $this->resetVisitForm();
+        $this->stopMode = '';
+        $this->stopReason = '';
+        $this->stopConfirming = false;
+        $this->chosenAction = null;
+        $this->resetErrorBag(['stopReason', 'general', 'uangDiterima']);
     }
 
     /**
-     * Stop titipan (cut off) kios oleh operator dari modal kunjungan.
-     * Kios di-nonaktifkan (is_active=false) + jejak stop, lalu hilang dari
-     * daftar trip (loadKiosks() sudah filter is_active=true). Kunjungan
-     * dicatat sebagai check_only beralasan 'stop_titipan' untuk jejak audit.
+     * Gerbang konfirmasi tegas: validasi alasan dulu, baru tampilkan peringatan
+     * "FINAL" sebelum eksekusi. Operator tidak bisa 1-tap langsung jalan.
      */
-    public function stopKios(): void
+    public function requestStopConfirm(): void
     {
-        if (! $this->selectedKiosk) {
-            $this->addError('stopReason', 'Kios tidak valid. Tutup form dan coba lagi.');
-            return;
-        }
+        $this->resetErrorBag(['stopReason', 'general']);
 
         if (! array_key_exists($this->stopReason, Kiosk::STOP_REASONS)) {
             $this->addError('stopReason', 'Pilih alasan dulu');
             return;
         }
 
-        // Masih ada titipan aktif (belum di-settle) → tidak boleh stop dulu.
-        // Operator harus selesaikan tagihan / catat loss sebelum cut off.
-        if ($this->pendingDelivery) {
-            $this->addError('stopReason', 'Kios masih punya titipan aktif. Selesaikan tagihan dulu sebelum stop.');
+        $this->stopConfirming = true;
+    }
+
+    /** Eksekusi stop setelah konfirmasi, dispatch sesuai jalur terpilih. */
+    public function executeStop(): void
+    {
+        if (! $this->stopConfirming) {
             return;
         }
 
-        DB::transaction(function () {
-            $this->selectedKiosk->update([
-                'is_active' => false,
-                'stopped_at' => now(),
-                'stop_reason' => $this->stopReason,
-                'stopped_by' => 'operator',
-            ]);
+        if ($this->stopMode === 'tagih') {
+            $this->stopWithSettle();
+        } elseif ($this->stopMode === 'tanpa_tagih') {
+            $this->stopWithoutSettle();
+        }
+    }
 
-            // Catat sebagai kunjungan check_only dengan alasan stop (jejak audit).
-            KioskVisit::create([
-                'trip_id' => $this->trip->id,
-                'kiosk_id' => $this->selectedKiosk->id,
-                'visited_at' => now(),
-                'visit_action' => 'check_only',
-                'alasan_check' => 'stop_titipan',
-                'extension_granted' => false,
-            ]);
-        });
+    /**
+     * Jalur (a): catat tagihan terakhir LALU nonaktifkan kios — ATOMIK.
+     * Reuse persistVisitFromState() (settle_only). URUTAN WAJIB: settle commit
+     * dulu, baru kios non-aktif, dalam SATU transaksi. Kalau settle gagal,
+     * kios TIDAK ter-nonaktif (rollback total) → tidak ada titipan menggantung.
+     */
+    private function stopWithSettle(): void
+    {
+        if (! $this->selectedKiosk || ! $this->pendingDelivery) {
+            $this->addError('general', 'Kios tidak valid atau tidak punya titipan. Tutup form dan coba lagi.');
+            return;
+        }
+        if (! array_key_exists($this->stopReason, Kiosk::STOP_REASONS)) {
+            $this->addError('stopReason', 'Pilih alasan dulu');
+            return;
+        }
+
+        $this->validate([
+            'returnFresh' => 'nullable|integer|min:0',
+            'returnExpired' => 'nullable|integer|min:0',
+            'uangDiterima' => 'nullable|integer|min:0',
+        ]);
+
+        // Pastikan auto-detect resolveVisitAction() jatuh ke settle_only
+        // (ada titipan + drop 0 + bukan niat 'cek').
+        $this->dropBaru = 0;
+        $this->chosenAction = null;
+        $this->extensionGranted = false;
+
+        try {
+            DB::transaction(function () {
+                $message = $this->persistVisitFromState();
+                if ($message === null) {
+                    // Error sudah di-addError oleh persist → rollback semua.
+                    throw new \RuntimeException('Penyimpanan tagihan gagal.');
+                }
+
+                // Hanya tercapai bila settle SUKSES → baru nonaktifkan kios.
+                $this->selectedKiosk->update([
+                    'is_active' => false,
+                    'stopped_at' => now(),
+                    'stop_reason' => $this->stopReason,
+                    'stopped_by' => 'operator',
+                ]);
+            });
+        } catch (\Throwable $e) {
+            if ($this->getErrorBag()->isNotEmpty()) {
+                return; // error spesifik dari persist sudah ditampilkan
+            }
+            $this->addError('general', 'Gagal menghentikan kedai. Coba lagi.');
+            return;
+        }
 
         $name = $this->selectedKiosk->name;
-        $this->closeVisitModal();
         $this->loadKiosks();
-        session()->flash('visit_saved', "Kios {$name} dihentikan titipannya.");
+        $this->closeVisitModal();
+        session()->flash('visit_saved', "Tagihan terakhir tercatat. Kedai {$name} dihentikan.");
+    }
+
+    /**
+     * Jalur (b): stop tanpa tagih (kedai kabur / tak bisa ditagih). Sisa titipan
+     * dicatat sebagai KERUGIAN lewat Settlement (semua sisa = dodol basi,
+     * uang diterima 0) → omset 0, laku 0, titipan TERTUTUP (tidak menggantung).
+     * Reuse persistVisitFromState() — tanpa titipan jadi sekadar check_only.
+     */
+    private function stopWithoutSettle(): void
+    {
+        if (! $this->selectedKiosk) {
+            $this->addError('general', 'Kios tidak valid. Tutup form dan coba lagi.');
+            return;
+        }
+        if (! array_key_exists($this->stopReason, Kiosk::STOP_REASONS)) {
+            $this->addError('stopReason', 'Pilih alasan dulu');
+            return;
+        }
+
+        // Catat seluruh sisa titipan sebagai kerugian (basi/hilang), uang 0.
+        $this->dropBaru = 0;
+        $this->chosenAction = null;
+        $this->extensionGranted = false;
+        $this->returnFresh = 0;
+        $this->uangDiterima = 0;
+        $this->returnExpired = $this->pendingDelivery
+            ? (int) $this->pendingDelivery->qty_delivered * self::BIJI_PER_MIKA
+            : 0;
+        // Tandai settlement titipan lama sebagai kerugian (write-off) agar owner
+        // dashboard bisa membedakannya dari tagih biasa yang semua diretur basi.
+        $this->stopWriteOff = (bool) $this->pendingDelivery;
+        // Tanpa titipan → persist jadi check_only; tandai jejak stop.
+        $this->alasanCheck = $this->pendingDelivery ? '' : 'stop_titipan';
+
+        try {
+            DB::transaction(function () {
+                $message = $this->persistVisitFromState();
+                if ($message === null) {
+                    throw new \RuntimeException('Pencatatan kerugian gagal.');
+                }
+
+                $this->selectedKiosk->update([
+                    'is_active' => false,
+                    'stopped_at' => now(),
+                    'stop_reason' => $this->stopReason,
+                    'stopped_by' => 'operator',
+                ]);
+            });
+        } catch (\Throwable $e) {
+            if ($this->getErrorBag()->isNotEmpty()) {
+                return;
+            }
+            $this->addError('general', 'Gagal menghentikan kedai. Coba lagi.');
+            return;
+        }
+
+        $name = $this->selectedKiosk->name;
+        $hadPending = (bool) $this->pendingDelivery;
+        $this->loadKiosks();
+        $this->closeVisitModal();
+        session()->flash('visit_saved', $hadPending
+            ? "Kedai {$name} dihentikan. Sisa dodol dicatat sebagai kerugian."
+            : "Kedai {$name} dihentikan.");
     }
 
     public function updated($propertyName)
@@ -1028,6 +1201,8 @@ class ActiveTrip extends Component
                         'qty_returned_expired' => $expired,
                         'amount_due' => (int) $this->tagihan,
                         'amount_paid' => (int) $this->uangDiterima,
+                        // Kerugian (Stop Tanpa Tagih) ditandai untuk laporan owner.
+                        'is_writeoff' => $this->stopWriteOff,
                         // status & paid_at di-set otomatis oleh SettlementObserver
                     ]);
                 }

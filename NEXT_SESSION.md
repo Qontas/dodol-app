@@ -1,15 +1,45 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 17 Juni 2026*
+*Sesi terakhir: 25 Juni 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 182 PASS. Sudah deploy Railway (produksi jalan).
+Bg, lanjut dodol-app. 186 PASS. Sudah deploy Railway (produksi jalan).
 GitHub: Qontas/dodol-app synced. PWA sudah installable + offline shell.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 182 PASS, 704 assertions
+- 186 PASS, 731 assertions
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
+
+## FIX TERAKHIR (25 Juni 2026) — RAPIKAN STOP KEDAI (stop titipan)
+- MASALAH lama: tombol "Stop Titipan" muncul di 2 tempat (form Cek Saja & Opsi
+  Khusus), hanya bisa kalau titipan = 0, dan TIDAK mencatat transaksi terakhir.
+  Membingungkan + berisiko "silent loss".
+- SOLUSI: 1 pintu, 2 jalur jelas di layar pilih aksi (tombol "⛔ Hentikan Kedai Ini"):
+  (a) STOP + TAGIH TERAKHIR — hanya kalau masih ada titipan. Catat laku/sisa/uang
+      via persistVisitFromState() (settle_only) LALU set kios non-aktif DALAM SATU
+      DB::transaction (atomik: settle commit dulu, baru nonaktif; settle gagal =
+      rollback total, kios tetap aktif).
+  (b) STOP TANPA TAGIH — boleh walau ada titipan. Sisa titipan dicatat sebagai
+      Settlement KERUGIAN (qty_returned_expired = seluruh sisa, amount_paid=0,
+      qty_sold=0, status 'paid', is_writeoff=true). Omset 0, laku 0, titipan
+      TERTUTUP → tidak menggantung. Reuse persistVisitFromState (BUKAN jalur baru).
+- KONFIRMASI tegas 2-langkah (requestStopConfirm → executeStop); executeStop
+  diabaikan tanpa konfirmasi. Stop dihapus dari Cek Saja & Opsi Khusus; partial
+  stop-titipan.blade.php dihapus.
+- PEMBUKUAN: seluruh omset/HPP/untung/komisi/outstanding digerakkan Settlement.
+  Kedua jalur stop MENUTUP titipan via Settlement → tidak ada piutang menggantung.
+- REAKTIVASI (owner dashboard) AMAN tanpa kode tambahan: titipan sudah tertutup di
+  kedua jalur → kios diaktifkan kembali tak memunculkan pending hantu; Settlement
+  loss historis TIDAK perlu dianulir (dodol memang sudah hilang).
+- POIN 5 SELESAI: kolom settlements.is_writeoff (migrasi 2026_06_25_000001) +
+  widget "Kerugian titipan bulan ini" di section Kios Berhenti owner dashboard
+  (mika hilang x HPP per mika owner). Membedakan kerugian write-off dari tagih
+  biasa yang kebetulan semua diretur basi.
+- ISTILAH UI dijelaskan dalam kurung: "Cut Off" → "Hentikan Kedai (stop titipan)";
+  "Dodol Sisa/Basi" → "(dodol rusak/basi yang diretur)"; jalur (a)/(b) bahasa awam.
+- TEST: ActiveTripStopKiosTest (7) + DashboardTest kerugian (1) — atomicity &
+  silent-loss-tercegah terverifikasi.
 
 ## FIX TERAKHIR (17 Juni 2026) — BUG MULTI-TENANT Cache SW (KRITIS)
 - BUG: setelah logout & login akun lain, dashboard akun SEBELUMNYA yang muncul;

@@ -171,6 +171,17 @@
                 <div class="px-5 py-4 border-b border-slate-100">
                     <h3 class="font-bold text-slate-900">Kios Berhenti</h3>
                     <p class="text-xs text-slate-500 mt-0.5">Kios yang dihentikan titipannya — bisa diaktifkan kembali</p>
+                    @if ($kerugianTitipan['biji'] > 0)
+                        <div class="mt-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2">
+                            <p class="text-xs font-bold text-red-700">
+                                Kerugian titipan bulan ini (stop tanpa tagih):
+                                {{ rtrim(rtrim(number_format($kerugianTitipan['mika'], 1, ',', '.'), '0'), ',') }} mika
+                                ({{ number_format($kerugianTitipan['biji'], 0, ',', '.') }} biji)
+                                ≈ Rp {{ number_format($kerugianTitipan['nilai'], 0, ',', '.') }}
+                            </p>
+                            <p class="text-[11px] text-red-500 mt-0.5">Dodol di kedai yang kabur/tak tertagih — dicatat sebagai kerugian (modal × HPP).</p>
+                        </div>
+                    @endif
                 </div>
                 @if (session('kiosk_reactivated'))
                     <div class="mx-5 mt-3 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">

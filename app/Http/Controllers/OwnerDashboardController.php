@@ -74,6 +74,21 @@ class OwnerDashboardController extends Controller
             ->selectRaw('SUM(amount_due - amount_paid) as total')
             ->value('total') ?? 0;
 
+        // Widget — Kerugian titipan bulan ini: dari "Stop Tanpa Tagih" (write-off),
+        // di mana seluruh sisa titipan dianggap basi/hilang (uang Rp 0). Nilai modal
+        // = mika hilang x HPP per mika owner. Dipakai supaya kerugian tidak siluman.
+        $kerugianBiji = (int) Settlement::where('is_writeoff', true)
+            ->whereBetween('visit_date', [today()->startOfMonth(), today()->endOfMonth()])
+            ->where($settlementOwnerScope)
+            ->sum('qty_returned_expired');
+        $kerugianMika = $kerugianBiji / 15;
+        $hppPerMika = (float) ($user->hpp_per_mika ?? 9500);
+        $kerugianTitipan = [
+            'biji' => $kerugianBiji,
+            'mika' => $kerugianMika,
+            'nilai' => (int) round($kerugianMika * $hppPerMika),
+        ];
+
         // Widget — Untung bersih hari ini: jumlah untung_bersih_owner dari trip
         // milik owner yang sudah selesai hari ini.
         $untungBersihHariIni = Trip::where('owner_id', $ownerId)
@@ -179,7 +194,8 @@ class OwnerDashboardController extends Controller
             'batchStok',
             'totalStokTersisa',
             'prediksiKios',
-            'stoppedKiosks'
+            'stoppedKiosks',
+            'kerugianTitipan'
         ));
     }
 

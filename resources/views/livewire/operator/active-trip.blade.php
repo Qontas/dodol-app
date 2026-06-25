@@ -433,7 +433,137 @@
                     <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{{ $message }}</div>
                 @enderror
 
-                @if(is_null($chosenAction))
+                @if($stopMode !== '')
+                    {{-- ============ ALUR: HENTIKAN KEDAI (stop titipan) ============ --}}
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm font-bold text-red-700">⛔ Hentikan Kedai {{ $selectedKiosk->name }}</span>
+                        <button type="button" wire:click="cancelStop"
+                            class="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-2 min-h-[36px] rounded-lg active:bg-slate-200">
+                            ← Batal
+                        </button>
+                    </div>
+
+                    @if($stopMode === 'pick')
+                        {{-- Pilih cara stop --}}
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Pilih cara menghentikan kedai</p>
+                        <div class="space-y-3">
+                            @if($pendingDelivery)
+                                <button type="button" wire:click="chooseStopMode('tagih')"
+                                    class="w-full text-left p-4 rounded-xl bg-white border-2 border-amber-300 active:bg-amber-50">
+                                    <span class="font-bold text-base text-slate-900 block">🧾 Stop + Tagih Terakhir</span>
+                                    <span class="text-xs text-slate-500 mt-0.5 block">Pemilik berhenti baik-baik — catat dodol yang laku, sisa &amp; dodol basi, lalu uang terakhir. Kedai berhenti permanen.</span>
+                                </button>
+                            @endif
+                            <button type="button" wire:click="chooseStopMode('tanpa_tagih')"
+                                class="w-full text-left p-4 rounded-xl bg-white border-2 border-red-300 active:bg-red-50">
+                                <span class="font-bold text-base text-red-700 block">🚫 Stop Tanpa Tagih</span>
+                                <span class="text-xs text-slate-500 mt-0.5 block">Kedai kabur / tak bisa ditagih — sisa dodol dicatat sebagai kerugian (uang Rp 0), lalu kedai berhenti.</span>
+                            </button>
+                        </div>
+                    @else
+                        {{-- Form stop (a) tagih / (b) tanpa tagih --}}
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm font-bold text-red-700">
+                                {{ $stopMode === 'tagih' ? '🧾 Stop + Tagih Terakhir' : '🚫 Stop Tanpa Tagih' }}
+                            </span>
+                            <button type="button" wire:click="backToStopPick"
+                                class="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-2 min-h-[36px] rounded-lg active:bg-slate-200">
+                                ← Ganti Cara
+                            </button>
+                        </div>
+
+                        {{-- (a) Form tagih terakhir — pola sama Tagih Saja --}}
+                        @if($stopMode === 'tagih' && $pendingDelivery)
+                            <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                                <div class="flex justify-between items-center mb-4">
+                                    <span class="text-xs font-bold text-amber-800 uppercase tracking-wider">Titipan Sebelumnya</span>
+                                    <span class="text-sm font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} Mika ({{ $pendingDelivery->qty_delivered * 15 }} Biji)</span>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-700 mb-1">Sisa Bagus (Biji)</label>
+                                        <input type="number" wire:model.live="returnFresh" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold" min="0">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-700 mb-1">Dodol Sisa/Basi (Biji)<br><span class="text-[10px] font-normal text-slate-400">(dodol rusak/basi yang diretur)</span></label>
+                                        <input type="number" wire:model.live="returnExpired" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold text-red-600" min="0">
+                                    </div>
+                                </div>
+                                <div class="border-t border-amber-200 pt-3">
+                                    <div class="flex justify-between items-center text-sm mb-1">
+                                        <span class="text-slate-600">Terjual:</span>
+                                        <span class="font-bold text-slate-900">{{ $terjual }} Biji</span>
+                                    </div>
+                                    <div class="flex justify-between items-center text-sm">
+                                        <span class="text-slate-600">Total Tagihan:</span>
+                                        <span class="font-bold text-slate-900">Rp {{ number_format($tagihan, 0, ',', '.') }}</span>
+                                    </div>
+                                </div>
+                                <div class="mt-4">
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">Uang Diterima (Rp)</label>
+                                    <input type="number" wire:model="uangDiterima" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-xl font-bold text-green-700 bg-white" min="0">
+                                    @error('uangDiterima')
+                                        <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+                        @endif
+
+                        {{-- (b) Ringkasan kerugian --}}
+                        @if($stopMode === 'tanpa_tagih')
+                            <div class="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
+                                @if($pendingDelivery)
+                                    ⚠️ Titipan {{ $pendingDelivery->qty_delivered }} mika ({{ $pendingDelivery->qty_delivered * 15 }} biji) akan dicatat sebagai <b>kerugian</b> — semua dianggap dodol basi/hilang, uang Rp 0. Pembukuan tetap jujur (titipan tidak menggantung).
+                                @else
+                                    Kedai ini tidak punya titipan aktif — langsung dihentikan tanpa kerugian.
+                                @endif
+                            </div>
+                        @endif
+
+                        {{-- Alasan berhenti (wajib) --}}
+                        <div>
+                            <p class="text-sm font-bold text-red-700 mb-2">Alasan berhenti:</p>
+                            <div class="space-y-2">
+                                @foreach(\App\Models\Kiosk::STOP_REASONS as $val => $label)
+                                    <label class="flex items-center gap-2 p-3 rounded-xl border cursor-pointer {{ $stopReason === $val ? 'border-red-400 bg-red-50' : 'border-slate-200' }}">
+                                        <input type="radio" wire:model.live="stopReason" value="{{ $val }}" class="sr-only">
+                                        <span class="text-sm">{{ $label }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                            @error('stopReason')
+                                <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        @error('general')
+                            <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{{ $message }}</div>
+                        @enderror
+
+                        {{-- Gerbang konfirmasi tegas (poin 3) --}}
+                        @if(! $stopConfirming)
+                            <button type="button" wire:click="requestStopConfirm"
+                                class="w-full py-3 rounded-xl bg-red-600 text-white text-sm font-bold active:bg-red-700">
+                                Lanjut Hentikan Kedai
+                            </button>
+                        @else
+                            <div class="bg-red-50 border-2 border-red-300 rounded-xl p-4 space-y-3">
+                                <p class="text-sm font-bold text-red-700">⚠️ Kedai ini akan DIHENTIKAN permanen &amp; hilang dari daftar trip. Angka yang kamu isi FINAL — tidak bisa dikoreksi dari sini lagi. Yakin?</p>
+                                <div class="flex gap-2">
+                                    <button type="button" wire:click="$set('stopConfirming', false)"
+                                        class="flex-1 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 active:bg-slate-50">
+                                        Batal
+                                    </button>
+                                    <button type="button" wire:click="executeStop" wire:loading.attr="disabled" wire:target="executeStop"
+                                        class="flex-1 py-2 rounded-xl bg-red-600 text-white text-sm font-bold active:bg-red-700 disabled:opacity-60">
+                                        <span wire:loading.remove wire:target="executeStop">Ya, Hentikan Permanen</span>
+                                        <span wire:loading wire:target="executeStop">Memproses...</span>
+                                    </button>
+                                </div>
+                            </div>
+                        @endif
+                    @endif
+                @elseif(is_null($chosenAction))
                     {{-- ============ LAYAR 1: PILIH AKSI ============ --}}
 
                     {{-- Navigasi hanya di layar pertama (foto sudah tampil di puncak modal) --}}
@@ -459,7 +589,7 @@
 
                         @if($extensionCount >= 2)
                             <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 font-medium">
-                                ⚠️ Sudah 2x tunda bayar — Pertimbangkan Cut Off
+                                ⚠️ Sudah 2x tunda bayar — Pertimbangkan Hentikan Kedai (stop titipan)
                             </div>
                         @endif
 
@@ -490,6 +620,12 @@
                                 <span class="text-xs text-slate-500 mt-0.5 block">Catat sisa dodol &amp; kondisi kios. Titipan TETAP berjalan (tidak ditagih, tidak dilunasi). Dodol tetap dijual sampai habis.</span>
                             </button>
                         </div>
+
+                        {{-- Hentikan Kedai (stop titipan) — satu pintu, pilih cara di layar berikutnya --}}
+                        <button type="button" wire:click="startStop"
+                            class="w-full mt-4 text-center p-3 rounded-xl border border-red-200 bg-red-50 text-sm font-bold text-red-700 active:bg-red-100">
+                            ⛔ Hentikan Kedai Ini (stop titipan)
+                        </button>
                     @else
                         <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Mau ngapain di kios ini?</p>
                         <div class="space-y-3">
@@ -504,6 +640,12 @@
                                 <span class="text-xs text-slate-500 mt-0.5 block">Catat kunjungan tanpa transaksi (kios tutup, dodol masih ada, dll)</span>
                             </button>
                         </div>
+
+                        {{-- Hentikan Kedai (stop titipan) — satu pintu, pilih cara di layar berikutnya --}}
+                        <button type="button" wire:click="startStop"
+                            class="w-full mt-4 text-center p-3 rounded-xl border border-red-200 bg-red-50 text-sm font-bold text-red-700 active:bg-red-100">
+                            ⛔ Hentikan Kedai Ini (stop titipan)
+                        </button>
                     @endif
                 @else
                     {{-- ============ LAYAR 2: FORM SESUAI AKSI ============ --}}
@@ -530,7 +672,7 @@
                     @if($chosenAction === 'tunda')
                         @if($extensionCount >= 2)
                             <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 font-medium">
-                                ⚠️ Sudah 2x tunda bayar — Pertimbangkan Cut Off
+                                ⚠️ Sudah 2x tunda bayar — Pertimbangkan Hentikan Kedai (stop titipan)
                             </div>
                         @elseif($extensionCount === 1)
                             <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
@@ -563,7 +705,7 @@
                                     <input type="number" wire:model.live="returnFresh" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold" min="0">
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-medium text-slate-700 mb-1">Dodol Sisa/Basi (Biji)</label>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1">Dodol Sisa/Basi (Biji)<br><span class="text-[10px] font-normal text-slate-400">(dodol rusak/basi yang diretur)</span></label>
                                     <input type="number" wire:model.live="returnExpired" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold text-red-600" min="0">
                                 </div>
                             </div>
@@ -660,9 +802,6 @@
                                 <input type="number" wire:model="sisaBiji" class="w-full rounded-xl border-slate-300 text-center text-xl font-bold py-3" min="0" placeholder="0">
                                 <p class="text-xs text-slate-400 mt-1">Isi 0 kalau tidak tahu atau kios tutup</p>
                             </div>
-
-                            {{-- Stop titipan langsung dari Cek Saja (skenario kios tutup) --}}
-                            @include('livewire.operator.partials.stop-titipan')
                         </div>
                     @endif
 
@@ -717,8 +856,6 @@
                                         @endif
                                     </div>
                                 @endif
-
-                                @include('livewire.operator.partials.stop-titipan')
                             </div>
                         </div>
                     @endif
