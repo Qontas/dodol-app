@@ -11,6 +11,20 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
+## FIX TERAKHIR (25 Juni 2026) — PERJELAS LABEL "KURANGI JATAH" + audit anti tagih-dobel
+- LABEL UI (active-trip.blade.php): "Kurangi jatah titipan kios ini" kini diberi
+  penjelasan kurung "(jatah = jumlah mika yang biasa dititip ke kios ini ke depannya,
+  bukan tagihan sekarang)" agar operator tak salah kira "jatah" = tagihan. Opsi ini
+  tetap di accordion Opsi Khusus, tampil saat Tagih Saja & Tagih+Titip (1 blok kode,
+  BUKAN duplikasi). Fungsi: ubah kiosk.default_qty_mika, berlaku titipan berikutnya
+  (logic willLowerDefault di ActiveTrip.php).
+- AUDIT (tanpa ubah kode, dikonfirmasi BENAR): titipan dihitung per-putaran, anti
+  tagih-dobel. Bukti: settle bikin Settlement(delivery_id=titipan lama) →
+  openVisitModal cari pendingDelivery pakai doesntHave('settlement')->latest('id')
+  →first(), jadi titipan lunas permanen keluar dari kandidat tagih. Titip baru =
+  Delivery baru terpisah; tagihan dihitung HANYA dari pendingDelivery->qty_delivered
+  (1 titipan, LIFO, praktis selalu tunggal). Tidak ada akumulasi/tagih ulang.
+
 ## FIX TERAKHIR (25 Juni 2026) — RAPIKAN STOP KEDAI (stop titipan)
 - MASALAH lama: tombol "Stop Titipan" muncul di 2 tempat (form Cek Saja & Opsi
   Khusus), hanya bisa kalau titipan = 0, dan TIDAK mencatat transaksi terakhir.
