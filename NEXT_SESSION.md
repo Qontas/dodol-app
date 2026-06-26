@@ -1,5 +1,5 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 25 Juni 2026*
+*Sesi terakhir: 26 Juni 2026*
 
 ## TRIGGER SENTENCE
 Bg, lanjut dodol-app. 187 PASS. Sudah deploy Railway (produksi jalan).
@@ -10,6 +10,43 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - 187 PASS, 746 assertions
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
+
+## FIX KEAMANAN (26 Juni 2026) — TUTUP KEBOCORAN SNAPSHOT wire:navigate LINTAS-TENANT
+- GEJALA: login owner A (Ismi), buka Profil, klik "Dashboard" → kadang muncul
+  dashboard owner LAIN (Aidil). Potensi kebocoran data antar-tenant.
+- INVESTIGASI (browser + DevTools, dibuktikan, BUKAN teori):
+  - SERVER AMAN. Scoping OwnerDashboardController (where owner_id = auth()->id())
+    terbukti benar di runtime: tiap request balikin data sesi-live. Tidak ada page
+    cache server. Cek via Network: body /owner/dashboard selalu milik user login.
+  - bfcache MATI (no-store), Service Worker network-only utk HTML (cache cuma shell
+    + /build/*). Dua vektor ini TERTUTUP. /profile ternyata JUGA dapat no-store
+    (Livewire auto-set utk halaman berkomponen) → bukan lubangnya.
+  - AKAR: snapshot wire:navigate Livewire disimpan di memori SPA / history.state,
+    KEBAL terhadap Cache-Control: no-store MAUPUN service worker. Halaman tenant lain
+    yang sempat ter-render bisa muncul lagi via klik wire:navigate / back-forward
+    TANPA request ke server (server tak sempat memfilter). Ter-reproduksi: snapshot
+    Aidil tampil di bawah cookie Ismi, netDocs=[] (nol jaringan).
+  - Pemicu nyata: identitas berganti TANPA lewat login/logout app (yg sudah full-reload
+    flush) — mis. device dipakai 2 akun, satu tab masih hidup pegang snapshot lama
+    saat cookie jar berganti. (remember-me merotasi sesi+token diam-diam = vektor 419,
+    TAPI identitasnya tetap sama, bukan penyebab pindah-tenant.)
+- SOLUSI (guard identitas SINKRON, deterministik tanpa kedip):
+  1. StampAuthUidCookie (middleware web, bootstrap/app.php): cap cookie NON-httpOnly
+     `auth_uid` = id sesi-live tiap respons. Dikecualikan dari enkripsi cookie
+     (encryptCookies except) agar terbaca JS. Bukan data sensitif — uid sudah ada di
+     <meta auth-uid> HTML.
+  2. <meta name="auth-uid"> di layout app/owner/operator = uid perender snapshot.
+  3. pwa-token-refresh.blade.php — 2 lapis: (a) SINKRON di livewire:navigated+popstate:
+     cookie auth_uid vs meta auth-uid, beda → reload SEGERA (sebelum snapshot basi
+     terlihat); (b) ASINKRON di pageshow/visibilitychange: fetch /csrf-token (token-sync
+     419) + kalau identitas beda → hard-nav ke homePath user benar. /csrf-token kini
+     balikin `home`. Akun normal: uid selalu sama → tak pernah reload (no loop).
+  4. /profile dapat 'no-store' eksplisit (sabuk pengaman, redundan dgn Livewire).
+- TIDAK DISENTUH (sudah terbukti benar): scoping controller, service worker, no-store
+  dashboard, alur login/logout.
+- VERIFIKASI: 187 PASS (assert /csrf-token balikin home). Reproduksi browser 3x
+  deterministik → kelempar ke dashboard ISMI (bukan Aidil). UX 1-akun mulus, 3x resume
+  tanpa reload-loop. Smoke test 3 role OK.
 
 ## FIX TERAKHIR (25 Juni 2026) — CATAT SISA DODOL saat TUNDA BAYAR
 - TUJUAN: pas Tunda Bayar, operator bisa catat sisa dodol total (biji) untuk
