@@ -4,6 +4,9 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
+        {{-- Identitas yang me-render halaman/snapshot ini. Dipakai guard
+             pwa-token-refresh untuk deteksi snapshot wire:navigate basi. --}}
+        <meta name="auth-uid" content="{{ auth()->id() }}">
 
         <title>{{ config('app.name', 'Laravel') }}</title>
 

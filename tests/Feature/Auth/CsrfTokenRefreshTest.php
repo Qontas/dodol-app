@@ -27,9 +27,11 @@ class CsrfTokenRefreshTest extends TestCase
         $res = $this->actingAs($user)->getJson('/csrf-token');
 
         $res->assertOk()
-            ->assertJsonStructure(['token', 'uid']);
+            ->assertJsonStructure(['token', 'uid', 'home']);
         $this->assertEquals($user->id, $res->json('uid'));
         $this->assertNotEmpty($res->json('token'));
+        // home = homePath user sesi-terkini → guard identitas hard-nav ke dashboard benar.
+        $this->assertEquals($user->homePath(), $res->json('home'));
         // Tak boleh di-cache (token usang = 419).
         $this->assertStringContainsString('no-store', $res->headers->get('Cache-Control'));
     }

@@ -1,19 +1,25 @@
 {{--
-    Auto-refresh CSRF token saat app resume (PWA mobile) + deteksi pergantian
-    identitas. Menggantikan pwa-bfcache-guard yang impoten (reload-on-persisted
-    tak pernah menyala karena no-store mematikan bfcache).
+    Dua tugas:
+    1) AKAR fix 419 — token @csrf bisa beku di DOM. remember-me merotasi sesi+token
+       diam-diam saat app dibuka ulang. Saat resume kita ambil token sesi TERKINI dan
+       sinkronkan ke <meta csrf-token> + semua input[name=_token] → POST pertama tak 419.
 
-    AKAR fix 419: token @csrf beku di DOM. remember-me bisa merotasi sesi+token
-    diam-diam saat app dibuka ulang. Saat resume kita ambil token sesi TERKINI dan
-    sinkronkan ke <meta csrf-token> + semua input[name=_token] (termasuk logout) →
-    POST pertama setelah app dibuka lama TIDAK 419.
+    2) Multi-tenant guard — snapshot wire:navigate Livewire disimpan di memori SPA /
+       history.state dan KEBAL terhadap Cache-Control: no-store maupun service worker.
+       Halaman tenant lain yang sempat ter-render bisa muncul lagi via klik wire:navigate
+       / back-forward TANPA request ke server (server tak sempat memfilter).
 
-    Multi-tenant (#4): kalau uid sesi terkini BEDA dari uid render halaman ini
-    (mis. akun berganti di tab lain) → reload penuh agar halaman milik user yang
-    benar. BUKAN reload buta tiap resume → tak ada reload-loop.
+       Dua lapis deteksi:
+       a. SINKRON (utama, tanpa kedip) — saat navigasi SPA/popstate: bandingkan uid
+          sesi-live dari cookie `auth_uid` (ditanam StampAuthUidCookie tiap respons)
+          vs uid yang TAMPIL (meta[auth-uid] snapshot). Beda → reload SEGERA sebelum
+          snapshot basi sempat terlihat. Halaman no-store → reload = render segar utk
+          user benar; role-middleware server menjaga akses.
+       b. ASINKRON (resume) — saat pageshow/visibilitychange: fetch /csrf-token untuk
+          sinkron token + (kalau identitas beda) hard-nav ke homePath user benar.
 
-    Hanya dimuat di layout TER-AUTH. Endpoint butuh auth; kalau sesi habis →
-    arahkan ke login (bukan error).
+    Akun normal: cookie uid == meta uid selalu → tak pernah reload (no loop).
+    Hanya dimuat di layout TER-AUTH.
 --}}
 <script>
     (function () {
@@ -21,13 +27,49 @@
             return;
         }
 
-        var expectedUid = @json(auth()->id());
         var endpoint = @json(route('csrf-token'));
         var loginUrl = @json(route('login'));
         var busy = false;
 
-        function syncToken() {
-            if (busy) {
+        // uid halaman/snapshot yang sedang TAMPIL (dibaca segar tiap cek).
+        function shownUid() {
+            var m = document.querySelector('meta[name="auth-uid"]');
+            return m ? m.getAttribute('content') : null;
+        }
+
+        // uid sesi LIVE dari cookie readable (sinkron, tanpa jaringan).
+        function liveUidCookie() {
+            var m = document.cookie.match('(?:^|; )auth_uid=([^;]*)');
+            return m ? decodeURIComponent(m[1]) : null;
+        }
+
+        function syncTokens(token) {
+            var meta = document.querySelector('meta[name="csrf-token"]');
+            if (meta) {
+                meta.setAttribute('content', token);
+            }
+            document.querySelectorAll('input[name="_token"]').forEach(function (el) {
+                el.value = token;
+            });
+        }
+
+        // Lapis (a): cek identitas SINKRON. Return true kalau sudah memicu reload
+        // (pemanggil harus berhenti). Tanpa fetch → tak ada kedip snapshot basi.
+        function syncIdentityGuard() {
+            var live = liveUidCookie();
+            var shown = shownUid();
+            if (live && shown && live !== shown) {
+                // Halaman no-store → reload = render segar utk user live; kalau URL ini
+                // di luar hak user live, role-middleware server mengalihkan dgn benar.
+                window.location.reload();
+                return true;
+            }
+            return false;
+        }
+
+        // Lapis (b): resume — sinkron-guard dulu, lalu fetch utk token + identitas.
+        function resumeCheck() {
+            if (syncIdentityGuard() || busy) {
                 return;
             }
             busy = true;
@@ -36,7 +78,6 @@
                 headers: { 'Accept': 'application/json' },
                 credentials: 'same-origin',
             }).then(function (res) {
-                // Sesi habis / tak terautentikasi → endpoint auth redirect ke login.
                 if (res.status === 401 || res.status === 419 || res.redirected) {
                     window.location.href = loginUrl;
                     return null;
@@ -46,21 +87,14 @@
                 if (!data || !data.token) {
                     return;
                 }
-
-                // Identitas berubah → muat ulang halaman milik user terkini (multi-tenant).
-                if (data.uid && expectedUid && data.uid !== expectedUid) {
-                    window.location.reload();
+                var live = (data.uid !== null && data.uid !== undefined) ? String(data.uid) : null;
+                var shown = shownUid();
+                // Identitas live (server) beda dari yang tampil → lempar ke homePath benar.
+                if (live && shown && live !== shown) {
+                    window.location.replace(data.home || '/');
                     return;
                 }
-
-                // Sinkronkan token ke meta + semua form (logout & lainnya).
-                var meta = document.querySelector('meta[name="csrf-token"]');
-                if (meta) {
-                    meta.setAttribute('content', data.token);
-                }
-                document.querySelectorAll('input[name="_token"]').forEach(function (el) {
-                    el.value = data.token;
-                });
+                syncTokens(data.token);
             }).catch(function () {
                 /* offline / gagal jaringan — diamkan, jangan ganggu operator */
             }).finally(function () {
@@ -68,12 +102,15 @@
             });
         }
 
-        // pageshow: SEMUA (bukan hanya e.persisted) — tangkap resume PWA & restore.
-        window.addEventListener('pageshow', syncToken);
-        // app kembali ke foreground.
+        // Navigasi SPA (klik wire:navigate) & back/forward (popstate) → guard SINKRON.
+        document.addEventListener('livewire:navigated', syncIdentityGuard);
+        window.addEventListener('popstate', syncIdentityGuard);
+
+        // Resume app (PWA mobile) & restore halaman → guard + sinkron token.
+        window.addEventListener('pageshow', resumeCheck);
         document.addEventListener('visibilitychange', function () {
             if (document.visibilityState === 'visible') {
-                syncToken();
+                resumeCheck();
             }
         });
     })();

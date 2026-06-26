@@ -32,6 +32,9 @@ Route::get('csrf-token', function () {
     return response()->json([
         'token' => csrf_token(),
         'uid' => auth()->id(),
+        // homePath user sesi-terkini → guard identitas bisa hard-nav ke dashboard
+        // milik user yang BENAR saat snapshot wire:navigate basi terdeteksi.
+        'home' => auth()->user()?->homePath(),
     ])->header('Cache-Control', 'no-store, no-cache, private, must-revalidate');
 })->middleware('auth')->name('csrf-token');
 
@@ -90,8 +93,10 @@ Route::middleware(['auth', 'verified', 'no-store', 'role:operator'])
         Route::get('/profile', \App\Livewire\Operator\Profile::class)->name('profile');
     });
 
+// no-store eksplisit (sabuk pengaman): Livewire sudah set no-store untuk halaman
+// berkomponen, ini menegaskan niat + jaga kalau struktur view berubah.
 Route::view('profile', 'profile')
-    ->middleware(['auth'])
+    ->middleware(['auth', 'no-store'])
     ->name('profile');
 
 require __DIR__.'/auth.php';

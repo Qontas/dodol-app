@@ -17,6 +17,15 @@ return Application::configure(basePath: dirname(__DIR__))
             'no-store' => \App\Http\Middleware\NoStoreAuthPages::class,
         ]);
 
+        // Cap identitas sesi-live ke cookie readable (multi-tenant guard sinkron).
+        $middleware->web(append: [
+            \App\Http\Middleware\StampAuthUidCookie::class,
+        ]);
+
+        // auth_uid harus terbaca JS → jangan dienkripsi (isinya cuma id, sudah
+        // ada di meta[auth-uid] HTML, bukan data sensitif).
+        $middleware->encryptCookies(except: ['auth_uid']);
+
         // #2 — Logout kebal CSRF-failure: kegagalan CSRF pada logout itu jinak
         // (paling buruk = ter-logout). Operator lapangan dgn token basi (PWA dibuka
         // setelah remember-me merotasi sesi) HARUS tetap bisa logout, bukan kena 419.

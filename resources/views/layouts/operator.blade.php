@@ -4,6 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    {{-- Identitas perender halaman/snapshot — guard pwa-token-refresh memakai
+         ini untuk deteksi snapshot wire:navigate lintas-tenant yang basi. --}}
+    <meta name="auth-uid" content="{{ auth()->id() }}">
     <title>{{ $title ?? 'Operator' }} &mdash; Cemilan Qontas</title>
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
