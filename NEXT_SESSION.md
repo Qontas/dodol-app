@@ -12,13 +12,18 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Semua fitur complete
 
 ## RESTYLE (27 Juni 2026) — PROFIL OWNER ke BRAND CEMILAN QONTAS (amber)
-- TUJUAN: halaman /profile (dipakai owner & super admin via x-app-layout) di-restyle
-  selaras brand amber + sembunyikan section "Hapus Akun".
+- TUJUAN: halaman /profile (dipakai owner & super admin) di-restyle selaras brand
+  amber + sembunyikan section "Hapus Akun".
 - FILE:
-  1. resources/views/profile.blade.php: header bermerk (badge gradient amber "Q" +
-     "Profil Saya" / "Kelola informasi akun Cemilan Qontas kamu"), kartu putih
-     rounded-2xl dengan aksen garis gradient amber di atas tiap kartu, max-w-3xl.
-     Section livewire:profile.delete-user-form DIHAPUS dari view (Hapus Akun tak muncul).
+  1. resources/views/profile.blade.php: ROLE-AWARE layout. Owner (isOwner()) →
+     @extends('layouts.owner') = layout brand Cemilan Qontas (sidebar gelap amber
+     "Panel Owner", konsisten dashboard owner), heading "Profil Saya / Kelola
+     informasi akun Cemilan Qontas kamu", 2 kartu putih rounded-2xl beraksen garis
+     gradient amber. Super admin (fallback) → tetap x-app-layout generik bertema
+     amber (route owner.* tak relevan untuknya). KEDUA layout memuat guard identitas
+     (meta auth-uid + pwa-token-refresh) → keamanan terjaga.
+     Section livewire:profile.delete-user-form TIDAK di-render di view (Hapus Akun
+     tak muncul, baik owner maupun super admin).
   2. livewire/profile/update-profile-information-form.blade.php &
      update-password-form.blade.php: label slate-bold, input focus amber-500,
      tombol "Simpan" bg-amber-600. Teks di-Indonesia-kan (Informasi Profil, Nama,
@@ -29,11 +34,10 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - TEST: ProfileTest::test_profile_page_is_displayed diubah → assertDontSeeVolt(
   'profile.delete-user-form') + assertDontSee('Delete Account'). 2 test deleteUser
   lain tetap (uji komponen langsung). 187 PASS (749 assertions) tetap hijau.
-- VERIFIKASI BROWSER (playwright, system Chrome): 10/10 cek OK —
-  owner /profile amber + badge Q render (perlu `npm run build` agar utility
-  from-amber-500 ikut; public/build gitignore, Railway rebuild saat deploy),
-  Hapus Akun absen, edit nama persist, ganti password TERBUKTI (re-login pakai
-  password baru sampai owner dashboard, lalu di-revert ke 'password'). Guard
+- VERIFIKASI BROWSER (playwright, system Chrome): 11/11 cek OK —
+  owner /profile pakai sidebar brand owner (Cemilan Qontas / Panel Owner) + kartu
+  amber, Hapus Akun absen, edit nama persist, ganti password TERBUKTI (re-login
+  pakai password baru sampai owner dashboard, lalu di-revert ke 'password'). Guard
   lintas-tenant tetap jalan: dari Profil klik Dashboard → tetap 1 akun (auth-uid
   2→2, /owner/dashboard Ismi, bukan owner lain). Operator /operator/profile TIDAK
   berubah (layout & komponen sendiri).
