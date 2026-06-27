@@ -23,25 +23,22 @@ class ActiveTrip extends Component
     // Alasan valid untuk mengakhiri trip
     public const VALID_END_REASONS = ['stock_habis', 'target_done', 'sakit', 'urgent_personal', 'other'];
 
+    // Maksimum kartu kios yang dirender per layar. Daftar dibatasi demi DOM ringan
+    // + payload kecil; operator menjangkau kios lain lewat kotak pencarian / urut jarak.
+    public const DISPLAY_LIMIT = 50;
+
     // --- STATE DASAR ---
     public $trip;
-    public $kiosks = [];
     public $starting_cluster_id;
 
-    // Status per-kios disimpan terpisah dari model: Livewire re-query Eloquent
-    // collection saat hydrate (lihat EloquentCollectionSynth), jadi atribut custom
-    // di model akan hilang antar-request. Array primitif aman diserialisasi.
-    public array $visitedKioskIds = [];
-    public array $pendingKioskIds = [];
+    // Pencarian kios (filter server-side by nama). Tetap bisa akses kios mana pun.
+    public string $search = '';
 
-    // Kios yang punya kunjungan dikoreksi pada trip ini (untuk badge "Dikoreksi").
-    public array $correctedKioskIds = [];
-
-    // Flag pintar per kios: ['kioskId' => ['urgent','warning','fast_mover','slow_mover','new']]
-    public array $kioskFlags = [];
-
-    // Operator terakhir yang mengunjungi tiap kios: ['kioskId' => ['name'=>..,'date'=>..]]
-    public array $lastOperatorPerKiosk = [];
+    // CATATAN PERFORMA: daftar kios + flag + operator-terakhir + status kunjungan
+    // TIDAK lagi disimpan sebagai public property. Dulu koleksi besar (s.d. ~957
+    // kios beserta array flag & operator) ikut snapshot Livewire bolak-balik tiap
+    // aksi → payload berat di HP lapangan. Sekarang dihitung saat render() sebagai
+    // variabel view (lihat kioskViewData()), sehingga TIDAK masuk snapshot.
 
     // --- STATE GEO/NEAREST NEIGHBOR ---
     public bool $sortedByDistance = false;
@@ -139,44 +136,139 @@ class ActiveTrip extends Component
         $this->loadKiosks();
     }
 
-    public function loadKiosks()
+    /**
+     * NO-OP yang disengaja. Dulu method ini memuat seluruh kios + flag + operator
+     * terakhir ke public property (ikut snapshot tiap request). Sekarang data daftar
+     * kios dihitung di render() lewat kioskViewData() sebagai variabel view — TIDAK
+     * disimpan sebagai state. Pemanggilan lama (refresh setelah transaksi) dibiarkan
+     * karena render() otomatis menyegarkan daftar setiap request.
+     */
+    public function loadKiosks(): void
     {
-        // Kios aktif di cluster trip. Tanpa starting_cluster = semua kios aktif (trip "Semua Kios").
+        // sengaja kosong — lihat kioskViewData().
+    }
+
+    /**
+     * Bangun data daftar kios untuk view (dipanggil HANYA dari render()).
+     * Dibatasi DISPLAY_LIMIT kartu; flag/operator-terakhir/pending dihitung hanya
+     * untuk kios yang TAMPIL, sehingga query & payload tidak ikut membesar saat
+     * jumlah kios owner banyak (957). Scoping multi-tenant TIDAK diubah.
+     */
+    private function kioskViewData(): array
+    {
         $query = Kiosk::where('is_active', true);
 
         // Multi-tenant: batasi ke kios milik owner operator (lewat cluster).
         // Guard null untuk backward-compat (data lama / operator tanpa owner_id).
         $ownerId = auth()->user()->owner_id;
         if ($ownerId !== null) {
-            $query->whereHas('cluster', fn($q) => $q->where('owner_id', $ownerId));
+            $query->whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId));
         }
 
         if ($this->starting_cluster_id) {
             $query->where('cluster_id', $this->starting_cluster_id);
         }
 
-        // Kios yang sudah dikunjungi pada trip ini (abaikan kunjungan yang dikoreksi)
-        $this->visitedKioskIds = KioskVisit::active()
-            ->where('trip_id', $this->trip->id)
-            ->pluck('kiosk_id')
-            ->all();
+        $search = trim($this->search);
+        if ($search !== '') {
+            $query->where('name', 'like', '%'.$search.'%');
+        }
 
-        // Kios yang pernah dikoreksi pada trip ini (badge informasional).
-        $this->correctedKioskIds = KioskVisit::where('trip_id', $this->trip->id)
-            ->whereNotNull('corrected_at')
+        // Trip-scoped (kecil, tak tergantung jumlah kios). 1 query untuk visit trip
+        // ini, lalu dipecah: belum-dikoreksi = "dikunjungi", dikoreksi = badge koreksi.
+        $tripVisits = KioskVisit::where('trip_id', $this->trip->id)
+            ->get(['kiosk_id', 'corrected_at']);
+        $visitedKioskIds = $tripVisits->whereNull('corrected_at')
+            ->pluck('kiosk_id')->unique()->values()->all();
+        $correctedKioskIds = $tripVisits->whereNotNull('corrected_at')
+            ->pluck('kiosk_id')->unique()->values()->all();
+
+        // Ambil HANYA yang tampil (cap DISPLAY_LIMIT). Belum dikunjungi di atas.
+        if ($this->sortedByDistance && $this->userLat !== null && $this->userLng !== null) {
+            // Nearest-neighbor butuh seluruh koordinat yang cocok untuk cari terdekat.
+            $all = $query->get();
+            $totalMatched = $all->count(); // dari koleksi termuat → tanpa query count ekstra.
+            $kiosks = $all
+                ->sort(function ($a, $b) use ($visitedKioskIds) {
+                    $visitedA = in_array($a->id, $visitedKioskIds, true) ? 1 : 0;
+                    $visitedB = in_array($b->id, $visitedKioskIds, true) ? 1 : 0;
+                    if ($visitedA !== $visitedB) {
+                        return $visitedA <=> $visitedB;
+                    }
+
+                    $distA = ($a->latitude === null || $a->longitude === null)
+                        ? PHP_FLOAT_MAX
+                        : $this->calculateDistance($this->userLat, $this->userLng, (float) $a->latitude, (float) $a->longitude);
+
+                    $distB = ($b->latitude === null || $b->longitude === null)
+                        ? PHP_FLOAT_MAX
+                        : $this->calculateDistance($this->userLat, $this->userLng, (float) $b->latitude, (float) $b->longitude);
+
+                    return $distA <=> $distB;
+                })
+                ->take(self::DISPLAY_LIMIT)
+                ->values();
+        } else {
+            // Default: kios belum dikunjungi dulu, lalu alfabet — diurut & dibatasi di DB.
+            $countQuery = clone $query; // tangkap sebelum order/limit untuk hitung total.
+            if (! empty($visitedKioskIds)) {
+                $ids = implode(',', array_map('intval', $visitedKioskIds));
+                $query->orderByRaw("CASE WHEN kiosks.id IN ($ids) THEN 1 ELSE 0 END asc");
+            }
+
+            $kiosks = $query->orderBy('name')
+                ->limit(self::DISPLAY_LIMIT)
+                ->get();
+
+            // Hitung total hanya bila daftar mungkin terpotong (mencapai limit).
+            $totalMatched = $kiosks->count() < self::DISPLAY_LIMIT
+                ? $kiosks->count()
+                : $countQuery->count();
+        }
+
+        $displayedIds = $kiosks->pluck('id')->all();
+
+        return [
+            'kiosks' => $kiosks,
+            'visitedKioskIds' => $visitedKioskIds,
+            'correctedKioskIds' => $correctedKioskIds,
+            'pendingKioskIds' => $this->pendingKioskIdsFor($displayedIds),
+            'kioskFlags' => $this->computeKioskFlags($kiosks),
+            'lastOperatorPerKiosk' => $this->lastOperatorFor($displayedIds),
+            'totalMatched' => $totalMatched,
+            'displayLimit' => self::DISPLAY_LIMIT,
+        ];
+    }
+
+    /**
+     * Kios (dari himpunan TAMPIL) yang masih punya titipan belum di-settle.
+     * Satu query whereIn, hindari N+1.
+     */
+    private function pendingKioskIdsFor(array $kioskIds): array
+    {
+        if (empty($kioskIds)) {
+            return [];
+        }
+
+        return Delivery::whereIn('kiosk_id', $kioskIds)
+            ->doesntHave('settlement')
             ->pluck('kiosk_id')
             ->unique()
             ->values()
             ->all();
+    }
 
-        $kiosks = $query->get();
+    /**
+     * Operator terakhir yang mengunjungi tiap kios (untuk himpunan TAMPIL).
+     * Satu query join+group, hindari N+1.
+     */
+    private function lastOperatorFor(array $kioskIds): array
+    {
+        if (empty($kioskIds)) {
+            return [];
+        }
 
-        // Flag pintar per kios (dihitung sekaligus, hindari N+1)
-        $this->computeKiosFlags($kiosks);
-
-        // Operator terakhir yang mengunjungi tiap kios (1 query, hindari N+1)
-        $kioskIds = $kiosks->pluck('id')->all();
-        $lastOperatorData = KioskVisit::whereIn('kiosk_id', $kioskIds)
+        return KioskVisit::whereIn('kiosk_id', $kioskIds)
             ->whereNull('kiosk_visits.corrected_at')
             ->join('trips', 'kiosk_visits.trip_id', '=', 'trips.id')
             ->join('users', 'trips.operator_id', '=', 'users.id')
@@ -184,60 +276,24 @@ class ActiveTrip extends Component
             ->selectRaw('kiosk_visits.kiosk_id, MAX(kiosk_visits.visited_at) as last_visited_at, '
                 .'SUBSTRING_INDEX(GROUP_CONCAT(users.name ORDER BY kiosk_visits.visited_at DESC), ",", 1) as operator_name')
             ->get()
-            ->keyBy('kiosk_id');
-
-        $this->lastOperatorPerKiosk = $lastOperatorData->map(fn ($row) => [
-            'name' => $row->operator_name,
-            'date' => \Carbon\Carbon::parse($row->last_visited_at)->translatedFormat('d M Y'),
-        ])->toArray();
-
-        // Kios dengan titipan yang belum di-settle (satu query, hindari N+1)
-        $this->pendingKioskIds = Delivery::whereIn('kiosk_id', $kiosks->pluck('id'))
-            ->doesntHave('settlement')
-            ->pluck('kiosk_id')
-            ->unique()
-            ->values()
+            ->mapWithKeys(fn ($row) => [$row->kiosk_id => [
+                'name' => $row->operator_name,
+                'date' => \Carbon\Carbon::parse($row->last_visited_at)->translatedFormat('d M Y'),
+            ]])
             ->all();
-
-        // Belum dikunjungi (false) di atas, sudah dikunjungi (true) di bawah.
-        // Jika diurutkan berdasarkan jarak, urutkan berdasarkan status kunjungan dahulu, lalu jarak terdekat.
-        $visited = $this->visitedKioskIds;
-        if ($this->sortedByDistance && $this->userLat !== null && $this->userLng !== null) {
-            $this->kiosks = $kiosks->sort(function ($a, $b) use ($visited) {
-                $visitedA = in_array($a->id, $visited, true) ? 1 : 0;
-                $visitedB = in_array($b->id, $visited, true) ? 1 : 0;
-                if ($visitedA !== $visitedB) {
-                    return $visitedA <=> $visitedB;
-                }
-
-                $distA = ($a->latitude === null || $a->longitude === null)
-                    ? PHP_FLOAT_MAX
-                    : $this->calculateDistance($this->userLat, $this->userLng, (float) $a->latitude, (float) $a->longitude);
-
-                $distB = ($b->latitude === null || $b->longitude === null)
-                    ? PHP_FLOAT_MAX
-                    : $this->calculateDistance($this->userLat, $this->userLng, (float) $b->latitude, (float) $b->longitude);
-
-                return $distA <=> $distB;
-            })->values();
-        } else {
-            $this->kiosks = $kiosks
-                ->sortBy(fn ($k) => in_array($k->id, $visited, true))
-                ->values();
-        }
     }
 
     /**
-     * Hitung flag pintar untuk semua kios sekaligus (hindari N+1).
-     * Flag: urgent, warning, new, fast_mover, slow_mover.
+     * Hitung flag pintar untuk kios TAMPIL sekaligus (hindari N+1).
+     * Flag: urgent, warning, new, fast_mover, slow_mover. Mengembalikan array
+     * ['kioskId' => [...flags]] (dulu menulis ke public property; kini view-local).
      */
-    private function computeKiosFlags(Collection $kiosks): void
+    private function computeKioskFlags(Collection $kiosks): array
     {
         $kioskIds = $kiosks->pluck('id')->all();
-        $this->kioskFlags = [];
 
         if (empty($kioskIds)) {
-            return;
+            return [];
         }
 
         $today = now();
@@ -258,6 +314,8 @@ class ActiveTrip extends Component
             ->havingRaw('COUNT(*) >= 3')
             ->selectRaw('deliveries.kiosk_id as kiosk_id, AVG(DATEDIFF(settlements.visit_date, deliveries.created_at)) as avg_days')
             ->pluck('avg_days', 'kiosk_id');
+
+        $flagsByKiosk = [];
 
         foreach ($kiosks as $kiosk) {
             $flags = [];
@@ -296,8 +354,10 @@ class ActiveTrip extends Component
                 }
             }
 
-            $this->kioskFlags[$kiosk->id] = $flags;
+            $flagsByKiosk[$kiosk->id] = $flags;
         }
+
+        return $flagsByKiosk;
     }
 
     public function sortByDistance($lat, $lng)
@@ -1530,6 +1590,8 @@ class ActiveTrip extends Component
 
     public function render()
     {
-        return view('livewire.operator.active-trip');
+        // Data daftar kios dihitung di sini (view-local), TIDAK disimpan sebagai
+        // state → snapshot Livewire tetap kecil walau kios owner ratusan/ribuan.
+        return view('livewire.operator.active-trip', $this->kioskViewData());
     }
 }

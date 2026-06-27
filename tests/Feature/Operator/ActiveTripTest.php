@@ -130,6 +130,47 @@ class ActiveTripTest extends TestCase
             ]);
     }
 
+    public function test_kiosk_list_is_capped_to_display_limit_and_searchable()
+    {
+        $owner = User::factory()->create(['role' => 'owner']);
+        $operator = User::factory()->create([
+            'role' => 'operator', 'owner_id' => $owner->id, 'is_active' => true,
+        ]);
+        $cluster = Cluster::create(['name' => 'Cluster Cap', 'owner_id' => $owner->id]);
+
+        // Lebih banyak dari DISPLAY_LIMIT (50) agar daftar terpotong.
+        Kiosk::factory()->count(59)->create(['cluster_id' => $cluster->id]);
+        $needle = Kiosk::factory()->create([
+            'cluster_id' => $cluster->id, 'name' => 'Zzz Kios Unik Pencarian',
+        ]);
+
+        $trip = Trip::factory()->create([
+            'operator_id' => $operator->id,
+            'owner_id' => $owner->id,
+            'starting_cluster_id' => $cluster->id,
+            'qty_carried_total' => 60,
+            'started_at' => now(),
+            'trip_date' => today()->format('Y-m-d'),
+        ]);
+
+        $this->actingAs($operator);
+
+        $component = Livewire::test(ActiveTrip::class);
+
+        // Hanya DISPLAY_LIMIT kartu dirender, tapi total tetap dilaporkan benar.
+        $this->assertCount(ActiveTrip::DISPLAY_LIMIT, $component->viewData('kiosks'));
+        $this->assertSame(60, $component->viewData('totalMatched'));
+
+        // Operator tetap bisa menjangkau kios mana pun lewat pencarian, lalu buka modal.
+        $component->set('search', 'Unik Pencarian')
+            ->assertSee('Zzz Kios Unik Pencarian');
+        $this->assertCount(1, $component->viewData('kiosks'));
+
+        $component->call('openVisitModal', $needle->id)
+            ->assertSet('isVisitModalOpen', true)
+            ->assertHasNoErrors();
+    }
+
     public function test_operator_end_trip_creates_correct_commission()
     {
         $operator = User::factory()->create(['role' => 'operator', 'is_active' => true]);

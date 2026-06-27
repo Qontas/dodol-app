@@ -11,6 +11,47 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
+## OPTIMASI PERFORMA FASE 1 (27 Juni 2026) — PAYLOAD TURUN DRASTIS + OPcache
+- LATAR: operator lapangan "semua agak lambat, sinyal bagus pun kerasa" → bottleneck
+  di app (payload per-klik), bukan jaringan. Diagnosa lengkap menemukan 2 hitter besar.
+- FASE 1B — RINGANKAN ActiveTrip (modal operator, dipakai tiap transaksi):
+  - MASALAH: koleksi besar (kiosks + kioskFlags + lastOperatorPerKiosk +
+    visited/pending/correctedKioskIds) disimpan sebagai PUBLIC PROPERTY → ikut snapshot
+    Livewire bolak-balik HP↔server TIAP klik. Untuk trip "Semua Kios" (957 kios Aidil)
+    payload membengkak + DOM 957 kartu di-morphdom tiap update.
+  - FIX (app/Livewire/Operator/ActiveTrip.php): koleksi besar DIKELUARKAN dari public
+    property → dihitung di render() sebagai variabel view (kioskViewData()), TIDAK masuk
+    snapshot. loadKiosks() jadi no-op (9 pemanggilan setelah transaksi dibiarkan; render
+    menyegarkan otomatis). computeKiosFlags→computeKioskFlags() mengembalikan array.
+    Helper baru pendingKioskIdsFor()/lastOperatorFor(). Tambah CAP 50 kartu/layar
+    (const DISPLAY_LIMIT) + kotak PENCARIAN (wire:model.live search) → operator tetap
+    akses kios mana pun; flag/operator-terakhir/pending dihitung HANYA utk 50 yg tampil.
+    Urutan dipertahankan (belum dikunjungi di atas; sort jarak tetap jalan).
+  - ANGKA (uji 400 kios, trip Semua-Kios): snapshot Livewire 43.258 B → 1.263 B (−97%);
+    HTML/DOM 935 KB → 115 KB (−88%); kartu 400 → 50 (−87,5%). Query render awal tetap 9;
+    query buka modal 5 → 11 (trade-off sehat: render bangun ulang daftar ≤50 baris
+    terindeks tiap request, ganti meng-hidrate 400-957 model penuh + payload 43 KB).
+  - SCOPING multi-tenant + guard (auth-uid, pwa-token-refresh) TIDAK disentuh.
+- FASE 1A — OPcache + event cache (nixpacks.toml):
+  - Tambah ekstensi php82Extensions.opcache. Set via start cmd (artisan serve = SAPI CLI
+    → butuh opcache.enable_cli=1): enable=1, enable_cli=1, validate_timestamps=0,
+    memory_consumption=128, max_accelerated_files=10000. Proses serve long-lived →
+    opcode ter-cache lintas request.
+  - Tambah `php artisan event:cache` ke fase build (config/route/view sudah ada).
+  - SERVER artisan serve TIDAK diganti (itu FASE 2).
+- VERIFIKASI: 188 PASS (749 lama + 1 tes baru cap/search). Smoke browser operator 8/8 OK
+  + bukti DB: list 50/60, search nemu needle (di luar 50), buka modal, Titip 2 mika →
+  Delivery id consignment qty=2 tersimpan, kios jadi "Dikunjungi + Ada Titipan".
+- ⚠️ APP_DEBUG=false: belum terbaca dari sini (env Railway) — user cek manual di Railway
+  Variables, kabarin.
+- ⏳ FASE 2 (PENDING, TERPISAH): GANTI `php artisan serve` (single-threaded dev server)
+  ke Laravel Octane / FrankenPHP (atau nginx+php-fpm) → request paralel + tak re-bootstrap
+  framework tiap request. Ini hitter performa #1 yang belum disentuh. JANGAN lupa.
+- CATATAN lain dari diagnosa (belum dikerjakan, dampak lebih kecil): dashboard owner
+  poll 30s + agregasi berat (cache + kurangi poll), SESSION_DRIVER=database (+2 query/req),
+  index minor (settlements.is_writeoff). Aset operator sudah ramping (Leaflet hanya di
+  create-kiosk; Filament 2MB hanya di panel owner/admin, bukan operator).
+
 ## RESTYLE (27 Juni 2026) — PROFIL OWNER ke BRAND CEMILAN QONTAS (amber)
 - TUJUAN: halaman /profile (dipakai owner & super admin) di-restyle selaras brand
   amber + sembunyikan section "Hapus Akun".

@@ -78,7 +78,32 @@
                 </button>
             </div>
         </div>
-        
+
+        {{-- Cari kios: daftar dibatasi {{ $displayLimit }} kartu demi ringan di HP;
+             operator tetap bisa menjangkau kios mana pun lewat kotak ini. --}}
+        <div class="relative">
+            <input type="search" wire:model.live.debounce.400ms="search"
+                   placeholder="Cari nama kios…"
+                   class="w-full rounded-lg border-slate-300 focus:border-amber-500 focus:ring-amber-500 text-sm pl-9">
+            <svg class="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"/>
+            </svg>
+            <div wire:loading.flex wire:target="search" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+            </div>
+        </div>
+        @if ($totalMatched > count($kiosks))
+            <p class="text-xs text-slate-500 -mt-1">
+                Menampilkan {{ count($kiosks) }} dari {{ $totalMatched }} kios{{ trim($search) !== '' ? ' yang cocok' : '' }}.
+                @if (trim($search) === '')
+                    Ketik nama untuk cari kios lain, atau tekan <span class="font-semibold text-amber-700">Urutkan Jarak</span> untuk yang terdekat.
+                @endif
+            </p>
+        @endif
+
         @forelse ($kiosks as $kiosk)
             @php
                 $isVisited = in_array($kiosk->id, $visitedKioskIds);
@@ -146,8 +171,13 @@
             </div>
         @empty
             <div class="text-center py-8 text-slate-400">
-                <p>Belum ada kios di area ini.</p>
-                <p class="text-sm mt-1">Tambah kios dulu via menu Kios Baru.</p>
+                @if (trim($search) !== '')
+                    <p>Tidak ada kios cocok dengan "{{ $search }}".</p>
+                    <p class="text-sm mt-1">Coba kata kunci lain atau kosongkan pencarian.</p>
+                @else
+                    <p>Belum ada kios di area ini.</p>
+                    <p class="text-sm mt-1">Tambah kios dulu via menu Kios Baru.</p>
+                @endif
             </div>
         @endforelse
     </div>

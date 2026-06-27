@@ -128,7 +128,8 @@ class TripBebasFlagTest extends TestCase
         ]);
         $this->makeSettledDeliveries($slow, $variant, 3, 15);
 
-        $flags = Livewire::test(ActiveTrip::class)->get('kioskFlags');
+        // kioskFlags kini variabel view (bukan public property) — baca via viewData.
+        $flags = Livewire::test(ActiveTrip::class)->viewData('kioskFlags');
 
         $this->assertContains('urgent', $flags[$urgent->id]);
         $this->assertContains('new', $flags[$new->id]);

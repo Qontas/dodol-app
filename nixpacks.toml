@@ -8,6 +8,7 @@
 nixPkgs = [
     "php82",
     "php82Extensions.gd",
+    "php82Extensions.opcache",
     "php82Extensions.pdo",
     "php82Extensions.pdo_mysql",
     "php82Extensions.mbstring",
@@ -35,8 +36,14 @@ cmds = [
     "php artisan config:cache",
     "php artisan route:cache",
     "php artisan view:cache",
+    "php artisan event:cache",
 ]
 
 # Seeding TIDAK di sini (manual sekali setelah deploy pertama biar tak overwrite data).
+#
+# OPcache: server tetap `php artisan serve` (penggantian server = FASE 2 terpisah).
+# Karena artisan serve berjalan di SAPI CLI, opcache butuh `opcache.enable_cli=1`
+# agar aktif. Proses serve hidup terus (long-lived) → opcode ter-cache & dipakai
+# ulang lintas request (validate_timestamps=0: tak cek ulang file di produksi).
 [start]
-cmd = "php artisan migrate --force && php artisan storage:link && php artisan serve --host=0.0.0.0 --port=$PORT"
+cmd = "php artisan migrate --force && php artisan storage:link && php -d opcache.enable=1 -d opcache.enable_cli=1 -d opcache.validate_timestamps=0 -d opcache.memory_consumption=128 -d opcache.max_accelerated_files=10000 artisan serve --host=0.0.0.0 --port=$PORT"
