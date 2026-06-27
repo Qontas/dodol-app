@@ -64,33 +64,35 @@ new class extends Component
 
 <section>
     <header>
-        <h2 class="text-lg font-medium text-gray-900">
-            {{ __('Profile Information') }}
+        <h2 class="text-lg font-bold text-slate-900">
+            {{ __('Informasi Profil') }}
         </h2>
 
-        <p class="mt-1 text-sm text-gray-600">
-            {{ __("Update your account's profile information and email address.") }}
+        <p class="mt-1 text-sm text-slate-500">
+            {{ __('Perbarui nama dan alamat email akun kamu.') }}
         </p>
     </header>
 
     <form wire:submit="updateProfileInformation" class="mt-6 space-y-6">
         <div>
-            <x-input-label for="name" :value="__('Name')" />
-            <x-text-input wire:model="name" id="name" name="name" type="text" class="mt-1 block w-full" required autofocus autocomplete="name" />
+            <label for="name" class="block text-sm font-bold text-slate-900">{{ __('Nama') }}</label>
+            <input wire:model="name" id="name" name="name" type="text" required autofocus autocomplete="name"
+                   class="mt-1 block w-full border-slate-300 focus:border-amber-500 focus:ring-amber-500 rounded-md shadow-sm">
             <x-input-error class="mt-2" :messages="$errors->get('name')" />
         </div>
 
         <div>
-            <x-input-label for="email" :value="__('Email')" />
-            <x-text-input wire:model="email" id="email" name="email" type="email" class="mt-1 block w-full" required autocomplete="username" />
+            <label for="email" class="block text-sm font-bold text-slate-900">{{ __('Email') }}</label>
+            <input wire:model="email" id="email" name="email" type="email" required autocomplete="username"
+                   class="mt-1 block w-full border-slate-300 focus:border-amber-500 focus:ring-amber-500 rounded-md shadow-sm">
             <x-input-error class="mt-2" :messages="$errors->get('email')" />
 
             @if (auth()->user() instanceof \Illuminate\Contracts\Auth\MustVerifyEmail && ! auth()->user()->hasVerifiedEmail())
                 <div>
-                    <p class="text-sm mt-2 text-gray-800">
+                    <p class="text-sm mt-2 text-slate-800">
                         {{ __('Your email address is unverified.') }}
 
-                        <button wire:click.prevent="sendVerification" class="underline text-sm text-gray-600 hover:text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        <button wire:click.prevent="sendVerification" class="underline text-sm text-slate-600 hover:text-slate-900 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500">
                             {{ __('Click here to re-send the verification email.') }}
                         </button>
                     </p>
@@ -105,10 +107,12 @@ new class extends Component
         </div>
 
         <div class="flex items-center gap-4">
-            <x-primary-button>{{ __('Save') }}</x-primary-button>
+            <button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-6 rounded-xl transition">
+                {{ __('Simpan') }}
+            </button>
 
-            <x-action-message class="me-3" on="profile-updated">
-                {{ __('Saved.') }}
+            <x-action-message class="me-3 text-sm text-slate-600" on="profile-updated">
+                {{ __('Tersimpan.') }}
             </x-action-message>
         </div>
     </form>
