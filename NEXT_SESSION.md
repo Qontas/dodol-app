@@ -15,15 +15,21 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - TUJUAN: halaman /profile (dipakai owner & super admin) di-restyle selaras brand
   amber + sembunyikan section "Hapus Akun".
 - FILE:
-  1. resources/views/profile.blade.php: ROLE-AWARE layout. Owner (isOwner()) →
-     @extends('layouts.owner') = layout brand Cemilan Qontas (sidebar gelap amber
-     "Panel Owner", konsisten dashboard owner), heading "Profil Saya / Kelola
-     informasi akun Cemilan Qontas kamu", 2 kartu putih rounded-2xl beraksen garis
-     gradient amber. Super admin (fallback) → tetap x-app-layout generik bertema
-     amber (route owner.* tak relevan untuknya). KEDUA layout memuat guard identitas
-     (meta auth-uid + pwa-token-refresh) → keamanan terjaga.
-     Section livewire:profile.delete-user-form TIDAK di-render di view (Hapus Akun
-     tak muncul, baik owner maupun super admin).
+  1. resources/views/profile.blade.php: ROLE-AWARE layout via 1 @extends dinamis
+     (auth()->user()->isOwner() ? 'layouts.owner' : 'layouts.brand') + 1 @section
+     content bersama (2 kartu putih rounded-2xl beraksen garis gradient amber,
+     heading "Profil Saya / Kelola informasi akun Cemilan Qontas kamu").
+       - Owner → layouts.owner (sidebar gelap amber "Panel Owner", konsisten
+         dashboard owner).
+       - Super admin (atau role lain) → layouts.brand = layout brand MINIMAL baru
+         (resources/views/layouts/brand.blade.php): top bar gelap "Cemilan Qontas"
+         + label peran ("Super Admin"), "← Kembali ke Panel" → homePath() (super
+         admin = /admin), Logout. TANPA sidebar resource owner.* → super admin TAK
+         kena link 403. Menggantikan fallback x-app-layout Breeze (logo Laravel
+         generik) yang lama.
+     KEDUA layout memuat guard identitas (meta auth-uid + pwa-token-refresh) →
+     super admin TIDAK kehilangan proteksi. Section livewire:profile.delete-user-form
+     TIDAK di-render (Hapus Akun tak muncul untuk owner MAUPUN super admin).
   2. livewire/profile/update-profile-information-form.blade.php &
      update-password-form.blade.php: label slate-bold, input focus amber-500,
      tombol "Simpan" bg-amber-600. Teks di-Indonesia-kan (Informasi Profil, Nama,
@@ -41,6 +47,12 @@ Baca NEXT_SESSION.md untuk context lengkap.
   lintas-tenant tetap jalan: dari Profil klik Dashboard → tetap 1 akun (auth-uid
   2→2, /owner/dashboard Ismi, bukan owner lain). Operator /operator/profile TIDAK
   berubah (layout & komponen sendiri).
+- SUPER ADMIN (27 Juni 2026): /profile super admin diverifikasi 12/12 cek OK —
+  layout brand minimal (Cemilan Qontas / Super Admin), TANPA sidebar owner, NOL
+  link ke /owner atau filament/owner (tak ada jebakan 403), "Kembali ke Panel"
+  → /admin balik 200 (bukan 403), guard (meta auth-uid=1 + pwa-token-refresh)
+  utuh di /profile, Hapus Akun absen. Owner regression: tetap sidebar brand owner.
+  187 PASS tetap hijau (factory role default 'owner' → render layouts.owner).
 
 ## FIX KEAMANAN (26 Juni 2026) — TUTUP KEBOCORAN SNAPSHOT wire:navigate LINTAS-TENANT
 - GEJALA: login owner A (Ismi), buka Profil, klik "Dashboard" → kadang muncul
