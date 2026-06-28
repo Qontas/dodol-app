@@ -28,3 +28,9 @@ backup_lokal.sql
 # Claude Code session folder (not project code) — but keep shared project skills
 /.claude/*
 !/.claude/skills/
+
+**/caddy
+frankenphp
+frankenphp-worker.php
+rr
+.rr.yaml

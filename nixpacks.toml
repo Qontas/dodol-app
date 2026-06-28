@@ -10,6 +10,7 @@ nixPkgs = [
     "php82Extensions.gd",
     "php82Extensions.opcache",
     "php82Extensions.pdo",
+    "curl",
     "php82Extensions.pdo_mysql",
     "php82Extensions.mbstring",
     "php82Extensions.tokenizer",
@@ -37,13 +38,31 @@ cmds = [
     "php artisan route:cache",
     "php artisan view:cache",
     "php artisan event:cache",
+    # FASE 2 — Server produksi: Laravel Octane + FrankenPHP (worker mode).
+    # PIN versi: FrankenPHP v1.11.0 mem-bundle PHP 8.4.16 (Laravel 11 supported).
+    # CATATAN versi PHP: target awal 8.3, TAPI Octane 2.17 mensyaratkan FrankenPHP
+    # >= 1.5.0, sedangkan FrankenPHP terakhir yang mem-bundle 8.3 = v1.2.5 (< 1.5.0)
+    # → Octane akan menolak & meng-unduh-ulang rilis TERBARU (v1.12 = PHP 8.5) yang
+    # BELUM didukung Laravel 11. Maka dipilih v1.11.0 = FrankenPHP terakhir yang
+    # masih PHP 8.4 (rilis >= 1.11.3 sudah 8.5). 8.4 = versi STABIL & didukung
+    # Laravel 11, dan menghindari 8.5. Binari diunduh ke base_path → octane:frankenphp
+    # memakainya (>=1.5.0 jadi TIDAK di-unduh-ulang). `frankenphp` ada di .gitignore.
+    "curl -fsSL -o frankenphp https://github.com/php/frankenphp/releases/download/v1.11.0/frankenphp-linux-x86_64",
+    "chmod +x frankenphp",
 ]
 
 # Seeding TIDAK di sini (manual sekali setelah deploy pertama biar tak overwrite data).
 #
-# OPcache: server tetap `php artisan serve` (penggantian server = FASE 2 terpisah).
-# Karena artisan serve berjalan di SAPI CLI, opcache butuh `opcache.enable_cli=1`
-# agar aktif. Proses serve hidup terus (long-lived) → opcode ter-cache & dipakai
-# ulang lintas request (validate_timestamps=0: tak cek ulang file di produksi).
+# SERVER: Laravel Octane + FrankenPHP worker mode (request paralel, app tak
+# re-bootstrap tiap request). config/octane.php = default (listener reset auth/
+# session FlushAuthenticationState+FlushSessionState+PrepareLivewireForNextOperation
+# UTUH → isolasi multi-tenant terjaga; sudah lolos gate isolasi lokal 240/0).
+#
+# OPcache: FrankenPHP server SAPI sudah opcache.enable=1 default; di-pertegas +
+# tuning produksi lewat php-ini/opcache.ini yang di-load via PHP_INI_SCAN_DIR
+# (env diwariskan ke proses frankenphp anak). validate_timestamps=0 = tak cek file.
+#
+# ROLLBACK cepat (≤2 menit): kembalikan baris [start] ini ke `php artisan serve`
+# (lihat commit bf6da5b) lalu redeploy — server balik single-thread, tanpa ubah app.
 [start]
-cmd = "php artisan migrate --force && php artisan storage:link && php -d opcache.enable=1 -d opcache.enable_cli=1 -d opcache.validate_timestamps=0 -d opcache.memory_consumption=128 -d opcache.max_accelerated_files=10000 artisan serve --host=0.0.0.0 --port=$PORT"
+cmd = "php artisan migrate --force && php artisan storage:link && PHP_INI_SCAN_DIR=\"$PWD/php-ini\" php artisan octane:frankenphp --host=0.0.0.0 --port=$PORT --workers=auto --max-requests=500"
