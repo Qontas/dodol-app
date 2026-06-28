@@ -38,26 +38,14 @@ cmds = [
     "php artisan route:cache",
     "php artisan view:cache",
     "php artisan event:cache",
-    # FASE 2 (retry hardened) — Octane + FrankenPHP worker mode.
-    # PIN FrankenPHP v1.11.0 = PHP 8.4.16 (terakhir 8.4; v1.12 sudah 8.5 yg belum
-    # didukung Laravel 11). >=1.5.0 → Octane pakai binari ini, tak unduh-ulang.
-    "curl -fsSL -o frankenphp https://github.com/php/frankenphp/releases/download/v1.11.0/frankenphp-linux-x86_64",
-    "chmod +x frankenphp",
 ]
 
 # Seeding TIDAK di sini (manual sekali setelah deploy pertama biar tak overwrite data).
 #
-# SERVER: Laravel Octane + FrankenPHP worker mode. config/octane.php = default
-# (FlushAuthenticationState+FlushSessionState+PrepareLivewireForNextOperation utuh).
-#
-# HARDENING (retry — fix 502 deploy sebelumnya): FrankenPHP memakai Caddy yang BUTUH
-# direktori tulis untuk state/config. Di container Railway HOME bisa unset/non-writable
-# → Caddy gagal start → 502. Maka: mkdir + arahkan HOME/XDG_CONFIG_HOME/XDG_DATA_HOME
-# ke /tmp (selalu writable). --workers=2 EKSPLISIT (hindari kemungkinan deteksi 'auto'
-# meleset di container). OPcache via PHP_INI_SCAN_DIR (php-ini/opcache.ini) diwariskan
-# ke proses frankenphp anak; FrankenPHP server SAPI sudah opcache.enable=1 default.
-#
-# ⏪ ROLLBACK ≤2 menit kalau 502 lagi: balik baris [start] ke `php artisan serve`
-# (commit known-good 9d6de13 / bf6da5b) lalu redeploy. App belum operasional → aman.
+# ⏪ ROLLBACK SEMENTARA (FASE 2 ditunda): server kembali ke `php artisan serve`.
+# Deploy FrankenPHP+Octane (commit b7f1144) bikin 502 persisten di Railway (>9 menit),
+# kemungkinan crash start (Caddy butuh XDG/HOME writable di container — gotcha umum).
+# Dikembalikan ke artisan serve (known-good) sambil diagnosa log Railway.
+# OPcache via flag -d (artisan serve = SAPI CLI → enable_cli=1).
 [start]
-cmd = "mkdir -p /tmp/fp/config /tmp/fp/data && php artisan migrate --force && php artisan storage:link && HOME=/tmp/fp XDG_CONFIG_HOME=/tmp/fp/config XDG_DATA_HOME=/tmp/fp/data PHP_INI_SCAN_DIR=\"$PWD/php-ini\" php artisan octane:frankenphp --host=0.0.0.0 --port=$PORT --workers=2 --max-requests=500"
+cmd = "php artisan migrate --force && php artisan storage:link && php -d opcache.enable=1 -d opcache.enable_cli=1 -d opcache.validate_timestamps=0 -d opcache.memory_consumption=128 -d opcache.max_accelerated_files=10000 artisan serve --host=0.0.0.0 --port=$PORT"
