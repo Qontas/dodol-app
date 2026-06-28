@@ -184,4 +184,91 @@ class ActiveTripActionPickerTest extends TestCase
             'qty_delivered' => 6,
         ]);
     }
+
+    /** Pengunci (a): "Tagih Saja" dicabut dari UI + chooseAction('tagih') ditolak. */
+    public function test_tagih_saja_option_removed_and_rejected(): void
+    {
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
+        Delivery::factory()->create([
+            'kiosk_id' => $kiosk->id, 'trip_id' => $this->trip->id,
+            'qty_delivered' => 5, 'product_variant_id' => $this->variant->id,
+        ]);
+
+        $this->actingAs($this->operator);
+
+        $component = Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $kiosk->id)
+            ->assertSee('Tagih + Titip Baru')
+            ->assertDontSee('Tagih Saja');
+
+        // 'tagih' tidak lagi di whitelist → diabaikan, tetap di layar pilih aksi.
+        $component->call('chooseAction', 'tagih')
+            ->assertSet('chosenAction', null);
+    }
+
+    /** Pengunci (b): "Tagih + Titip" wajib drop > 0 — Simpan ke-disable saat drop=0. */
+    public function test_tagih_titip_requires_drop_to_save(): void
+    {
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
+        Delivery::factory()->create([
+            'kiosk_id' => $kiosk->id, 'trip_id' => $this->trip->id,
+            'qty_delivered' => 5, 'product_variant_id' => $this->variant->id,
+        ]);
+
+        $this->actingAs($this->operator);
+
+        $component = Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $kiosk->id)
+            ->call('chooseAction', 'tagih_titip')
+            ->assertSet('chosenAction', 'tagih_titip');
+
+        // drop=0 → tombol "Isi jumlah titipan dulu" + arahan ke Hentikan Kedai.
+        $component->assertSee('Isi jumlah titipan dulu')
+            ->assertSee('Hentikan Kedai')
+            ->assertDontSee('Simpan Kunjungan');
+
+        // isi titipan → tombol aktif lagi.
+        $component->set('dropBaru', 3)
+            ->assertSee('Simpan Kunjungan')
+            ->assertDontSee('Isi jumlah titipan dulu');
+    }
+
+    /** Pengunci (c): Tunda & Cek Sisa (drop=0) TIDAK ke-blok oleh guard drop. */
+    public function test_tunda_and_cek_not_blocked_by_drop_guard(): void
+    {
+        $this->actingAs($this->operator);
+
+        // Tunda Bayar (drop=0) tetap bisa disimpan → settlement ditunda.
+        $k1 = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
+        Delivery::factory()->create([
+            'kiosk_id' => $k1->id, 'trip_id' => $this->trip->id,
+            'qty_delivered' => 5, 'product_variant_id' => $this->variant->id,
+        ]);
+        Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $k1->id)
+            ->call('chooseAction', 'tunda')
+            ->assertSet('dropBaru', 0)
+            ->call('saveVisit')
+            ->assertHasNoErrors();
+        $this->assertDatabaseHas('kiosk_visits', [
+            'kiosk_id' => $k1->id, 'extension_granted' => true,
+        ]);
+
+        // Cek Sisa (drop=0) tetap bisa disimpan → check_only, titipan tetap pending.
+        $k2 = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
+        Delivery::factory()->create([
+            'kiosk_id' => $k2->id, 'trip_id' => $this->trip->id,
+            'qty_delivered' => 5, 'product_variant_id' => $this->variant->id,
+        ]);
+        Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $k2->id)
+            ->call('chooseAction', 'cek')
+            ->call('saveVisit')
+            ->assertHasNoErrors();
+        $this->assertDatabaseHas('kiosk_visits', [
+            'kiosk_id' => $k2->id, 'visit_action' => 'check_only',
+        ]);
+        // Titipan k2 tetap pending (tidak ter-settle oleh Cek).
+        $this->assertEquals(0, Settlement::count());
+    }
 }

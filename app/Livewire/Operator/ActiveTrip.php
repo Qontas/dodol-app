@@ -52,7 +52,8 @@ class ActiveTrip extends Component
 
     // Aksi yang dipilih operator di layar pertama modal (UI murni — aksi yang
     // TERSIMPAN tetap ditentukan resolveVisitAction() dari kondisi form).
-    // null = masih di layar pilih aksi. Nilai: tagih_titip|tagih|tunda|titip|cek|cash
+    // null = masih di layar pilih aksi. Nilai: tagih_titip|tunda|titip|cek|cash
+    // ("Tagih Saja" dicabut — ambil bayaran tanpa titip HANYA via Hentikan Kedai.)
     public ?string $chosenAction = null;
 
     // Kios cash only: setiap drop langsung bayar cash (di-set dari kios terpilih)
@@ -452,7 +453,7 @@ class ActiveTrip extends Component
     public function chooseAction(string $action): void
     {
         $valid = $this->pendingDelivery
-            ? ['tagih_titip', 'tagih', 'tunda', 'cek']
+            ? ['tagih_titip', 'tunda', 'cek']
             : ['titip', 'cek'];
 
         if (! in_array($action, $valid, true)) {
@@ -463,7 +464,7 @@ class ActiveTrip extends Component
         $this->extensionGranted = ($action === 'tunda');
 
         // Aksi tanpa titip baru: pastikan qty drop bersih.
-        if (in_array($action, ['tagih', 'tunda', 'cek'], true)) {
+        if (in_array($action, ['tunda', 'cek'], true)) {
             $this->dropBaru = 0;
         }
     }

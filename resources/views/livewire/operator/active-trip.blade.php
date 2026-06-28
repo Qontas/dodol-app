@@ -630,11 +630,8 @@
                                 <span class="font-bold text-base block">💰 Tagih + Titip Baru</span>
                                 <span class="text-xs text-amber-100 mt-0.5 block">Ambil bayaran titipan lama, lalu titip dodol baru (paling umum)</span>
                             </button>
-                            <button type="button" wire:click="chooseAction('tagih')"
-                                class="w-full text-left p-4 rounded-xl bg-white border-2 border-slate-200 active:bg-slate-50">
-                                <span class="font-bold text-base text-slate-900 block">🧾 Tagih Saja</span>
-                                <span class="text-xs text-slate-500 mt-0.5 block">Ambil bayaran saja, tidak titip baru</span>
-                            </button>
+                            {{-- "Tagih Saja" DICABUT: ambil bayaran tanpa titip baru
+                                 HANYA via "Hentikan Kedai" (kios aktif wajib ada titipan jalan). --}}
                             <button type="button" wire:click="chooseAction('tunda')"
                                 class="w-full text-left p-4 rounded-xl bg-white border-2 border-slate-200 active:bg-slate-50">
                                 <span class="font-bold text-base text-slate-900 block">⏳ Tunda Bayar
@@ -685,7 +682,6 @@
                             <span class="text-sm font-bold text-amber-700">
                                 @switch($chosenAction)
                                     @case('tagih_titip') 💰 Tagih + Titip Baru @break
-                                    @case('tagih') 🧾 Tagih Saja @break
                                     @case('tunda') ⏳ Tunda Bayar @break
                                     @case('titip') 📦 Titip Baru @break
                                     @case('cek') 👀 Cek Saja @break
@@ -728,7 +724,7 @@
                     @endif
 
                     {{-- AREA TAGIHAN (tagih / tagih+titip) --}}
-                    @if(in_array($chosenAction, ['tagih_titip', 'tagih'], true) && $pendingDelivery)
+                    @if($chosenAction === 'tagih_titip' && $pendingDelivery)
                         <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
                             <div class="flex justify-between items-center mb-4">
                                 <span class="text-xs font-bold text-amber-800 uppercase tracking-wider">Titipan Sebelumnya</span>
@@ -842,7 +838,7 @@
                     @endif
 
                     {{-- OPSI KHUSUS (collapsed): Dodol Sisa redistribusi + turunkan kebiasaan --}}
-                    @if(in_array($chosenAction, ['tagih_titip', 'titip', 'tagih'], true))
+                    @if(in_array($chosenAction, ['tagih_titip', 'titip'], true))
                         <div x-data="{ openOpsi: false }" class="border border-slate-200 rounded-xl">
                             <button type="button" @click="openOpsi = !openOpsi"
                                 class="w-full flex items-center justify-between p-3 min-h-[44px] text-sm font-semibold text-slate-600">
@@ -873,7 +869,7 @@
                                 @endif
 
                                 {{-- SKENARIO 4: turunkan default qty — hanya saat tagih --}}
-                                @if(in_array($chosenAction, ['tagih_titip', 'tagih'], true) && (int) $selectedKiosk->default_qty_mika > 1)
+                                @if($chosenAction === 'tagih_titip' && (int) $selectedKiosk->default_qty_mika > 1)
                                     <div>
                                         <label class="flex items-center gap-3 cursor-pointer p-3 rounded-xl border border-slate-200">
                                             <input type="checkbox" wire:model.live="turunkanDefault" class="rounded text-amber-600">
@@ -899,13 +895,25 @@
             </div>
 
             @if(!is_null($chosenAction))
+            @php
+                // Aksi yang WAJIB ada titipan baru (drop > 0) sebelum bisa disimpan.
+                // tagih_titip ikut: "ambil bayaran TANPA titip" = pintu belakang yang
+                // ditutup → arahkan ke "Hentikan Kedai". Tunda/Cek (drop=0) TIDAK kena.
+                $needDrop = in_array($chosenAction, ['titip', 'cash', 'tagih_titip'], true) && (int) $dropBaru < 1;
+                $saveLabel = ($chosenAction === 'tagih_titip' && (int) $dropBaru < 1)
+                    ? 'Isi jumlah titipan dulu'
+                    : ($needDrop ? 'Isi jumlah mika dulu' : 'Simpan Kunjungan');
+            @endphp
             <div class="sticky bottom-0 bg-white border-t border-slate-100 p-4 z-10">
+                @if($chosenAction === 'tagih_titip' && (int) $dropBaru < 1)
+                    <p class="text-xs text-slate-500 mb-2 text-center">
+                        Kalau cuma ambil bayaran tanpa titip baru, pakai <span class="font-semibold text-red-700">⛔ Hentikan Kedai</span>.
+                    </p>
+                @endif
                 <button type="button" wire:click="saveVisit" wire:loading.attr="disabled" wire:target="saveVisit"
-                    @disabled(in_array($chosenAction, ['titip', 'cash'], true) && (int) $dropBaru < 1)
+                    @disabled($needDrop)
                     class="w-full bg-slate-900 text-white font-bold text-lg py-3 rounded-xl shadow-sm active:bg-slate-800 disabled:opacity-60">
-                    <span wire:loading.remove wire:target="saveVisit">
-                        {{ in_array($chosenAction, ['titip', 'cash'], true) && (int) $dropBaru < 1 ? 'Isi jumlah mika dulu' : 'Simpan Kunjungan' }}
-                    </span>
+                    <span wire:loading.remove wire:target="saveVisit">{{ $saveLabel }}</span>
                     <span wire:loading wire:target="saveVisit">Menyimpan...</span>
                 </button>
             </div>
