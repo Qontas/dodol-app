@@ -11,6 +11,24 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
+## REVISI ALUR KUNJUNGAN — TAHAP 1/3 (29 Juni 2026): HAPUS "TAGIH SAJA"
+- KEPUTUSAN: "ambil bayaran tanpa titip" HANYA via Stop kedai (Hentikan Kedai +
+  Tagih Terakhir). Kios aktif WAJIB selalu ada titipan jalan.
+- DILAKUKAN (commit 7cf7cc5):
+  - "Tagih Saja" (chosenAction 'tagih') DICABUT dari UI: whitelist chooseAction
+    jadi ['tagih_titip','tunda','cek'] (pending) — 'tagih' ditolak; tombol + @case
+    + in_array UI dibuang dari active-trip.blade.php. dropBaru-reset jadi ['tunda','cek'].
+  - PINTU BELAKANG ditutup: "Tagih + Titip" wajib drop>0 — Simpan di-DISABLE saat
+    tagih_titip & dropBaru=0 (level-UI; arahkan ke "Hentikan Kedai"). Tunda/Cek (drop=0)
+    TIDAK ke-blok. Boundary backend sengaja TIDAK di-enforce (cukup UI utk operator normal).
+  - resolveVisitAction()/persistVisitFromState() (settle_only) TIDAK disentuh — tetap
+    dipakai Tunda & Stop+Tagih. Kurangi jatah kini hanya di tagih_titip (tetap jalan).
+  - Menu kios bertitipan kini 4: Tagih+Titip · Tunda Bayar · Cek Sisa · ⛔ Hentikan Kedai.
+- TEST: +3 pengunci di ActiveTripActionPickerTest (Tagih Saja absen/ditolak; tagih_titip
+  drop=0 disable; Tunda/Cek tak ke-blok). 191 PASS. Browser mobile 10/10.
+- ⏭️ TAHAP 2 (rencana): lebur "Tunda Bayar" ke dalam "Cek Sisa" sebagai alasan +
+  catat piutang TANPA max-2x. TAHAP 3: TBD.
+
 ## FIX FOUC SIDEBAR OWNER (28 Juni 2026) — SELESAI
 - GEJALA: di HP, tiap buka /owner/dashboard (dan tiap balik Kios→Dashboard), sidebar
   drawer KEDIP kebuka sepersekian detik lalu nutup (FOUC). Mobile-only.
