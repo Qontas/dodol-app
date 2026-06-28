@@ -1,0 +1,15 @@
+# Jangan masukkan ke build context (dibangun ulang / disediakan Railway runtime).
+.git
+.gitignore
+vendor
+node_modules
+public/build
+frankenphp
+.env
+.env.*
+.claude
+storage/logs/*
+*.sql
+*.md
+tests
+.phpunit.result.cache

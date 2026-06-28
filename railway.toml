@@ -1,7 +1,11 @@
-# Konfigurasi Railway untuk dodol-app. Build via Nixpacks (lihat nixpacks.toml).
+# Konfigurasi Railway untuk dodol-app.
+# FASE 2: build via Dockerfile (Octane + FrankenPHP, image resmi PHP 8.4).
+# ROLLBACK ke artisan serve (known-good): ganti builder balik ke "nixpacks"
+# (nixpacks.toml sengaja dipertahankan) lalu redeploy — 1 langkah.
 
 [build]
-builder = "nixpacks"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 restartPolicyType = "on_failure"
