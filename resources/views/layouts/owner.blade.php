@@ -22,8 +22,12 @@
 <div x-data="{ sidebarOpen: false }" class="min-h-screen flex">
     {{-- Sidebar --}}
     <aside
-        class="fixed inset-y-0 left-0 z-30 w-64 bg-slate-900 text-slate-100 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:inset-auto"
-        :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
+        {{-- Default TERTUTUP di mobile lewat kelas STATIS (-translate-x-full) supaya
+             sebelum Alpine init pun sidebar sudah off-screen → tak ada kedip/FOUC.
+             lg:translate-x-0 jaga tetap terbuka di desktop. Saat di-tap, !translate-x-0
+             (pakai !important) menjamin "buka" menang atas -translate-x-full statis. --}}
+        class="fixed inset-y-0 left-0 z-30 w-64 bg-slate-900 text-slate-100 transform transition-transform duration-200 ease-in-out -translate-x-full lg:translate-x-0 lg:static lg:inset-auto"
+        :class="sidebarOpen && '!translate-x-0'"
     >
         <div class="px-6 py-5 border-b border-slate-700">
             <a href="{{ route('owner.dashboard') }}" class="text-lg font-semibold text-amber-400">

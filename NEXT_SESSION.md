@@ -11,6 +11,25 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
+## FIX FOUC SIDEBAR OWNER (28 Juni 2026) — SELESAI
+- GEJALA: di HP, tiap buka /owner/dashboard (dan tiap balik Kios→Dashboard), sidebar
+  drawer KEDIP kebuka sepersekian detik lalu nutup (FOUC). Mobile-only.
+- AKAR (layouts/owner.blade.php): kelas STATIS `<aside>` tak punya default-tertutup
+  mobile. `-translate-x-full` cuma dari `:class` Alpine → sebelum Alpine init, mobile
+  ter-paint translateX(0) = TERBUKA, lalu `transition-transform duration-200`
+  meng-animasikan penutupan saat Alpine set closed → kedip kelihatan. (Bukan
+  wire:navigate — nav link anchor polos = full load; kedip di tiap muat layout custom.)
+- FIX (Opsi A, pure-CSS 2 baris): statis tambah `-translate-x-full lg:translate-x-0`
+  (mobile tertutup, desktop terbuka SEBELUM Alpine) + `:class="sidebarOpen && '!translate-x-0'"`
+  (!important menjamin "buka" menang atas statis saat tap hamburger). Pre-Alpine mobile
+  sudah tertutup → Alpine set closed = tak berubah = NOL kedip. Transition cuma jalan
+  saat operator benar-benar tap. WAJIB `npm run build` (kelas `!translate-x-0` baru;
+  public/build gitignore → Docker rebuild saat deploy).
+- VERIFIKASI: 188 PASS. Browser 6/6 — bukti utama JS-OFF mobile: aside.x=-256 (off-screen,
+  tak flash); tap hamburger→buka(x=0), backdrop→tutup(x=-256), Kios→Dashboard tetap
+  tutup, desktop tetap tampil(x=0,w=256). Guard auth-uid/pwa-token-refresh & navigasi
+  tak disentuh. (Menutup PENDING FOUC sidebar layout custom owner dari PROMPT_FIX_FOUC.md.)
+
 ## OPTIMASI PERFORMA FASE 2 (28 Juni 2026) — SERVER ke OCTANE + FrankenPHP (LIVE)
 - TUJUAN: ganti server produksi dari `php artisan serve` (single-thread dev server)
   ke server worker (request paralel, app tak re-bootstrap tiap request).
