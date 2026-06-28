@@ -11,6 +11,38 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
+## OPTIMASI PERFORMA FASE 2 (28 Juni 2026) — SERVER ke OCTANE + FrankenPHP (LIVE)
+- TUJUAN: ganti server produksi dari `php artisan serve` (single-thread dev server)
+  ke server worker (request paralel, app tak re-bootstrap tiap request).
+- HASIL: ✅ LIVE di Railway via DOCKERFILE (image resmi FrankenPHP).
+- PENDEKATAN FINAL — Dockerfile (BUKAN nixpacks):
+  - 2 percobaan via nixpacks (download binari FrankenPHP manual) GAGAL → 502 persisten.
+    Akar yang dicurigai: (a) `config:cache` di BUILD membekukan env DB KOSONG (di
+    Railway+Docker/nixpacks env masuk saat RUNTIME, bukan build) + (b) binari manual /
+    dir Caddy. Dua-duanya di-rollback ke artisan serve (app tak pernah dibiarkan 502).
+  - SOLUSI deterministik: Dockerfile pakai `dunglas/frankenphp:1.12-php8.4`
+    (FrankenPHP 1.12.4 + PHP 8.4.22 — BUKAN 8.5; image resmi sudah benar Caddy/writable).
+    Multi-stage: stage node build aset Vite (public/build gitignore) → stage frankenphp
+    composer install + ekstensi (gd,pdo_mysql,intl,zip,bcmath,opcache,pcntl,mbstring).
+  - KUNCI: config:cache + route/view/event:cache + migrate DI-RUNTIME (CMD), bukan build
+    → env Railway (DB_*, APP_KEY) sudah ada saat runtime. config/octane.php = DEFAULT
+    (FlushAuthenticationState+FlushSessionState+PrepareLivewireForNextOperation UTUH).
+  - OPcache: php-ini/opcache.ini → /usr/local/etc/php/conf.d (validate_timestamps=0).
+  - PHP version: target 8.3 TAK BISA (Octane butuh FrankenPHP>=1.5.0; FrankenPHP 8.3
+    cuma di v1.2.5<1.5.0 → Octane auto-unduh-ulang ke 8.5). Dipilih 8.4 (image php8.4
+    tetap 8.4 walau FrankenPHP 1.12). User setuju 8.4.
+- ROLLBACK (1 langkah): railway.toml `builder` dari "dockerfile" → "nixpacks" lalu
+  redeploy → balik ke artisan serve (nixpacks.toml SENGAJA dipertahankan, known-good).
+- VERIFIKASI PRODUKSI (semua LOLOS):
+  - 🔒 GATE ISOLASI 240 inspeksi, **0 bocor** (Ismi uid=2 + Aidil uid=5 konkuren,
+    240 request campur lewat worker FrankenPHP). Isolasi multi-tenant UTUH di prod.
+  - X-Powered-By: PHP/8.4.22 (konfirmasi FrankenPHP live, bukan artisan serve 8.2 lama).
+  - 3 role routing 3/3, PWA aset 200, owner dashboard + Filament panel + map-picker
+    Leaflet render, latency GET ~95ms.
+- DEPLOY: commit 70f6c84 (Dockerfile/.dockerignore/railway.toml). laravel/octane ^2.17
+  di composer (require). Lokal: gate isolasi juga lolos 240/0 via WSL+FrankenPHP.
+- ⚠️ APP_DEBUG produksi: user cek manual di Railway Variables (belum dikonfirmasi dari sini).
+
 ## OPTIMASI PERFORMA FASE 1 (27 Juni 2026) — PAYLOAD TURUN DRASTIS + OPcache
 - LATAR: operator lapangan "semua agak lambat, sinyal bagus pun kerasa" → bottleneck
   di app (payload per-klik), bukan jaringan. Diagnosa lengkap menemukan 2 hitter besar.
