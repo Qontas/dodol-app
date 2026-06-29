@@ -463,6 +463,35 @@
                     <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{{ $message }}</div>
                 @enderror
 
+                {{-- TAHAP 3: Piutang lama (Settlement pending) + terima pembayaran (pelunasan) --}}
+                @if($piutangLama > 0)
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-red-700">💰 <span class="font-semibold">Piutang lama: Rp {{ number_format($piutangLama, 0, ',', '.') }}</span></span>
+                            @unless($payingPiutang)
+                                <button type="button" wire:click="startPiutangPayment"
+                                        class="text-xs font-bold text-white bg-red-600 px-3 py-1.5 rounded-lg active:bg-red-700 shrink-0">Terima Pembayaran</button>
+                            @endunless
+                        </div>
+                        @if($piutangJanji !== '')
+                            <p class="text-xs text-red-600 mt-1">{{ $piutangJanji }}</p>
+                        @endif
+                        @if($payingPiutang)
+                            <div class="mt-3 flex items-center gap-2">
+                                <input type="number" wire:model="piutangBayar" min="1" max="{{ $piutangLama }}"
+                                       placeholder="Jumlah diterima (Rp)"
+                                       class="flex-1 rounded-lg border-slate-300 text-sm py-2 focus:border-red-500 focus:ring-red-500">
+                                <button type="button" wire:click="terimaPembayaranPiutang" wire:loading.attr="disabled" wire:target="terimaPembayaranPiutang"
+                                        class="text-xs font-bold text-white bg-green-600 px-3 py-2 rounded-lg active:bg-green-700 shrink-0">Konfirmasi</button>
+                            </div>
+                            <p class="text-[11px] text-slate-400 mt-1">Pelunasan utang lama — tidak masuk omzet/komisi hari ini.</p>
+                        @endif
+                        @error('piutang')
+                            <p class="text-xs text-red-600 mt-1 font-medium">{{ $message }}</p>
+                        @enderror
+                    </div>
+                @endif
+
                 @if($stopMode !== '')
                     {{-- ============ ALUR: HENTIKAN KEDAI (stop titipan) ============ --}}
                     <div class="flex items-center justify-between">
@@ -721,11 +750,24 @@
 
                             <div class="mt-4">
                                 <label class="block text-xs font-bold text-slate-700 mb-1">Uang Diterima (Rp)</label>
-                                <input type="number" wire:model="uangDiterima" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-xl font-bold text-green-700 bg-white" min="0">
+                                <input type="number" wire:model.live.debounce.500ms="uangDiterima" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-xl font-bold text-green-700 bg-white" min="0">
                                 @error('uangDiterima')
                                     <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
                                 @enderror
                             </div>
+
+                            {{-- TAHAP 3: bayar KURANG dari tagihan → sisa jadi piutang. Catat janji bayar. --}}
+                            @if((int) $tagihan > 0 && (int) $uangDiterima < (int) $tagihan)
+                                <div class="mt-3 bg-red-50 border border-red-200 rounded-lg p-3">
+                                    <p class="text-xs font-medium text-red-700 mb-2">
+                                        Kurang Rp {{ number_format((int) $tagihan - (int) $uangDiterima, 0, ',', '.') }} → jadi piutang.
+                                    </p>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">Janji Bayar (kapan?)</label>
+                                    <input type="text" wire:model="janjiBayar" maxlength="120"
+                                           placeholder="cth: nanti sore / besok / pengantaran berikutnya"
+                                           class="w-full rounded-lg border-slate-300 text-sm py-2 px-3 focus:border-red-500 focus:ring-red-500">
+                                </div>
+                            @endif
                         </div>
                     @endif
 

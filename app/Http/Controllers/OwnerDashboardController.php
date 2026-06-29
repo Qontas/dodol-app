@@ -219,12 +219,36 @@ class OwnerDashboardController extends Controller
             ->take(20)
             ->values();
 
+        // Widget — Belum Bayar PER-KIOS (Tahap 3): rincian piutang (Settlement pending)
+        // dikelompokkan per kios + janji bayar (notes). Rupiah (utang pasti), beda dari
+        // "Titipan Tertunda" (mika). Owner tahu kios mana berutang berapa.
+        $belumBayarPerKios = Settlement::where('status', 'pending')
+            ->where($settlementOwnerScope)
+            ->with('delivery.kiosk:id,name')
+            ->orderBy('id')
+            ->get(['id', 'delivery_id', 'amount_due', 'amount_paid', 'notes'])
+            ->groupBy(fn ($s) => optional($s->delivery)->kiosk_id)
+            ->map(function ($group) {
+                $kiosk = optional($group->first()->delivery)->kiosk;
+
+                return [
+                    'name' => $kiosk?->name ?? '—',
+                    'rupiah' => (int) $group->sum(fn ($s) => (int) $s->amount_due - (int) $s->amount_paid),
+                    'janji' => optional($group->filter(fn ($s) => $s->notes)->last())->notes,
+                ];
+            })
+            ->filter(fn ($row) => $row['rupiah'] > 0)
+            ->sortByDesc('rupiah')
+            ->take(20)
+            ->values();
+
         return view('owner.dashboard', compact(
             'user',
             'stats',
             'omsetHariIni',
             'overdueCount',
             'totalOutstanding',
+            'belumBayarPerKios',
             'untungBersihHariIni',
             'chartLabels',
             'chartData',

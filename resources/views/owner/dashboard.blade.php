@@ -165,6 +165,29 @@
             </div>
         @endif
 
+        {{-- Belum Bayar per-kios (piutang rupiah dari Tagih+Titip bayar kurang) --}}
+        @if ($belumBayarPerKios->isNotEmpty())
+            <div class="bg-white rounded-lg border border-red-200 mt-6">
+                <div class="px-5 py-4 border-b border-slate-100">
+                    <h3 class="font-bold text-slate-900">💰 Belum Bayar (per kios)</h3>
+                    <p class="text-xs text-slate-500 mt-0.5">Piutang rupiah dari penagihan yang belum lunas — per kios + janji bayar</p>
+                </div>
+                <div class="divide-y divide-slate-100">
+                    @foreach ($belumBayarPerKios as $bb)
+                        <div class="px-5 py-3 flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-sm font-medium text-slate-900">{{ $bb['name'] }}</p>
+                                @if ($bb['janji'])
+                                    <p class="text-xs text-slate-500">{{ $bb['janji'] }}</p>
+                                @endif
+                            </div>
+                            <span class="text-sm font-bold shrink-0 text-red-600">Rp {{ number_format($bb['rupiah'], 0, ',', '.') }}</span>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+
         {{-- Titipan Tertunda (pemilik belum bisa bayar — janji bayar) --}}
         @if ($titipanTertunda->isNotEmpty())
             <div class="bg-white rounded-lg border border-amber-200 mt-6">

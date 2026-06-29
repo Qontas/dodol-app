@@ -402,4 +402,42 @@ class DashboardTest extends TestCase
         $this->assertEquals(4, $tertunda[0]['mika']);
         $this->assertEquals('Janji bayar: besok sore', $tertunda[0]['janji']);
     }
+
+    /** TAHAP 3: widget "Belum Bayar (per kios)" — piutang Settlement pending per kios + janji. */
+    public function test_belum_bayar_per_kios_widget()
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
+        $cluster = Cluster::create(['name' => 'Cluster BB', 'owner_id' => $owner->id]);
+        $variant = ProductVariant::factory()->create(['is_active' => true, 'sale_price_per_pack' => 12000]);
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $cluster->id, 'name' => 'Kios Ngutang']);
+
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'trip_date' => today()->subDays(2)->format('Y-m-d'), 'started_at' => now(), 'ended_at' => now(),
+        ]);
+        $delivery = Delivery::factory()->create([
+            'kiosk_id' => $kiosk->id, 'trip_id' => $trip->id,
+            'product_variant_id' => $variant->id, 'qty_delivered' => 5,
+        ]);
+        Settlement::factory()->create([
+            'delivery_id' => $delivery->id, 'visit_date' => today()->subDays(2),
+            'qty_sold' => 75, 'qty_returned_fresh' => 0, 'qty_returned_expired' => 0,
+            'amount_due' => 60000, 'amount_paid' => 20000, 'status' => 'pending',
+            'notes' => 'Janji bayar: besok',
+        ]);
+
+        $response = $this->actingAs($owner)->get('/owner/dashboard');
+
+        $response->assertOk();
+        $response->assertSee('Belum Bayar (per kios)');
+        $response->assertSee('Kios Ngutang');
+        $response->assertSee('Rp 40.000'); // sisa 60000 - 20000
+        $response->assertSee('Janji bayar: besok');
+
+        $bb = $response->viewData('belumBayarPerKios');
+        $this->assertCount(1, $bb);
+        $this->assertEquals(40000, $bb[0]['rupiah']);
+        $this->assertEquals('Janji bayar: besok', $bb[0]['janji']);
+    }
 }

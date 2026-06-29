@@ -88,6 +88,13 @@ class ActiveTrip extends Component
     public int $tertundaMika = 0;
     public string $tertundaJanji = '';
 
+    // --- TAHAP 3: PIUTANG LAMA (Settlement pending dari Tagih+Titip uang-kurang) ---
+    // Total sisa utang rupiah kios ini + janji bayar + alur terima pembayaran (pelunasan).
+    public int $piutangLama = 0;
+    public string $piutangJanji = '';
+    public bool $payingPiutang = false;
+    public int $piutangBayar = 0;
+
     // --- SKENARIO 7: BS redistribusi (mika BS dari kios lain ikut di-drop) ---
     public bool $adaBsRedistribusi = false;
     public int $qtyBsMika = 0;
@@ -429,6 +436,11 @@ class ActiveTrip extends Component
             }
         }
 
+        // Piutang lama (Settlement pending rupiah) untuk banner + alur pelunasan.
+        $this->payingPiutang = false;
+        $this->piutangBayar = 0;
+        $this->refreshPiutangLama($kioskId);
+
         $this->resetVisitForm();
 
         // Reset state hentikan kedai tiap buka modal.
@@ -441,6 +453,94 @@ class ActiveTrip extends Component
 
         $this->resetErrorBag();
         $this->isVisitModalOpen = true;
+    }
+
+    /**
+     * Hitung total piutang lama (Settlement pending) kios ini + janji bayar terbaru.
+     * 🔒 SELALU di-scope ke owner operator (lewat delivery.kiosk.cluster.owner_id) —
+     * operator tak boleh melihat/utak-atik piutang kios owner lain.
+     */
+    private function refreshPiutangLama(int $kioskId): void
+    {
+        $rows = $this->scopedPendingSettlements($kioskId)->get(['amount_due', 'amount_paid', 'notes']);
+        $this->piutangLama = (int) $rows->sum(fn ($s) => (int) $s->amount_due - (int) $s->amount_paid);
+        $this->piutangJanji = (string) ($rows->filter(fn ($s) => $s->notes)->last()->notes ?? '');
+    }
+
+    /** Query Settlement pending kios INI yang ter-scope owner operator (gate multi-tenant). */
+    private function scopedPendingSettlements(int $kioskId)
+    {
+        $ownerId = auth()->user()->owner_id;
+
+        return Settlement::where('status', 'pending')
+            ->whereHas('delivery', function ($q) use ($kioskId, $ownerId) {
+                $q->where('kiosk_id', $kioskId)
+                    ->whereHas('kiosk.cluster', fn ($c) => $c->where('owner_id', $ownerId));
+            })
+            ->orderBy('id'); // tertua dulu saat pelunasan
+    }
+
+    /** Buka input pelunasan piutang. */
+    public function startPiutangPayment(): void
+    {
+        $this->payingPiutang = true;
+        $this->piutangBayar = 0;
+        $this->resetErrorBag('piutang');
+    }
+
+    /**
+     * Terima pembayaran piutang lama (pelunasan). Update amount_paid Settlement pending
+     * (tertua dulu); SettlementObserver set status='paid'+paid_at saat lunas penuh.
+     * Opsi A: TIDAK ubah visit_date (omzet tetap tanggal asli), TIDAK tambah komisi.
+     */
+    public function terimaPembayaranPiutang(): void
+    {
+        $this->resetErrorBag('piutang');
+
+        if (! $this->selectedKiosk) {
+            $this->addError('piutang', 'Kios tidak valid. Tutup form dan coba lagi.');
+            return;
+        }
+
+        $kioskId = $this->selectedKiosk->id;
+        $amount = (int) $this->piutangBayar;
+
+        // 🔒 Outstanding HANYA dari settlement kios ini yang ter-scope owner operator.
+        $pending = $this->scopedPendingSettlements($kioskId)->get();
+        $outstanding = (int) $pending->sum(fn ($s) => (int) $s->amount_due - (int) $s->amount_paid);
+
+        if ($outstanding <= 0) {
+            $this->addError('piutang', 'Tidak ada piutang untuk kios ini.');
+            return;
+        }
+        if ($amount <= 0) {
+            $this->addError('piutang', 'Jumlah pembayaran harus lebih dari 0.');
+            return;
+        }
+        if ($amount > $outstanding) {
+            $this->addError('piutang', 'Melebihi sisa piutang (Rp '.number_format($outstanding, 0, ',', '.').').');
+            return;
+        }
+
+        DB::transaction(function () use ($pending, $amount) {
+            $remaining = $amount;
+            foreach ($pending as $s) {
+                if ($remaining <= 0) {
+                    break;
+                }
+                $sisa = (int) $s->amount_due - (int) $s->amount_paid;
+                $bayar = min($sisa, $remaining);
+                // Observer set status='paid' + paid_at saat amount_paid >= amount_due.
+                $s->amount_paid = (int) $s->amount_paid + $bayar;
+                $s->save();
+                $remaining -= $bayar;
+            }
+        });
+
+        $this->refreshPiutangLama($kioskId);
+        $this->payingPiutang = false;
+        $this->piutangBayar = 0;
+        session()->flash('visit_saved', 'Pembayaran piutang dicatat. Sisa: Rp '.number_format($this->piutangLama, 0, ',', '.'));
     }
 
     private function resetVisitForm(): void
@@ -483,6 +583,12 @@ class ActiveTrip extends Component
         // Cek Sisa tanpa titip baru: pastikan qty drop bersih.
         if ($action === 'cek') {
             $this->dropBaru = 0;
+        }
+
+        // Tagih+Titip: hitung tagihan langsung (uangDiterima default = tagihan penuh)
+        // supaya "Total Tagihan" + deteksi bayar-kurang (janji bayar) tampil sejak awal.
+        if ($action === 'tagih_titip') {
+            $this->hitungTagihan();
         }
     }
 
@@ -1275,6 +1381,11 @@ class ActiveTrip extends Component
                         'qty_returned_expired' => $expired,
                         'amount_due' => (int) $this->tagihan,
                         'amount_paid' => (int) $this->uangDiterima,
+                        // Janji bayar (Tahap 3): hanya saat bayar KURANG dari tagihan
+                        // (sisa = piutang). janjiBayar kosong di alur Stop → notes null.
+                        'notes' => ((int) $this->uangDiterima < (int) $this->tagihan && trim($this->janjiBayar) !== '')
+                            ? 'Janji bayar: '.trim($this->janjiBayar)
+                            : null,
                         // Kerugian (Stop Tanpa Tagih) ditandai untuk laporan owner.
                         'is_writeoff' => $this->stopWriteOff,
                         // status & paid_at di-set otomatis oleh SettlementObserver
