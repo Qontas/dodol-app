@@ -2,14 +2,50 @@
 *Sesi terakhir: 26 Juni 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 187 PASS. Sudah deploy Railway (produksi jalan).
+Bg, lanjut dodol-app. 200 PASS. Sudah deploy Railway (produksi jalan).
+Revisi Alur Kunjungan 3/3 SELESAI (3 menu: Tagih+Titip · Cek Sisa · Hentikan Kedai).
 GitHub: Qontas/dodol-app synced. PWA sudah installable + offline shell.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 187 PASS, 746 assertions
+- 200 PASS (Revisi Alur Kunjungan 3 tahap TUNTAS, commit 67ccc32)
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
+
+## REVISI ALUR KUNJUNGAN — TAHAP 3/3 SELESAI (29 Juni 2026): TITIP BARU + BAYAR LAMA NANTI + PELUNASAN PIUTANG
+- KEPUTUSAN: kios boleh terima titipan baru walau uang tagihan kurang → sisa jadi
+  PIUTANG (Settlement pending rupiah, BEDA dari Titipan Tertunda Tahap 2 yang mika).
+  Owner bisa lihat "Belum Bayar per-kios" (rupiah pasti) + operator terima pelunasan.
+- DILAKUKAN (commit 67ccc32):
+  - SKENARIO titip+bayar-lama-nanti: Tagih+Titip dengan uangDiterima < tagihan →
+    Settlement tetap dibuat (status pending dari SettlementObserver) → sisa = piutang.
+    Input "Janji Bayar" (teks bebas) saat bayar-kurang → ditulis ke Settlement.notes
+    ('Janji bayar: …'). chooseAction('tagih_titip') kini panggil hitungTagihan() agar
+    "Total Tagihan" + deteksi bayar-kurang tampil sejak layar kebuka.
+  - ALUR TERIMA PEMBAYARAN PIUTANG (tutup celah merah): openVisitModal hitung
+    piutangLama (refreshPiutangLama) + banner. terimaPembayaranPiutang() lunasi
+    Settlement pending tertua-dulu (FIFO), Observer set status='paid'+paid_at saat penuh.
+    🔒 GATE KEAMANAN: scopedPendingSettlements() SELALU scope owner operator (lewat
+    delivery.kiosk.cluster.owner_id) → operator tak bisa utak-atik piutang owner lain.
+    Tolak overpay (amount > outstanding) + outstanding<=0 + amount<=0. Opsi A: TIDAK
+    ubah visit_date (omzet tetap tanggal asli), TIDAK tambah komisi (murni pelunasan kas).
+  - WIDGET OWNER "Belum Bayar per-kios" (belumBayarPerKios): Settlement pending
+    di-groupBy kiosk_id → rupiah (amount_due−amount_paid) + janji bayar per kios.
+    Rupiah (utang pasti), beda dari "Titipan Tertunda" (mika). Eager load
+    delivery.kiosk:id,name (NO N+1). Kosong → section tak tampil.
+  - BANNER OPERATOR di modal: tampilkan titipan tertunda (mika + janji, Tahap 2) DAN
+    piutang lama (rupiah + janji, Tahap 3) agar operator ingat menagih.
+  - State baru ActiveTrip semua SCALAR kecil (piutangLama int, piutangJanji/janjiBayar/
+    tertundaJanji string, payingPiutang bool, piutangBayar/tertundaMika int) → snapshot
+    Livewire TIDAK membengkak (Fase 1 −97% tetap terjaga).
+- TEST: 200 PASS. (+ test skenario bayar-kurang→pending, janji→notes, pelunasan FIFO,
+  gate scope owner + tolak overpay, widget belumBayarPerKios.)
+- STATUS MENU KUNJUNGAN TERKINI (final 3 menu untuk kios bertitipan):
+  1. **Tagih + Titip** (wajib titipan>0; uang boleh kurang → piutang + janji bayar)
+  2. **Cek Sisa** (4 alasan; "belum bisa bayar" → titipan tetap pending + janji bayar)
+  3. **⛔ Hentikan Kedai** (Stop+Tagih terakhir / Stop tanpa tagih=kerugian)
+  ("Tagih Saja" dihapus Tahap 1; "Tunda Bayar" dilebur ke Cek Sisa Tahap 2.)
+- ⏭️ REVISI ALUR KUNJUNGAN 3 TAHAP = TUNTAS.
 
 ## REVISI ALUR KUNJUNGAN — TAHAP 2/3 (29 Juni 2026): LEBUR "TUNDA BAYAR" → CEK SISA
 - KEPUTUSAN: "Tunda Bayar" terpisah dihapus, jadi ALASAN di "Cek Sisa". Realisasi B:
