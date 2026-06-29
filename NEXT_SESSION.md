@@ -11,6 +11,30 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
+## REVISI ALUR KUNJUNGAN — TAHAP 2/3 (29 Juni 2026): LEBUR "TUNDA BAYAR" → CEK SISA
+- KEPUTUSAN: "Tunda Bayar" terpisah dihapus, jadi ALASAN di "Cek Sisa". Realisasi B:
+  titipan deferred TETAP pending (BUKAN rupiah karangan di widget Belum Bayar).
+- DILAKUKAN (commit 23237cf):
+  - "Tunda Bayar" dicabut dari menu (whitelist chooseAction jadi ['tagih_titip','cek']).
+    max-2x (display-only) dibuang. Mekanik extension jadi LEGACY no-op (extensionGranted
+    selalu false; persistVisitFromState $extension dibiarkan kompatibel).
+  - "Cek Sisa" 1 pintu, 4 alasan: Kios Tutup · Minta Tunggu · Dodol Masih Ada ·
+    💰 Belum Bisa Bayar (terakhir hanya muncul kalau ada titipan).
+  - Alasan "belum_bisa_bayar" → check_only (titipan TETAP pending, 0 Settlement) +
+    input "Janji Bayar" (teks bebas) → KioskVisit.notes. Tetap catat sisa_biji (prediksi).
+    Alasan lain = cek biasa tanpa notes.
+  - SURFACE Titipan Tertunda: (a) banner operator modal kunjungan berikutnya
+    ("⏳ Titipan belum tertagih: X mika — janji bayar: …" via openVisitModal
+    tertundaMika/tertundaJanji); (b) widget owner dashboard "⏳ Titipan Tertunda"
+    (OwnerDashboardController $titipanTertunda — mika + janji, BUKAN rupiah).
+  - TIDAK disentuh: persistVisitFromState inti, settle_only (Stop+Tagih), prediksi
+    (sisa_biji), model 1-pending, keamanan.
+- TEST: 193 PASS. Rewrite tunda→belum_bisa_bayar (check_only, pending, 0 settlement,
+  sisa_biji+notes, tanpa extension); +pengunci; +owner widget test. Browser mobile 13/13.
+- ⏭️ TAHAP 3 (rencana): "titip baru + bayar lama nanti" (Tagih+Titip uang kurang =
+  Settlement pending) + janji bayar di alur itu + alur "terima pembayaran piutang"
+  (tutup celah merah: pelunasan Settlement pending lama).
+
 ## REVISI ALUR KUNJUNGAN — TAHAP 1/3 (29 Juni 2026): HAPUS "TAGIH SAJA"
 - KEPUTUSAN: "ambil bayaran tanpa titip" HANYA via Stop kedai (Hentikan Kedai +
   Tagih Terakhir). Kios aktif WAJIB selalu ada titipan jalan.
