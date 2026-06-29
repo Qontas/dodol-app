@@ -107,12 +107,13 @@ class ActiveTripCekSisaBertitipanTest extends TestCase
     }
 
     /**
-     * Tunda Bayar boleh mencatat sisa dodol (pendataan) TANPA menutup titipan.
-     * Wajib: (a) KioskVisit punya sisa_biji, (b) tidak ada Settlement → titipan
-     * tetap pending, (c) extensionCount naik (hitungan max 2x jalan), (d) sisa
-     * terbaca oleh latestCheckVisit/prediksi habis.
+     * TAHAP 2: "Tunda Bayar" dilebur ke Cek Sisa alasan "belum bisa bayar" (Realisasi B).
+     * Wajib: (a) check_only + alasan belum_bisa_bayar + sisa_biji + notes janji bayar,
+     * (b) TIDAK ada Settlement → titipan tetap pending, (c) TANPA extension/max-2x,
+     * (d) sisa terbaca prediksi habis, (e) banner Titipan Tertunda muncul kunjungan
+     * berikutnya (tertundaMika + tertundaJanji).
      */
-    public function test_tunda_bayar_catat_sisa_tanpa_settle_titipan(): void
+    public function test_belum_bisa_bayar_catat_sisa_tanpa_settle_titipan(): void
     {
         $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
 
@@ -128,40 +129,41 @@ class ActiveTripCekSisaBertitipanTest extends TestCase
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
             ->assertSet('pendingDelivery.id', $pendingDelivery->id)
-            ->call('chooseAction', 'tunda')
-            ->assertSet('chosenAction', 'tunda')
-            ->assertSet('extensionGranted', true)
-            ->assertSet('dropBaru', 0)
+            ->call('chooseAction', 'cek')
+            ->set('alasanCheck', 'belum_bisa_bayar')
+            ->set('janjiBayar', 'besok sore')
             ->set('sisaBiji', 12)
             ->call('saveVisit')
             ->assertHasNoErrors();
 
-        // (a) Visit tunda (settle_only + extension) menyimpan sisa_biji.
+        // (a) check_only + belum_bisa_bayar + sisa_biji + notes janji bayar.
         $visit = KioskVisit::where('trip_id', $this->trip->id)
             ->where('kiosk_id', $kiosk->id)
             ->first();
         $this->assertNotNull($visit);
-        $this->assertEquals('settle_only', $visit->visit_action);
-        $this->assertTrue((bool) $visit->extension_granted);
+        $this->assertEquals('check_only', $visit->visit_action);
+        $this->assertEquals('belum_bisa_bayar', $visit->alasan_check);
         $this->assertEquals(12, $visit->sisa_biji);
-        // Menandai titipan lama (untuk jejak & hitungan), tapi tidak melunasinya.
-        $this->assertEquals($pendingDelivery->id, $visit->settled_delivery_id);
+        $this->assertEquals('Janji bayar: besok sore', $visit->notes);
+        // (c) TANPA extension/max-2x.
+        $this->assertFalse((bool) $visit->extension_granted);
 
         // (b) TIDAK ada Settlement → titipan TETAP pending.
         $this->assertEquals(0, Settlement::count());
         $this->assertTrue(
             Delivery::whereKey($pendingDelivery->id)->doesntHave('settlement')->exists(),
-            'Tunda + catat sisa TIDAK boleh menutup titipan.'
+            'Belum bisa bayar TIDAK boleh menutup titipan.'
         );
 
-        // (c) extensionCount naik → hitungan max 2x tunda tetap jalan.
-        Livewire::test(ActiveTrip::class)
-            ->call('openVisitModal', $kiosk->id)
-            ->assertSet('extensionCount', 1);
-
-        // (d) Sisa dari visit Tunda terbaca sebagai sumber prediksi habis.
+        // (d) Sisa terbaca sebagai sumber prediksi habis.
         $this->assertEquals(12, $kiosk->fresh()->latestCheckVisit?->sisa_biji);
         $this->assertNotNull($kiosk->fresh()->prediksi_habis);
+
+        // (e) Banner "Titipan Tertunda" muncul saat kunjungan berikutnya.
+        Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $kiosk->id)
+            ->assertSet('tertundaMika', 2)
+            ->assertSet('tertundaJanji', 'Janji bayar: besok sore');
     }
 
     /**

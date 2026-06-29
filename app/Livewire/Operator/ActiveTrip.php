@@ -52,8 +52,9 @@ class ActiveTrip extends Component
 
     // Aksi yang dipilih operator di layar pertama modal (UI murni — aksi yang
     // TERSIMPAN tetap ditentukan resolveVisitAction() dari kondisi form).
-    // null = masih di layar pilih aksi. Nilai: tagih_titip|tunda|titip|cek|cash
-    // ("Tagih Saja" dicabut — ambil bayaran tanpa titip HANYA via Hentikan Kedai.)
+    // null = masih di layar pilih aksi. Nilai: tagih_titip|titip|cek|cash
+    // ("Tagih Saja" dicabut — bayaran tanpa titip via Hentikan Kedai. "Tunda Bayar"
+    //  dilebur ke Cek Sisa alasan "belum bisa bayar" — Tahap 2.)
     public ?string $chosenAction = null;
 
     // Kios cash only: setiap drop langsung bayar cash (di-set dari kios terpilih)
@@ -78,6 +79,15 @@ class ActiveTrip extends Component
     public string $alasanCheck = '';
     public int $sisaBiji = 0;
 
+    // Catatan "janji bayar" (teks bebas) saat Cek Sisa alasan = belum bisa bayar.
+    // Disimpan ke KioskVisit.notes (titipan TETAP pending / tidak di-settle — Realisasi B).
+    public string $janjiBayar = '';
+
+    // Banner "Titipan Tertunda" di modal: kalau titipan kios ini sebelumnya ditandai
+    // "belum bisa bayar", tampilkan qty + janji bayar ke operator agar ingat menagih.
+    public int $tertundaMika = 0;
+    public string $tertundaJanji = '';
+
     // --- SKENARIO 7: BS redistribusi (mika BS dari kios lain ikut di-drop) ---
     public bool $adaBsRedistribusi = false;
     public int $qtyBsMika = 0;
@@ -86,9 +96,10 @@ class ActiveTrip extends Component
     public $terjual = 0;
     public $tagihan = 0;
 
-    // --- STATE EXTENSION (tunda settle) ---
+    // --- LEGACY: dulu dipakai "Tunda Bayar" (dihapus Tahap 2 — dilebur ke Cek Sisa
+    //     alasan "belum bisa bayar"). extensionGranted selalu false sekarang; dibiarkan
+    //     agar persistVisitFromState ($extension) tetap kompatibel (selalu no-op).
     public bool $extensionGranted = false;
-    public int $extensionCount = 0;
 
     // --- STATE HENTIKAN KEDAI (stop titipan) ---
     // stopMode: '' = tidak di alur stop. 'pick' = layar pilih cara stop.
@@ -401,15 +412,21 @@ class ActiveTrip extends Component
             ->latest('id')
             ->first();
 
-        // Hitung berapa kali titipan ini sudah diperpanjang
-        $this->extensionGranted = false;
+        // Banner "Titipan Tertunda": kalau titipan kios ini sebelumnya ditandai
+        // "belum bisa bayar" (Cek Sisa), tampilkan qty + janji bayar agar operator
+        // ingat menagih. Titipan tetap pending (Realisasi B) → tertagih normal.
+        $this->tertundaMika = 0;
+        $this->tertundaJanji = '';
         if ($this->pendingDelivery) {
-            $this->extensionCount = KioskVisit::active()
-                ->where('settled_delivery_id', $this->pendingDelivery->id)
-                ->where('extension_granted', true)
-                ->count();
-        } else {
-            $this->extensionCount = 0;
+            $lastDeferred = KioskVisit::active()
+                ->where('kiosk_id', $kioskId)
+                ->where('alasan_check', 'belum_bisa_bayar')
+                ->latest('visited_at')
+                ->first();
+            if ($lastDeferred) {
+                $this->tertundaMika = (int) $this->pendingDelivery->qty_delivered;
+                $this->tertundaJanji = (string) ($lastDeferred->notes ?? '');
+            }
         }
 
         $this->resetVisitForm();
@@ -439,6 +456,7 @@ class ActiveTrip extends Component
         $this->qtyDefaultBaru = 0;
         $this->alasanCheck = '';
         $this->sisaBiji = 0;
+        $this->janjiBayar = '';
         $this->adaBsRedistribusi = false;
         $this->qtyBsMika = 0;
         $this->extensionGranted = false;
@@ -453,7 +471,7 @@ class ActiveTrip extends Component
     public function chooseAction(string $action): void
     {
         $valid = $this->pendingDelivery
-            ? ['tagih_titip', 'tunda', 'cek']
+            ? ['tagih_titip', 'cek']
             : ['titip', 'cek'];
 
         if (! in_array($action, $valid, true)) {
@@ -461,10 +479,9 @@ class ActiveTrip extends Component
         }
 
         $this->chosenAction = $action;
-        $this->extensionGranted = ($action === 'tunda');
 
-        // Aksi tanpa titip baru: pastikan qty drop bersih.
-        if (in_array($action, ['tunda', 'cek'], true)) {
+        // Cek Sisa tanpa titip baru: pastikan qty drop bersih.
+        if ($action === 'cek') {
             $this->dropBaru = 0;
         }
     }
@@ -705,12 +722,6 @@ class ActiveTrip extends Component
     {
         if (in_array($propertyName, ['returnFresh', 'returnExpired'])) {
             $this->hitungTagihan();
-        }
-
-        if ($propertyName === 'extensionGranted') {
-            if ($this->extensionGranted) {
-                $this->dropBaru = 0;
-            }
         }
     }
 
@@ -1201,8 +1212,10 @@ class ActiveTrip extends Component
             ? (int) $this->qtyBsMika
             : 0;
 
-        // Extension hanya berlaku untuk aksi yang seharusnya settle + ada titipan lama.
-        // Kalau granted: settle DITUNDA (tidak buat row settlements), drop tetap jalan.
+        // LEGACY (Tahap 2): dulu "Tunda Bayar" set extensionGranted=true → settle ditunda.
+        // Sekarang extensionGranted SELALU false (Tunda dilebur ke Cek Sisa "belum bisa
+        // bayar" = check_only). Jadi $extension selalu false & $createSettlement = isSettle.
+        // Dibiarkan agar struktur tetap kompatibel (no-op).
         $extension = $this->extensionGranted && $hasPending && $isSettleAction;
         $createSettlement = $isSettleAction && !$extension;
 
@@ -1350,9 +1363,13 @@ class ActiveTrip extends Component
                     }
                 }
 
-                // 3. Catat kunjungan. alasan_check khusus check_only; sisa_biji boleh
-                //    diisi saat Cek Sisa ATAU Tunda Bayar (pendataan sisa — TIDAK
-                //    menutup titipan, tunggakan tetap nyangkut karena tak bikin Settlement).
+                // 3. Catat kunjungan. alasan_check & sisa_biji khusus Cek Sisa
+                //    (check_only — TIDAK menutup titipan, tunggakan tetap nyangkut).
+                //    notes = "janji bayar" hanya saat alasan "belum bisa bayar".
+                $isBelumBisaBayar = $action === 'check_only'
+                    && $this->alasanCheck === 'belum_bisa_bayar'
+                    && trim($this->janjiBayar) !== '';
+
                 $visit = KioskVisit::create([
                     'trip_id' => $this->trip->id,
                     'kiosk_id' => $this->selectedKiosk->id,
@@ -1360,6 +1377,7 @@ class ActiveTrip extends Component
                     'visit_action' => $action,
                     'alasan_check' => $action === 'check_only' ? ($this->alasanCheck ?: null) : null,
                     'sisa_biji' => (($action === 'check_only' || $extension) && $this->sisaBiji > 0) ? $this->sisaBiji : null,
+                    'notes' => $isBelumBisaBayar ? 'Janji bayar: '.trim($this->janjiBayar) : null,
                     'new_delivery_id' => $newDeliveryId,
                     'settled_delivery_id' => $settledDeliveryId,
                     'extension_granted' => $extension,

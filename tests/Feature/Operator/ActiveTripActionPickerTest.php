@@ -86,7 +86,8 @@ class ActiveTripActionPickerTest extends TestCase
         $component = Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
             ->assertSee('Tagih + Titip Baru')
-            ->assertSee('Tunda Bayar');
+            ->assertSee('Cek Sisa')        // "Tunda Bayar" dilebur ke Cek Sisa (Tahap 2)
+            ->assertDontSee('Tunda Bayar');
 
         // 'titip' tidak valid untuk kios bertitipan → diabaikan.
         $component->call('chooseAction', 'titip')
@@ -97,54 +98,74 @@ class ActiveTripActionPickerTest extends TestCase
             ->assertSet('chosenAction', 'cek');
     }
 
-    public function test_choose_tunda_sets_extension_and_clears_drop(): void
+    /** Tahap 2: "Tunda Bayar" dicabut dari menu + chooseAction('tunda') ditolak. */
+    public function test_tunda_action_removed_and_rejected(): void
     {
         $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
-        $pending = Delivery::factory()->create([
-            'kiosk_id' => $kiosk->id,
-            'trip_id' => $this->trip->id,
-            'qty_delivered' => 5,
-            'product_variant_id' => $this->variant->id,
+        Delivery::factory()->create([
+            'kiosk_id' => $kiosk->id, 'trip_id' => $this->trip->id,
+            'qty_delivered' => 5, 'product_variant_id' => $this->variant->id,
         ]);
 
         $this->actingAs($this->operator);
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
+            ->assertDontSee('Tunda Bayar')
             ->call('chooseAction', 'tunda')
-            ->assertSet('chosenAction', 'tunda')
-            ->assertSet('extensionGranted', true)
-            ->assertSet('dropBaru', 0)
+            ->assertSet('chosenAction', null);
+    }
+
+    /** Tahap 2: Cek Sisa alasan "belum bisa bayar" = defer (check_only, titipan tetap pending, notes). */
+    public function test_belum_bisa_bayar_defers_titipan_as_check_only(): void
+    {
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
+        $pending = Delivery::factory()->create([
+            'kiosk_id' => $kiosk->id, 'trip_id' => $this->trip->id,
+            'qty_delivered' => 5, 'product_variant_id' => $this->variant->id,
+        ]);
+
+        $this->actingAs($this->operator);
+
+        Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $kiosk->id)
+            ->call('chooseAction', 'cek')
+            ->set('alasanCheck', 'belum_bisa_bayar')
+            ->set('janjiBayar', 'besok sore')
+            ->set('sisaBiji', 30)
             ->call('saveVisit')
             ->assertHasNoErrors();
 
         $visit = KioskVisit::where('trip_id', $this->trip->id)->where('kiosk_id', $kiosk->id)->first();
         $this->assertNotNull($visit);
-        $this->assertTrue((bool) $visit->extension_granted);
-        $this->assertEquals($pending->id, $visit->settled_delivery_id);
-        // Tunda bayar = settlement DITUNDA, tidak ada uang tercatat.
+        $this->assertEquals('check_only', $visit->visit_action);
+        $this->assertEquals('belum_bisa_bayar', $visit->alasan_check);
+        $this->assertEquals(30, $visit->sisa_biji);
+        $this->assertEquals('Janji bayar: besok sore', $visit->notes);
+        $this->assertFalse((bool) $visit->extension_granted);
+        // Realisasi B: titipan TETAP pending — TIDAK ada settlement.
         $this->assertEquals(0, Settlement::count());
+        $this->assertTrue(Delivery::whereKey($pending->id)->doesntHave('settlement')->exists());
     }
 
-    public function test_back_to_picker_resets_extension_and_inputs(): void
+    public function test_back_to_picker_resets_inputs(): void
     {
         $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
         Delivery::factory()->create([
-            'kiosk_id' => $kiosk->id,
-            'trip_id' => $this->trip->id,
-            'qty_delivered' => 5,
-            'product_variant_id' => $this->variant->id,
+            'kiosk_id' => $kiosk->id, 'trip_id' => $this->trip->id,
+            'qty_delivered' => 5, 'product_variant_id' => $this->variant->id,
         ]);
 
         $this->actingAs($this->operator);
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->call('chooseAction', 'tunda')
-            ->assertSet('extensionGranted', true)
+            ->call('chooseAction', 'cek')
+            ->set('alasanCheck', 'belum_bisa_bayar')
+            ->set('janjiBayar', 'besok')
             ->call('backToActionPicker')
             ->assertSet('chosenAction', null)
-            ->assertSet('extensionGranted', false)
+            ->assertSet('janjiBayar', '')
             ->assertSet('dropBaru', 0);
     }
 
@@ -233,12 +254,12 @@ class ActiveTripActionPickerTest extends TestCase
             ->assertDontSee('Isi jumlah titipan dulu');
     }
 
-    /** Pengunci (c): Tunda & Cek Sisa (drop=0) TIDAK ke-blok oleh guard drop. */
-    public function test_tunda_and_cek_not_blocked_by_drop_guard(): void
+    /** Pengunci (c): Cek Sisa (drop=0) — biasa & "belum bisa bayar" — TIDAK ke-blok guard drop. */
+    public function test_cek_not_blocked_by_drop_guard(): void
     {
         $this->actingAs($this->operator);
 
-        // Tunda Bayar (drop=0) tetap bisa disimpan → settlement ditunda.
+        // Cek "belum bisa bayar" (drop=0) tetap bisa disimpan → check_only, titipan pending.
         $k1 = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
         Delivery::factory()->create([
             'kiosk_id' => $k1->id, 'trip_id' => $this->trip->id,
@@ -246,15 +267,17 @@ class ActiveTripActionPickerTest extends TestCase
         ]);
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $k1->id)
-            ->call('chooseAction', 'tunda')
+            ->call('chooseAction', 'cek')
+            ->set('alasanCheck', 'belum_bisa_bayar')
+            ->set('janjiBayar', 'lusa')
             ->assertSet('dropBaru', 0)
             ->call('saveVisit')
             ->assertHasNoErrors();
         $this->assertDatabaseHas('kiosk_visits', [
-            'kiosk_id' => $k1->id, 'extension_granted' => true,
+            'kiosk_id' => $k1->id, 'visit_action' => 'check_only', 'alasan_check' => 'belum_bisa_bayar',
         ]);
 
-        // Cek Sisa (drop=0) tetap bisa disimpan → check_only, titipan tetap pending.
+        // Cek biasa (alasan lain, drop=0) → check_only TANPA notes janji bayar.
         $k2 = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
         Delivery::factory()->create([
             'kiosk_id' => $k2->id, 'trip_id' => $this->trip->id,
@@ -263,12 +286,13 @@ class ActiveTripActionPickerTest extends TestCase
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $k2->id)
             ->call('chooseAction', 'cek')
+            ->set('alasanCheck', 'kios_tutup')
             ->call('saveVisit')
             ->assertHasNoErrors();
-        $this->assertDatabaseHas('kiosk_visits', [
-            'kiosk_id' => $k2->id, 'visit_action' => 'check_only',
-        ]);
-        // Titipan k2 tetap pending (tidak ter-settle oleh Cek).
+        $visit2 = KioskVisit::where('kiosk_id', $k2->id)->first();
+        $this->assertEquals('check_only', $visit2->visit_action);
+        $this->assertNull($visit2->notes); // alasan lain → tanpa janji bayar
+        // Tidak ada settlement (Cek tak menutup titipan).
         $this->assertEquals(0, Settlement::count());
     }
 }

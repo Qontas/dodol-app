@@ -360,4 +360,46 @@ class DashboardTest extends TestCase
         $this->assertCount(1, $prediksi);
         $this->assertStringContainsString('hari lagi', $prediksi[0]['prediksi']);
     }
+
+    /** TAHAP 2: widget "Titipan Tertunda" — kios dgn titipan pending + alasan belum bisa bayar. */
+    public function test_titipan_tertunda_widget_shows_deferred_kiosk()
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
+        $cluster = Cluster::create(['name' => 'Cluster Tertunda', 'owner_id' => $owner->id]);
+        $variant = ProductVariant::factory()->create(['is_active' => true, 'sale_price_per_pack' => 12000]);
+
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $cluster->id, 'name' => 'Kios Tertunda']);
+
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'trip_date' => today()->format('Y-m-d'), 'started_at' => now(), 'ended_at' => now(),
+        ]);
+
+        // Titipan pending (belum di-settle).
+        Delivery::factory()->create([
+            'kiosk_id' => $kiosk->id, 'trip_id' => $trip->id,
+            'product_variant_id' => $variant->id, 'qty_delivered' => 4,
+        ]);
+
+        // Kunjungan "belum bisa bayar" + janji bayar.
+        \App\Models\KioskVisit::create([
+            'trip_id' => $trip->id, 'kiosk_id' => $kiosk->id, 'visited_at' => now(),
+            'visit_action' => 'check_only', 'alasan_check' => 'belum_bisa_bayar',
+            'sisa_biji' => 20, 'notes' => 'Janji bayar: besok sore', 'extension_granted' => false,
+        ]);
+
+        $response = $this->actingAs($owner)->get('/owner/dashboard');
+
+        $response->assertOk();
+        $response->assertSee('Titipan Tertunda');
+        $response->assertSee('Kios Tertunda');
+        $response->assertSee('Janji bayar: besok sore');
+        $response->assertSee('4 mika');
+
+        $tertunda = $response->viewData('titipanTertunda');
+        $this->assertCount(1, $tertunda);
+        $this->assertEquals(4, $tertunda[0]['mika']);
+        $this->assertEquals('Janji bayar: besok sore', $tertunda[0]['janji']);
+    }
 }

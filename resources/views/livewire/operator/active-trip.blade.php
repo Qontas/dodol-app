@@ -617,9 +617,13 @@
                             <span class="font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} mika ({{ $pendingDelivery->qty_delivered * 15 }} biji)</span>
                         </div>
 
-                        @if($extensionCount >= 2)
-                            <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 font-medium">
-                                ⚠️ Sudah 2x tunda bayar — Pertimbangkan Hentikan Kedai (stop titipan)
+                        {{-- Banner Titipan Tertunda: titipan ini sebelumnya ditandai "belum bisa bayar". --}}
+                        @if($tertundaMika > 0)
+                            <div class="bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm text-amber-800">
+                                ⏳ <span class="font-semibold">Titipan belum tertagih: {{ $tertundaMika }} mika.</span>
+                                @if($tertundaJanji !== '')
+                                    <br><span class="text-amber-700">{{ $tertundaJanji }}</span>
+                                @endif
                             </div>
                         @endif
 
@@ -630,21 +634,13 @@
                                 <span class="font-bold text-base block">💰 Tagih + Titip Baru</span>
                                 <span class="text-xs text-amber-100 mt-0.5 block">Ambil bayaran titipan lama, lalu titip dodol baru (paling umum)</span>
                             </button>
-                            {{-- "Tagih Saja" DICABUT: ambil bayaran tanpa titip baru
-                                 HANYA via "Hentikan Kedai" (kios aktif wajib ada titipan jalan). --}}
-                            <button type="button" wire:click="chooseAction('tunda')"
-                                class="w-full text-left p-4 rounded-xl bg-white border-2 border-slate-200 active:bg-slate-50">
-                                <span class="font-bold text-base text-slate-900 block">⏳ Tunda Bayar
-                                    @if($extensionCount > 0)
-                                        <span class="ml-1 text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full align-middle">sudah {{ $extensionCount }}x</span>
-                                    @endif
-                                </span>
-                                <span class="text-xs text-slate-500 mt-0.5 block">Kios belum bisa bayar — tagih di kunjungan berikutnya (max 2x)</span>
-                            </button>
+                            {{-- "Tagih Saja" & "Tunda Bayar" DICABUT (Tahap 1 & 2):
+                                 - Bayaran tanpa titip → "Hentikan Kedai".
+                                 - Tunda bayar → "Cek Sisa" pilih alasan "belum bisa bayar". --}}
                             <button type="button" wire:click="chooseAction('cek')"
                                 class="w-full text-left p-4 rounded-xl bg-white border-2 border-slate-200 active:bg-slate-50">
                                 <span class="font-bold text-base text-slate-900 block">👀 Cek Sisa (tanpa tagih)</span>
-                                <span class="text-xs text-slate-500 mt-0.5 block">Catat sisa dodol &amp; kondisi kios. Titipan TETAP berjalan (tidak ditagih, tidak dilunasi). Dodol tetap dijual sampai habis.</span>
+                                <span class="text-xs text-slate-500 mt-0.5 block">Catat sisa &amp; kondisi kios (termasuk pemilik belum bisa bayar). Titipan TETAP berjalan — tidak ditagih, tidak dilunasi.</span>
                             </button>
                         </div>
 
@@ -682,7 +678,6 @@
                             <span class="text-sm font-bold text-amber-700">
                                 @switch($chosenAction)
                                     @case('tagih_titip') 💰 Tagih + Titip Baru @break
-                                    @case('tunda') ⏳ Tunda Bayar @break
                                     @case('titip') 📦 Titip Baru @break
                                     @case('cek') 👀 Cek Saja @break
                                 @endswitch
@@ -693,35 +688,6 @@
                             </button>
                         </div>
                     @endunless
-
-                    {{-- TUNDA BAYAR --}}
-                    @if($chosenAction === 'tunda')
-                        @if($extensionCount >= 2)
-                            <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 font-medium">
-                                ⚠️ Sudah 2x tunda bayar — Pertimbangkan Hentikan Kedai (stop titipan)
-                            </div>
-                        @elseif($extensionCount === 1)
-                            <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
-                                Tunda bayar ke-1 dari 2
-                            </div>
-                        @endif
-
-                        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                            <div class="flex justify-between items-center mb-3">
-                                <span class="text-xs font-bold text-amber-800 uppercase tracking-wider">Titipan Sebelumnya</span>
-                                <span class="text-sm font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} Mika ({{ $pendingDelivery->qty_delivered * 15 }} Biji)</span>
-                            </div>
-                            <div class="text-sm text-amber-800 bg-white/60 rounded-lg p-3">
-                                Pembayaran ditunda. Dodol sisa &amp; pembayaran diambil di kunjungan berikutnya — titipan ini tetap tercatat sebagai tunggakan.
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-bold text-slate-700 mb-2">Sisa Dodol Total (Biji)</label>
-                            <input type="number" wire:model="sisaBiji" class="w-full rounded-xl border-slate-300 text-center text-xl font-bold py-3" min="0" placeholder="0">
-                            <p class="text-xs text-slate-400 mt-1">(pendataan saja — tunggakan tetap nyangkut, belum dianggap lunas). Isi 0 kalau tidak tahu.</p>
-                        </div>
-                    @endif
 
                     {{-- AREA TAGIHAN (tagih / tagih+titip) --}}
                     @if($chosenAction === 'tagih_titip' && $pendingDelivery)
@@ -814,13 +780,19 @@
                         <div class="space-y-4">
                             <div>
                                 <label class="block text-sm font-bold text-slate-700 mb-2">Alasan Kunjungan</label>
-                                <div class="grid grid-cols-2 gap-2">
-                                    @foreach([
+                                @php
+                                    // "Belum Bisa Bayar (tunda)" hanya relevan kalau ada titipan untuk ditunda.
+                                    $cekReasons = [
                                         'kios_tutup' => '🔒 Kios Tutup',
                                         'pemilik_minta_tunggu' => '⏳ Minta Tunggu',
-                                        'tidak_ada_uang' => '💸 Tidak Ada Uang',
                                         'dodol_masih_banyak' => '📦 Dodol Masih Ada',
-                                    ] as $val => $label)
+                                    ];
+                                    if ($pendingDelivery) {
+                                        $cekReasons['belum_bisa_bayar'] = '💰 Belum Bisa Bayar';
+                                    }
+                                @endphp
+                                <div class="grid grid-cols-2 gap-2">
+                                    @foreach($cekReasons as $val => $label)
                                         <label class="flex items-center gap-2 p-3 rounded-xl border cursor-pointer {{ $alasanCheck === $val ? 'border-amber-400 bg-amber-50' : 'border-slate-200' }}">
                                             <input type="radio" wire:model.live="alasanCheck" value="{{ $val }}" class="sr-only">
                                             <span class="text-sm font-medium">{{ $label }}</span>
@@ -828,6 +800,18 @@
                                     @endforeach
                                 </div>
                             </div>
+
+                            {{-- Janji bayar — hanya saat alasan "belum bisa bayar". Disimpan ke
+                                 KioskVisit.notes. Titipan TETAP pending (tidak di-settle). --}}
+                            @if($alasanCheck === 'belum_bisa_bayar')
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-2">Janji Bayar (kapan?)</label>
+                                    <input type="text" wire:model="janjiBayar" maxlength="120"
+                                           placeholder="cth: nanti sore / besok / pengantaran berikutnya"
+                                           class="w-full rounded-xl border-slate-300 text-sm py-3 px-3 focus:border-amber-500 focus:ring-amber-500">
+                                    <p class="text-xs text-slate-400 mt-1">Titipan TETAP tercatat (belum lunas) — ditagih di kunjungan berikutnya.</p>
+                                </div>
+                            @endif
 
                             <div>
                                 <label class="block text-sm font-bold text-slate-700 mb-2">Sisa Dodol di Kios (Biji)</label>

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Cluster;
+use App\Models\Delivery;
 use App\Models\Kiosk;
 use App\Models\KioskVisit;
 use App\Models\ProcurementBatch;
@@ -180,6 +181,44 @@ class OwnerDashboardController extends Controller
                 'stopped_by' => $k->stopped_by,
             ]);
 
+        // Widget — Titipan Tertunda (Tahap 2): kios aktif yang titipannya ditandai
+        // "belum bisa bayar" (Cek Sisa) + janji bayar. Ditampilkan dalam MIKA (barang),
+        // BUKAN rupiah karangan — titipan tetap pending & ditagih akurat saat settle
+        // kunjungan berikutnya (Realisasi B). Kosong → section tak tampil.
+        $ownerKioskIds = $ownerKiosks->pluck('id');
+        $pendingByKiosk = Delivery::whereIn('kiosk_id', $ownerKioskIds)
+            ->doesntHave('settlement')
+            ->get(['id', 'kiosk_id', 'qty_delivered'])
+            ->groupBy('kiosk_id');
+        $deferredByKiosk = KioskVisit::active()
+            ->whereIn('kiosk_id', $ownerKioskIds)
+            ->where('alasan_check', 'belum_bisa_bayar')
+            ->orderByDesc('visited_at')
+            ->get(['kiosk_id', 'visited_at', 'notes'])
+            ->groupBy('kiosk_id');
+
+        $titipanTertunda = $ownerKiosks
+            ->map(function ($k) use ($pendingByKiosk, $deferredByKiosk) {
+                $pendings = $pendingByKiosk->get($k->id);
+                $deferred = optional($deferredByKiosk->get($k->id))->first();
+
+                // Hanya kios yang MASIH punya titipan pending DAN ditandai belum-bisa-bayar.
+                if (! $pendings || ! $deferred) {
+                    return null;
+                }
+
+                return [
+                    'name' => $k->name,
+                    'mika' => (int) $pendings->sum('qty_delivered'),
+                    'janji' => $deferred->notes,
+                    'sejak' => $deferred->visited_at,
+                ];
+            })
+            ->filter()
+            ->sortByDesc('sejak')
+            ->take(20)
+            ->values();
+
         return view('owner.dashboard', compact(
             'user',
             'stats',
@@ -195,6 +234,7 @@ class OwnerDashboardController extends Controller
             'totalStokTersisa',
             'prediksiKios',
             'stoppedKiosks',
+            'titipanTertunda',
             'kerugianTitipan'
         ));
     }

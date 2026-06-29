@@ -165,6 +165,29 @@
             </div>
         @endif
 
+        {{-- Titipan Tertunda (pemilik belum bisa bayar — janji bayar) --}}
+        @if ($titipanTertunda->isNotEmpty())
+            <div class="bg-white rounded-lg border border-amber-200 mt-6">
+                <div class="px-5 py-4 border-b border-slate-100">
+                    <h3 class="font-bold text-slate-900">⏳ Titipan Tertunda</h3>
+                    <p class="text-xs text-slate-500 mt-0.5">Kios yang pemiliknya belum bisa bayar — titipan tetap berjalan (ditagih kunjungan berikutnya)</p>
+                </div>
+                <div class="divide-y divide-slate-100">
+                    @foreach ($titipanTertunda as $tt)
+                        <div class="px-5 py-3 flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-sm font-medium text-slate-900">{{ $tt['name'] }}</p>
+                                <p class="text-xs text-slate-500">
+                                    {{ $tt['janji'] ?: 'Tanpa catatan janji bayar' }} — sejak {{ $tt['sejak']->translatedFormat('d M Y') }}
+                                </p>
+                            </div>
+                            <span class="text-sm font-bold shrink-0 text-amber-600">{{ $tt['mika'] }} mika</span>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+
         {{-- Kios Berhenti (cut off / stop titipan) --}}
         @if ($stoppedKiosks->isNotEmpty())
             <div class="bg-white rounded-lg border border-slate-200 mt-6">
