@@ -1,10 +1,13 @@
 /**
  * Service Worker — Cemilan Qontas (dodol-app)
  *
- * Strategi (v2 — multi-tenant safe):
+ * Strategi (v3 — multi-tenant safe):
  *  - App shell statis (ikon, manifest, offline page) di-precache saat install.
  *  - Aset Vite ber-hash (/build/assets/*) di-cache RUNTIME (cache-on-fetch),
  *    JANGAN di-hardcode karena namanya berganti tiap build.
+ *  - Aset Filament/plugin/Leaflet (nama file TETAP, cuma ?v=versi) pakai
+ *    STALE-WHILE-REVALIDATE — TIDAK cache-first selamanya. (v2: kena bug CSS
+ *    Filament basi nyangkut di device → layout panel owner/admin rusak.)
  *  - Halaman HTML ter-AUTENTIKASI (dashboard owner/operator/admin) TIDAK PERNAH
  *    di-cache. App ini multi-tenant: nge-cache halaman per-URL tanpa bedakan user
  *    bikin akun B melihat dashboard akun A. Navigasi = NETWORK-ONLY.
@@ -14,7 +17,7 @@
  *  - Request Livewire (/livewire/*) di-BYPASS total agar tidak menambah latency.
  */
 
-const CACHE_NAME = 'dodol-v2';
+const CACHE_NAME = 'dodol-v3';
 
 // App shell statis & non-hash. Aman di-precache karena URL-nya tetap & tidak per-user.
 const APP_SHELL = [
@@ -41,8 +44,8 @@ self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((keys) =>
             Promise.all(
-                // Buang SEMUA cache lama (≠ dodol-v2). Ini sekaligus membersihkan
-                // halaman ter-auth yang terlanjur tersimpan di device user (bug v1).
+                // Buang SEMUA cache lama (≠ CACHE_NAME). Ini sekaligus membersihkan
+                // CSS Filament basi (bug v2) + halaman ter-auth lama (bug v1) di device.
                 keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
             )
         ).then(() => self.clients.claim())
@@ -81,6 +84,23 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
+    // Aset Filament / plugin Filament / Leaflet -> STALE-WHILE-REVALIDATE.
+    // Beda dari /build/ (nama file ber-hash), aset ini nama filenya TETAP dan
+    // cuma dibedakan query ?v=<versi>. Versi itu HANYA naik saat versi paket
+    // naik, TIDAK saat `filament:assets` republish konten di versi yang sama.
+    // Dulu aset ini jatuh ke cacheFirst (cache selamanya, tanpa revalidasi) →
+    // CSS basi "nyangkut" di device → HTML baru ketemu CSS lama → layout rusak.
+    // SWR: sajikan cache (cepat) TAPI selalu refetch di background & perbarui
+    // cache → load berikutnya pasti fresh, tak pernah nyangkut basi lagi.
+    if (
+        /^\/(css|js)\/filament\//.test(url.pathname) ||
+        /^\/(css|js)\/dotswan\//.test(url.pathname) ||
+        url.pathname.startsWith('/vendor/')
+    ) {
+        event.respondWith(staleWhileRevalidate(request));
+        return;
+    }
+
     // Halaman HTML -> NETWORK-ONLY, tidak pernah dicache.
     // Deteksi pakai mode 'navigate' DAN header Accept: text/html, karena
     // wire:navigate mengambil halaman via fetch() biasa (mode 'cors', bukan
@@ -112,6 +132,31 @@ async function cacheFirst(request) {
     } catch (err) {
         return cached || Response.error();
     }
+}
+
+/**
+ * Stale-while-revalidate: sajikan cache SEKARANG (cepat), TAPI selalu jalankan
+ * fetch ke network di latar belakang untuk memperbarui cache. Kalau belum ada
+ * cache, tunggu network. Auto-heal: konten basi paling lama bertahan 1 load.
+ */
+async function staleWhileRevalidate(request) {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(request);
+    const network = fetch(request)
+        .then((response) => {
+            if (response && response.ok && response.type === 'basic') {
+                cache.put(request, response.clone());
+            }
+            return response;
+        })
+        .catch(() => null);
+
+    // Ada cache: balikan langsung, biarkan network update di background.
+    if (cached) {
+        return cached;
+    }
+    // Belum ada cache: tunggu network (fallback error kalau benar-benar gagal).
+    return (await network) || Response.error();
 }
 
 /**

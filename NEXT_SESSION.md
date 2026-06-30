@@ -12,6 +12,27 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
+## FIX UI: CSS FILAMENT BASI DI PANEL OWNER/ADMIN (30 Juni 2026) — SERVICE WORKER
+- GEJALA: form "Buat Kios" (& berpotensi SELURUH panel Filament owner/admin) tampil
+  RUSAK di sebagian HP user — label tumpang tindih, help text "1 huruf per baris",
+  toggle ketiban teks. PER-DEVICE (HP yang sempat nge-cache CSS lama), bukan semua user.
+- DIAGNOSA (server SEHAT, masalah klien): cek produksi → semua aset Filament HTTP 200,
+  text/css, ukuran penuh, https, ?v=3.3.50.0 konsisten. Hash CSS committed == produksi.
+  Browser BERSIH (SW diblokir) → form render SEMPURNA (grid 2-kolom, help text horizontal).
+- AKAR: public/sw.js v2 — aset Filament (/css/filament/*, /js/filament/*, /css/dotswan/*,
+  /vendor/*) jatuh ke cabang cacheFirst (cache SELAMANYA tanpa revalidasi). Beda dari
+  /build/* Vite yang nama filenya BER-HASH, aset Filament nama tetap + cuma ?v=<versi>;
+  versi cuma naik saat paket naik, TIDAK saat filament:assets republish konten di versi
+  sama → device terkunci ke CSS lama → HTML baru ketemu CSS lama → layout rusak.
+- FIX (commit ini, public/sw.js): (1) tambah cabang SEBELUM cacheFirst fallthrough →
+  aset Filament/plugin/Leaflet pakai STALE-WHILE-REVALIDATE (serve cache + selalu
+  refetch background → auto-update, tak pernah nyangkut basi lagi). (2) bump CACHE_NAME
+  dodol-v2 → dodol-v3 → activate handler buang cache lama → HP rusak langsung sembuh.
+  PWA lama UTUH (HTML network-only, /build/* cache-first, Livewire/CSRF bypass).
+- VERIFIKASI: php artisan test 200 PASS (822 assertions). Simulasi routing sw.js 14/14 OK.
+- REDEPLOY WAJIB (sw.js dari public/). Setelah deploy: HP yang rusak cukup BUKA app +
+  reload 1x → cache lama auto-kebuang (skipWaiting+clients.claim) → CSS fresh.
+
 ## REVISI ALUR KUNJUNGAN — TAHAP 3/3 SELESAI (29 Juni 2026): TITIP BARU + BAYAR LAMA NANTI + PELUNASAN PIUTANG
 - KEPUTUSAN: kios boleh terima titipan baru walau uang tagihan kurang → sisa jadi
   PIUTANG (Settlement pending rupiah, BEDA dari Titipan Tertunda Tahap 2 yang mika).
