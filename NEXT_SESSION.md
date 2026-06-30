@@ -30,8 +30,28 @@ Baca NEXT_SESSION.md untuk context lengkap.
   dodol-v2 → dodol-v3 → activate handler buang cache lama → HP rusak langsung sembuh.
   PWA lama UTUH (HTML network-only, /build/* cache-first, Livewire/CSRF bypass).
 - VERIFIKASI: php artisan test 200 PASS (822 assertions). Simulasi routing sw.js 14/14 OK.
-- REDEPLOY WAJIB (sw.js dari public/). Setelah deploy: HP yang rusak cukup BUKA app +
-  reload 1x → cache lama auto-kebuang (skipWaiting+clients.claim) → CSS fresh.
+- REDEPLOY WAJIB (sw.js dari public/).
+
+### LANJUTAN (30 Juni 2026, sore): v3→v4 NETWORK-FIRST + temuan gap handover SW
+- GEJALA LANJUTAN: setelah v3 deploy (ACTIVE, dikonfirmasi curl: CACHE_NAME dodol-v3 +
+  staleWhileRevalidate ke-serve di prod), user reload 1x di HP → MASIH rusak.
+- DIAGNOSA: bukan deploy gagal. Browser bersih yang dapat v3 dari awal → form NORMAL
+  (SW aktif, app.css served-by-SW 200, help text 412×20 horizontal, grid aktif).
+  AKAR sisa = GAP HANDOVER SW: di HP yang masih jalan SW v2, reload #1 MASIH dilayani
+  v2 lama (cacheFirst → CSS basi) SEMENTARA v3 baru install+activate di background
+  (CSS basi terlanjur ter-render). Baru reload #2 (v3 mengontrol + dodol-v2 terhapus)
+  → fresh. Jadi "reload 1x" itu KELIRU — handover SW butuh minimal 2x reload. Ini
+  berlaku utk SWR maupun network-first (tak ada SW bisa ubah perilaku v2 yg sudah
+  terpasang di load pertama).
+- FIX LANJUTAN: aset Filament/plugin/Leaflet SWR → NETWORK-FIRST (online SELALU fresh,
+  cache cuma fallback offline) → hilangkan lag 1-load SWR utk deploy mendatang (republish
+  versi-sama konten-beda). CACHE_NAME dodol-v3 → dodol-v4. Verifikasi: 200 PASS, routing
+  11/11 OK. PWA lama tetap utuh.
+- CARA SEMBUHKAN HP RUSAK (setelah v4 deploy), berurut dari paling ringan:
+  1. Reload 2x (reload pertama swap SW, kedua baru fresh). Atau
+  2. Tutup app dari recent apps (swipe) lalu buka lagi → reload. Atau
+  3. DIJAMIN: Chrome Android → ⋮ → Info situs (gembok) → Setelan situs → Hapus &
+     reset / "Clear & reset" (hapus cache+storage+SW situs) → buka app lagi.
 
 ## REVISI ALUR KUNJUNGAN — TAHAP 3/3 SELESAI (29 Juni 2026): TITIP BARU + BAYAR LAMA NANTI + PELUNASAN PIUTANG
 - KEPUTUSAN: kios boleh terima titipan baru walau uang tagihan kurang → sisa jadi
