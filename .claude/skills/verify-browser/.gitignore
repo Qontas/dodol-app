@@ -1,3 +1,7 @@
 node_modules/
 shots/
 serve.log
+# Script diagnosa/verifikasi sementara (driver.cjs = skill resmi, JANGAN di-ignore)
+diag-*.cjs
+verify-*.cjs
+*-profile/
