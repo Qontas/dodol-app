@@ -44,7 +44,7 @@ class KioskResource extends Resource
                             ->required()
                             ->maxLength(255)
                             ->placeholder('Contoh: Kedai Bunda, Toko Doni')
-                            ->columnSpan(2),
+                            ->columnSpanFull(),
 
                         Forms\Components\Select::make('cluster_id')
                             ->label('Area')
@@ -91,7 +91,7 @@ class KioskResource extends Resource
                             ->rows(3)
                             ->maxLength(500)
                             ->placeholder('Contoh: Jl. Persatuan No. 33, Medan')
-                            ->columnSpan(2),
+                            ->columnSpanFull(),
 
                         Map::make('location')
                             ->label('Lokasi Kios (klik titik di peta)')
@@ -145,7 +145,7 @@ class KioskResource extends Resource
                             ->directory('kiosks')
                             ->visibility('public')
                             ->helperText('Foto akan dikecilkan otomatis. Maksimal 5MB. Format: JPG, PNG, WEBP. Opsional.')
-                            ->columnSpan(2),
+                            ->columnSpanFull(),
 
                         Forms\Components\TextInput::make('warning_visit_interval_days')
                             ->label('Threshold Warning (hari)')

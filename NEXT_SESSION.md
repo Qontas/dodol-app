@@ -12,6 +12,31 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
+## ✅ AKAR SEBENARNYA FORM KIOS RUSAK (30 Juni 2026) — columnSpan(2) di MOBILE (BUKAN cache)
+- KOREKSI: dua fix SW di bawah (v3 SWR, v4 network-first) TERNYATA BUKAN penyebab form
+  Kios rusak. Bukti yang meruntuhkan teori cache: user UNINSTALL PWA + reload banyak kali
+  + logout-login → MASIH rusak (cache mustahil bertahan setelah uninstall). (Fix SW v4
+  tetap DIPERTAHANKAN — perbaikan sah utk cegah aset Filament basi di masa depan, tapi
+  bukan akar masalah ini.)
+- AKAR PASTI (terbukti, reproducible di browser BERSIH no-SW): form rusak HANYA di MOBILE
+  viewport (<1024px). Tes Claude sebelumnya cuma DESKTOP → makanya keliatan normal.
+  Penyebab: di KioskResource, field full-width pakai ->columnSpan(2) (BUKAN ->columnSpanFull()).
+  Section ->columns(2): di mobile grid collapse ke 1 kolom (--cols-default: repeat(1,...)),
+  TAPI field ber-columnSpan(2) maksa span 2 kolom → browser bikin kolom implisit ke-2 →
+  seluruh section jadi 2 kolom cramped → label tumpang tindih + help text 1 huruf/baris.
+  Di desktop (≥1024) section memang 2 kolom → span-2 = full width → keliatan normal.
+- BUKTI DOM live (mobile 360px): field span-2 → g1 grid "0px 256px" (2 kolom), help text
+  w=37 ratio=3.8 (vertikal). Setelah child diubah ke grid-column:1/-1 (idiom columnSpanFull)
+  → g1 "280px" (1 kolom), help text w=280 ratio=0.07 (horizontal). FIX TERBUKTI.
+- FIX (commit ini): KioskResource.php 3x ->columnSpan(2) → ->columnSpanFull() (Nama Kios
+  baris 47, Alamat Lengkap 94, Foto Kios 148). columnSpanFull = grid-column:1/-1, aman di
+  1 maupun 2 kolom. Resource lain dicek: tak ada columnSpan(2) lain.
+- VERIFIKASI: php artisan test 200 PASS (822 assertions). DOM proof mobile 1-kolom.
+- REDEPLOY WAJIB. Setelah deploy form langsung normal di HP (ini bug HTML/CSS dari form,
+  bukan cache — tak perlu clear cache, cukup reload halaman ambil HTML baru).
+- PELAJARAN: untuk "full width" di form Filament, SELALU pakai ->columnSpanFull(), JANGAN
+  ->columnSpan(N) yang sama dgn jumlah kolom section (pecah di mobile saat grid jadi 1 kolom).
+
 ## FIX UI: CSS FILAMENT BASI DI PANEL OWNER/ADMIN (30 Juni 2026) — SERVICE WORKER
 - GEJALA: form "Buat Kios" (& berpotensi SELURUH panel Filament owner/admin) tampil
   RUSAK di sebagian HP user — label tumpang tindih, help text "1 huruf per baris",
