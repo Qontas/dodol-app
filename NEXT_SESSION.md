@@ -2,15 +2,59 @@
 *Sesi terakhir: 1 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 200 PASS. Sudah deploy Railway (produksi jalan).
-Revisi Alur Kunjungan 3/3 SELESAI (3 menu: Tagih+Titip · Cek Sisa · Hentikan Kedai).
-GitHub: Qontas/dodol-app synced. PWA sudah installable + offline shell.
+Bg, lanjut dodol-app. 204 PASS. Sudah deploy Railway (produksi jalan).
+Peta map-picker abu-abu di mobile SUDAH DIFIX (owner, commit 1d713c0 pushed) — peta operator
+dicek AMAN, tak diubah. GitHub: Qontas/dodol-app synced. PWA installable + offline shell.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 200 PASS (Revisi Alur Kunjungan 3 tahap TUNTAS, commit 67ccc32)
+- 204 PASS (843 assertions)
+- Fix peta owner abu-abu mobile pushed (commit 1d713c0); peta operator dicek aman (tak diubah)
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
+
+## ✅ FIX PETA MAP-PICKER ABU-ABU DI MOBILE (1 Juli 2026) — owner form (commit 1d713c0)
+- GEJALA: peta pemilih lokasi kios di form owner (KioskResource) tampil ABU-ABU di HP —
+  tiles cuma nutup sebagian / kosong, makin parah saat zoom. Desktop keliatan normal.
+- AKAR (terbukti, BUKAN OSM jelek & BUKAN perlu pindah Google Maps): bug
+  invalidateSize/sizing. Tiles server OSM balik 200 normal; masalahnya container di-size
+  SALAH oleh Leaflet karena dihitung sebelum layout mobile settle, plus paket vendor
+  (dotswan/filament-map-picker) membongkar+membangun ulang peta via IntersectionObserver
+  saat peta masuk/keluar layar (scroll ke section / section collapsible dibuka) TANPA
+  invalidateSize yang cukup. Diperparah detectRetina (default paket = TRUE) → minta tile
+  @2x di mobile retina, dan zoomSnap:2 (langkah zoom tak lazim → tile kosong saat pinch).
+- FIX (tetap OSM gratis, 2 file):
+  * app/Filament/Resources/KioskResource.php (Map::make): `->detectRetina(false)` EKSPLISIT
+    (buang pemanggilan saja TAK cukup — default paket true; harus di-set false → 0 tile @2x),
+    normalkan `->extraControl(['zoomSnap' => 1, 'zoomDelta' => 1])` (dari zoomSnap:2), buang
+    `->extraTileControl([])` kosong (no-op).
+  * resources/views/filament/forms/map-invalidate-size.blade.php (BARU) + View::make di
+    section Lokasi: paksa Leaflet hitung ulang ukuran via `window.dispatchEvent(Event('resize'))`
+    (Leaflet trackResize:true default → invalidateSize internal → tiles keisi ulang). 3 pemicu
+    tahan bongkar-pasang vendor: (a) dispatch bertahap 150/400/800ms, (b) dispatch saat scroll
+    (throttled rAF — scroll = pemicu peta dibuat ulang), (c) scan berkala → dispatch begitu
+    lebar .leaflet-container berubah 0→positif (peta baru / section dibuka).
+- VERIFIKASI (browser nyata, Chrome headless, login owner → /owner-panel/kiosks/create):
+  MOBILE 360px retina dsf2 + DESKTOP 1280px = 100% coverage (grid 30×30 titik, no grey) di
+  SEMUA tahap: scroll-in tanpa interaksi, zoom in/out, collapse+reopen section. Retina @2x
+  diminta = 0 (dari sebelumnya aktif). Bukti sebelum-fix ter-reproduksi (screenshot peta
+  abu-abu total: cuma marker+kontrol+label Leaflet). php artisan test 204 PASS.
+- Driver verifikasi ad-hoc di scratchpad (di luar repo): map-verify.cjs.
+
+## ✅ PETA OPERATOR (create-kiosk.blade.php) — DICEK & AMAN, TIDAK DIUBAH (1 Juli 2026)
+- Ada peta KEDUA di app: pemilih lokasi di form operator (Livewire create-kiosk). Sudah dicek
+  apakah kena bug abu-abu yang sama → TIDAK. Beda implementasi total: Leaflet hand-rolled
+  (bukan paket filament-map-picker), #operator-map fixed height 300px.
+- Kenapa aman (penyebab akar owner semuanya TAK ADA di sini): (1) detectRetina TIDAK aktif
+  (L.tileLayer tanpa detectRetina, default Leaflet false → 0 tile @2x); (2) TIDAK ada
+  IntersectionObserver bongkar-pasang peta (dibuat sekali, tak pernah di-destroy); (3) BUKAN
+  di dalam section collapsible (selalu terlihat); (4) width container sudah settle di titik
+  init (DOMContentLoaded maupun livewire:navigated). Jadi invalidateSize tak diperlukan.
+- VERIFIKASI MOBILE 360px retina: 100% coverage di direct-load, SPA nav (wire:navigate dari
+  dashboard klik "Kios Baru" → livewire:navigated), dan zoom in/out. Desktop 100% juga.
+  Retina @2x = 0. Screenshot terisi penuh (Kesawan/Silalas/Podomoro City + marker kios).
+- KEPUTUSAN: SENGAJA tidak diubah (menambah fix tak perlu = risiko regresi tanpa manfaat).
+  ⏭️ SESI DEPAN TIDAK USAH ngecek ulang peta operator — sudah dipastikan aman.
 
 ## ✅ OPERATOR TAMBAH/GANTI FOTO KIOS DARI LAPANGAN (1 Juli 2026) — modal kunjungan
 - Sebelumnya operator hanya bisa lampirkan foto saat BUAT kios baru (CreateKiosk); tak ada
