@@ -12,6 +12,31 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
+## ✅ OPERATOR TAMBAH/GANTI FOTO KIOS DARI LAPANGAN (1 Juli 2026) — modal kunjungan
+- Sebelumnya operator hanya bisa lampirkan foto saat BUAT kios baru (CreateKiosk); tak ada
+  cara menambah/ganti foto kios yang sudah ada. Owner lupa isi foto / bentuk kedai berubah
+  → tak terpecahkan. Sekarang operator bisa dari modal kunjungan.
+- UI (active-trip.blade.php, modal kunjungan): kios BELUM ada foto → tombol dashed
+  "📷 Tambah Foto Kios"; kios SUDAH ada foto → foto tampil + tombol kecil "Ganti Foto".
+  Alur: pilih dari kamera/galeri → kompres browser (canvas, sisi maks 1280px, JPEG q0.7,
+  pola create-kiosk) → $wire.upload → saveKioskPhoto() → foto baru langsung tampil.
+- Backend (ActiveTrip.php): method saveKioskPhoto() + property kioskPhoto + trait WithFileUploads.
+  * 🔒 GATE MULTI-TENANT (KRITIS): re-verifikasi server-side kios milik owner operator
+    (whereKey + whereHas('cluster', owner_id == auth()->owner_id), pola scopedPendingSettlements).
+    Operator TIDAK bisa ganti foto kios owner LAIN walau selectedKiosk dipaksa. Ada test gate.
+  * Opsi A: timpa foto lama BEBAS (riwayat tidak disimpan) + JEJAK AUDIT di kiosk.notes
+    ("Foto ditambah/diganti operator [nama] pada [tgl]", catatan lama tak dihapus).
+- KOMPRES SERVER — app/Support/ImageResizer::fit() BARU: jaring pengaman server-side yang
+  kini jalan di disk LOCAL *dan* CLOUD (R2/S3) via Storage::get→GD resize→Storage::put.
+  MENGGANTI resizeImageIfLocal() lama yang cuma jalan di disk lokal (Storage::path) & DILEWATI
+  di R2 — celah lama (foto gede dari HP tak terkompres di produksi) kini TERTUTUP. CreateKiosk
+  di-refactor pakai service ini juga.
+- VERIFIKASI: php artisan test 204 PASS (843 assertions; +4 test: tambah foto+jejak, ganti
+  foto+jejak, 🔒 gate tolak kios owner lain, kompres server 2400px→≤1280). Browser mobile 360px
+  8/8: dua state tombol benar, upload jalan, FOTO KELOAD DARI R2 PRODUKSI (pub-*.r2.dev) —
+  upload+resize+load terbukti end-to-end di R2, bukan simulasi lokal.
+- Driver verifikasi ad-hoc: .claude/skills/verify-browser/verify-photo.cjs (ke-ignore verify-*.cjs).
+
 ## ✅ SEDERHANAKAN ISTILAH UI JADI BAHASA AWAM (1 Juli 2026) — form Kios + panel operator
 - Tujuan: label/helper lebih mudah dipahami operator/owner (bahasa awam, bukan jargon), dan
   buang kurung "()" yang makan tempat di mobile. CUMA GANTI TEKS — nol perubahan logika,
