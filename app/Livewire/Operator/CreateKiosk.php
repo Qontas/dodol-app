@@ -80,12 +80,12 @@ class CreateKiosk extends Component
 
         // Foto opsional dari lapangan: disimpan ke disk media (configurable via
         // MEDIA_DISK — lokal default, R2/S3 saat siap). Kompres utama dilakukan di
-        // browser sebelum upload; resize server-side hanya jaring pengaman & hanya
-        // jalan di disk lokal (Storage::path() local-only).
+        // browser sebelum upload; ImageResizer jaring pengaman server-side yang kini
+        // jalan di disk LOCAL maupun CLOUD (R2/S3).
         if ($this->foto) {
             $disk = config('app.media_disk', 'public');
             $path = $this->foto->store('kiosks', $disk);
-            $this->resizeImageIfLocal($path, $disk, 1280, 1280);
+            \App\Support\ImageResizer::fit($path, $disk, 1280, 1280);
             $kiosk->update(['photo_path' => $path]);
         }
 
@@ -102,50 +102,6 @@ class CreateKiosk extends Component
         }
 
         return $this->redirect(route('operator.dashboard'), navigate: true);
-    }
-
-    /**
-     * Resize server-side sebagai jaring pengaman. Hanya disk lokal (driver 'local')
-     * yang mendukung Storage::path(); pada disk cloud (R2/S3) dilewati karena foto
-     * sudah dikompres di browser sebelum upload.
-     */
-    private function resizeImageIfLocal(string $path, string $disk, int $maxW, int $maxH): void
-    {
-        if (config("filesystems.disks.{$disk}.driver") !== 'local') {
-            return;
-        }
-
-        $fullPath = \Illuminate\Support\Facades\Storage::disk($disk)->path($path);
-        $info = getimagesize($fullPath);
-        if (!$info) {
-            return;
-        }
-        [$origW, $origH, $type] = [$info[0], $info[1], $info[2]];
-        if ($origW <= $maxW && $origH <= $maxH) {
-            return;
-        }
-        $ratio = min($maxW / $origW, $maxH / $origH);
-        $newW = (int) round($origW * $ratio);
-        $newH = (int) round($origH * $ratio);
-        $src = match ($type) {
-            IMAGETYPE_JPEG => imagecreatefromjpeg($fullPath),
-            IMAGETYPE_PNG => imagecreatefrompng($fullPath),
-            IMAGETYPE_WEBP => imagecreatefromwebp($fullPath),
-            default => null,
-        };
-        if (!$src) {
-            return;
-        }
-        $dst = imagecreatetruecolor($newW, $newH);
-        imagecopyresampled($dst, $src, 0, 0, 0, 0, $newW, $newH, $origW, $origH);
-        match ($type) {
-            IMAGETYPE_JPEG => imagejpeg($dst, $fullPath, 85),
-            IMAGETYPE_PNG => imagepng($dst, $fullPath),
-            IMAGETYPE_WEBP => imagewebp($dst, $fullPath, 85),
-            default => null,
-        };
-        imagedestroy($src);
-        imagedestroy($dst);
     }
 
     public function render()

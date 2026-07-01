@@ -9,13 +9,17 @@ use App\Models\Delivery;
 use App\Models\Settlement;
 use App\Models\KioskVisit;
 use App\Models\ProductVariant;
+use App\Support\ImageResizer;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
+use Livewire\WithFileUploads;
 
 #[Layout('layouts.operator', ['hideBottomNav' => true])]
 class ActiveTrip extends Component
 {
+    use WithFileUploads;
+
     // Konstanta domain (jangan hardcode di method)
     public const BIJI_PER_MIKA = 15;
     public const HARGA_PER_BIJI = 800;
@@ -49,6 +53,10 @@ class ActiveTrip extends Component
     public $isVisitModalOpen = false;
     public $selectedKiosk = null;
     public $pendingDelivery = null;
+
+    // Foto kios yang di-upload operator dari lapangan (modal kunjungan). Kompres
+    // utama di browser; ImageResizer jaring pengaman server-side. Lihat saveKioskPhoto().
+    public $kioskPhoto = null;
 
     // Aksi yang dipilih operator di layar pertama modal (UI murni — aksi yang
     // TERSIMPAN tetap ditentukan resolveVisitAction() dari kondisi form).
@@ -609,6 +617,67 @@ class ActiveTrip extends Component
         $this->stopMode = '';
         $this->stopReason = '';
         $this->stopConfirming = false;
+        $this->kioskPhoto = null;
+        $this->resetErrorBag('kioskPhoto');
+    }
+
+    /**
+     * Operator tambah/ganti foto kios dari lapangan (modal kunjungan). Opsi A:
+     * bebas tambah ATAU timpa foto lama, dengan jejak audit di kiosk.notes.
+     *
+     * 🔒 GATE MULTI-TENANT KRITIS: kios yang difoto WAJIB milik owner operator
+     * (lewat cluster.owner_id) — sama seperti scopedPendingSettlements(). Operator
+     * TIDAK boleh mengganti foto kios owner lain, walau selectedKiosk di-set paksa.
+     */
+    public function saveKioskPhoto(): void
+    {
+        $this->resetErrorBag('kioskPhoto');
+
+        if (! $this->selectedKiosk) {
+            $this->addError('kioskPhoto', 'Kios tidak valid. Tutup form dan coba lagi.');
+            return;
+        }
+
+        $this->validate([
+            'kioskPhoto' => 'required|image|mimes:jpg,jpeg,png,webp|max:5120',
+        ], [
+            'kioskPhoto.required' => 'Pilih foto dulu.',
+            'kioskPhoto.image' => 'File harus berupa gambar.',
+            'kioskPhoto.max' => 'Ukuran foto maksimal 5MB.',
+        ]);
+
+        // 🔒 Re-verifikasi kepemilikan server-side (jangan percaya selectedKiosk mentah).
+        $ownerId = auth()->user()->owner_id;
+        $kiosk = Kiosk::whereKey($this->selectedKiosk->id)
+            ->when($ownerId !== null, fn ($q) => $q->whereHas('cluster', fn ($c) => $c->where('owner_id', $ownerId)))
+            ->first();
+
+        if (! $kiosk) {
+            $this->addError('kioskPhoto', 'Kios ini bukan milik Anda — foto tidak diubah.');
+            return;
+        }
+
+        $disk = config('app.media_disk', 'public');
+        $isReplace = ! empty($kiosk->photo_path);
+
+        $path = $this->kioskPhoto->store('kiosks', $disk);
+        ImageResizer::fit($path, $disk, 1280, 1280);
+
+        // Jejak audit di notes (pola CreateKiosk). Timpa bebas — riwayat foto tidak disimpan.
+        $verb = $isReplace ? 'diganti' : 'ditambah';
+        $jejak = "Foto {$verb} operator ".auth()->user()->name.' pada '.now()->translatedFormat('d M Y H:i');
+        $notes = trim(($kiosk->notes ? $kiosk->notes."\n" : '').$jejak);
+
+        $kiosk->update([
+            'photo_path' => $path,
+            'notes' => $notes,
+        ]);
+
+        // Segarkan model modal agar foto baru langsung tampil.
+        $this->selectedKiosk = $kiosk->fresh();
+        $this->kioskPhoto = null;
+
+        session()->flash('visit_saved', $isReplace ? 'Foto kios diganti.' : 'Foto kios ditambahkan.');
     }
 
     // ===================== HENTIKAN KEDAI (stop titipan) =====================

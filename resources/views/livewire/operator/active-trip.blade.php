@@ -449,14 +449,43 @@
             </div>
 
             <div class="p-5 space-y-5">
-                {{-- Foto kios di puncak modal: bantu operator pastikan kios yang benar --}}
-                @if($selectedKiosk->photo_url)
-                    <div class="mb-3 -mx-4 -mt-2">
-                        <img src="{{ $selectedKiosk->photo_url }}"
-                             alt="Foto {{ $selectedKiosk->name }}"
-                             class="w-full max-h-36 object-cover">
-                    </div>
-                @endif
+                {{-- Foto kios di puncak modal + tambah/ganti foto oleh operator dari lapangan.
+                     Kompres di browser (canvas) → upload → simpan (saveKioskPhoto), lalu foto
+                     baru tampil. Gate multi-tenant di server (saveKioskPhoto). --}}
+                <div x-data="kioskPhotoUpload()" class="mb-3 -mx-4 -mt-2">
+                    @if($selectedKiosk->photo_url)
+                        <div class="relative">
+                            <img src="{{ $selectedKiosk->photo_url }}"
+                                 alt="Foto {{ $selectedKiosk->name }}"
+                                 class="w-full max-h-36 object-cover">
+                            <button type="button" @click="$refs.fotoInput.click()" :disabled="busy"
+                                    class="absolute bottom-2 right-2 inline-flex items-center gap-1.5 rounded-lg bg-slate-900/80 text-white text-xs font-semibold px-3 py-1.5 shadow active:bg-slate-900 disabled:opacity-60">
+                                <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                </svg>
+                                <span x-text="busy ? 'Menyimpan…' : 'Ganti Foto'">Ganti Foto</span>
+                            </button>
+                        </div>
+                    @else
+                        <div class="px-4">
+                            <button type="button" @click="$refs.fotoInput.click()" :disabled="busy"
+                                    class="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 py-6 text-sm font-semibold text-slate-600 active:bg-slate-100 disabled:opacity-60">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                </svg>
+                                <span x-text="busy ? 'Menyimpan…' : '📷 Tambah Foto Kios'">📷 Tambah Foto Kios</span>
+                            </button>
+                        </div>
+                    @endif
+
+                    <input type="file" accept="image/*" x-ref="fotoInput" class="hidden" x-on:change="handle($event)">
+
+                    @error('kioskPhoto')
+                        <p class="text-xs text-red-600 mt-1.5 px-4">{{ $message }}</p>
+                    @enderror
+                </div>
 
                 {{-- Error umum --}}
                 @error('general')
@@ -948,4 +977,58 @@
         </div>
     </div>
     @endif
+
+    {{-- Kompres foto di browser (canvas, tanpa library eksternal — andal di lapangan/PWA
+         tanpa CDN). Sisi terpanjang ~1280px, JPEG ~0.7. Kalau kompres gagal, file asli
+         tetap diupload (ImageResizer server jadi jaring pengaman terakhir). Pola sama
+         create-kiosk.blade.php. Setelah upload selesai → saveKioskPhoto() menyimpan. --}}
+    <script>
+        function kioskPhotoUpload() {
+            return {
+                busy: false,
+                handle(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    this.busy = true;
+                    const send = (out) => {
+                        this.$wire.upload('kioskPhoto', out,
+                            () => { this.$wire.saveKioskPhoto().then(() => { this.busy = false; }); },
+                            () => { this.busy = false; },
+                        );
+                    };
+                    if (!file.type || !file.type.startsWith('image/')) { send(file); }
+                    else { this.compress(file).then(send).catch(() => send(file)); }
+                    e.target.value = '';
+                },
+                compress(file) {
+                    return new Promise((resolve, reject) => {
+                        const url = URL.createObjectURL(file);
+                        const img = new Image();
+                        img.onload = () => {
+                            URL.revokeObjectURL(url);
+                            const maxSide = 1280;
+                            let w = img.width, h = img.height;
+                            if (w > maxSide || h > maxSide) {
+                                if (w >= h) { h = Math.round(h * maxSide / w); w = maxSide; }
+                                else { w = Math.round(w * maxSide / h); h = maxSide; }
+                            }
+                            const canvas = document.createElement('canvas');
+                            canvas.width = w; canvas.height = h;
+                            const ctx = canvas.getContext('2d');
+                            if (!ctx) { reject(); return; }
+                            ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
+                            ctx.drawImage(img, 0, 0, w, h);
+                            canvas.toBlob((blob) => {
+                                if (!blob) { reject(); return; }
+                                const name = (file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg';
+                                resolve(new File([blob], name, { type: 'image/jpeg' }));
+                            }, 'image/jpeg', 0.7);
+                        };
+                        img.onerror = () => { URL.revokeObjectURL(url); reject(); };
+                        img.src = url;
+                    });
+                },
+            };
+        }
+    </script>
 </div>

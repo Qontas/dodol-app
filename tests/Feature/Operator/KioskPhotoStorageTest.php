@@ -60,7 +60,8 @@ class KioskPhotoStorageTest extends TestCase
     public function test_app_does_not_crash_when_media_disk_points_to_unconfigured_s3(): void
     {
         // Simulasi env R2 belum diisi: disk s3 ada di config tapi kredensial kosong.
-        // store() ke fake s3 tetap jalan; resize server-side dilewati (bukan driver lokal).
+        // store() ke fake s3 tetap jalan; ImageResizer kini jalan juga di disk cloud
+        // (baca/tulis via Storage) — tidak boleh crash.
         config(['app.media_disk' => 's3']);
         Storage::fake('s3');
 
