@@ -115,8 +115,16 @@ class KioskResource extends Resource
                             ->markerColor('#FBBF24')
                             ->showFullscreenControl()
                             ->showZoomControl()
-                            ->tilesUrl('https://tile.openstreetmap.org/{z}/{x}/{y}.png')
+                            // Tile CARTO Voyager (gratis, CDN + subdomain {s}=abcd → tile keisi
+                            // lebih cepat & kebijakan usage lebih longgar dari tile.openstreetmap.org
+                            // yang rawan throttle/400). Native 256px (tileSize 256 + zoomOffset 0).
+                            ->tilesUrl('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png')
                             ->zoom(13)
+                            // AKAR "grey saat zoom KUAT": maxZoom default paket = 28, padahal tile
+                            // cuma ada s/d ~z20. Zoom lewat itu → provider balas 400/tanpa tile →
+                            // GREY. Cap maxZoom = 20 (map & tileLayer) supaya user tak bisa over-zoom
+                            // ke zona tanpa-tile. z20 = level bangunan, cukup buat nunjuk lokasi kios.
+                            ->maxZoom(20)
                             // detectRetina default paket = true; matikan eksplisit supaya
                             // mobile retina tidak minta tile @2x (memperparah grey saat zoom).
                             ->detectRetina(false)
@@ -124,6 +132,13 @@ class KioskResource extends Resource
                             // zoomSnap 1 (default Leaflet) — sebelumnya zoomSnap 2 bikin
                             // langkah zoom tak lazim & memicu tile kosong saat pinch di mobile.
                             ->extraControl(['zoomSnap' => 1, 'zoomDelta' => 1])
+                            // tileLayer: 256px native + cap maxZoom 20 (samakan dgn map) + atribusi.
+                            ->extraTileControl([
+                                'tileSize' => 256,
+                                'zoomOffset' => 0,
+                                'maxZoom' => 20,
+                                'attribution' => '© OpenStreetMap, © CARTO',
+                            ])
                             ->dehydrated(false),
 
                         // Paksa Leaflet hitung ulang ukuran container setelah layout mobile

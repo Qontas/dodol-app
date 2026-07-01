@@ -273,10 +273,17 @@
             const startLat = {{ $latitude ?: 3.5952 }};
             const startLng = {{ $longitude ?: 98.6722 }};
 
-            operatorMap = L.map('operator-map').setView([startLat, startLng], 15);
+            operatorMap = L.map('operator-map', { maxZoom: 20 }).setView([startLat, startLng], 15);
 
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap'
+            // Tile CARTO Voyager (gratis, CDN + subdomain abcd → tile keisi cepat, usage
+            // lebih longgar dari OSM). maxNativeZoom 20 = batas tile ada; maxZoom 20 = user
+            // tak bisa over-zoom ke zona tanpa-tile (akar grey saat zoom kuat). Samakan dgn
+            // peta owner (KioskResource) biar konsisten.
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap, © CARTO',
+                subdomains: 'abcd',
+                maxNativeZoom: 20,
+                maxZoom: 20
             }).addTo(operatorMap);
 
             @if ($latitude && $longitude)
