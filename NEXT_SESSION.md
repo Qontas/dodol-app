@@ -1,5 +1,5 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 26 Juni 2026*
+*Sesi terakhir: 1 Juli 2026*
 
 ## TRIGGER SENTENCE
 Bg, lanjut dodol-app. 200 PASS. Sudah deploy Railway (produksi jalan).
@@ -11,6 +11,31 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - 200 PASS (Revisi Alur Kunjungan 3 tahap TUNTAS, commit 67ccc32)
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
+
+## ✅ SEDERHANAKAN ISTILAH UI JADI BAHASA AWAM (1 Juli 2026) — form Kios + panel operator
+- Tujuan: label/helper lebih mudah dipahami operator/owner (bahasa awam, bukan jargon), dan
+  buang kurung "()" yang makan tempat di mobile. CUMA GANTI TEKS — nol perubahan logika,
+  field name (kolom DB), value, atau perilaku.
+- TUMPUKAN 1 (jargon teknis) — KioskResource.php (form owner) + kolom tabel + create-kiosk.blade.php:
+  * "Threshold Warning (hari)" → "Peringatan kalau belum dikunjungi (hari)"
+  * "Target Interval Kunjungan (hari)" → "Idealnya dikunjungi tiap berapa hari (hari)"
+  * "Threshold Fast Mover (hari)" → "Batas kios laris (hari)"
+  * "Default Qty Mika per Antar" → "Jumlah Mika Biasanya per Antar" (operator: "Default Qty
+    Mika" → "Jumlah Mika Biasanya")
+  * "Kios Cash Only" → "Kios Bayar Tunai Langsung" (helper buang kata "konsinyasi")
+  * Kolom tabel Kios disamakan: Cash Only→Tunai, Interval→Jadwal, Fast Mover→Laris
+  * Helper tiap field ikut diperjelas ke bahasa awam.
+- TUMPUKAN 2 (buang kurung yg makan tempat):
+  * "Lokasi Kios (klik titik di peta)" → label "Lokasi Kios" + helper kecil "Klik titik di peta"
+  * "⛔ Hentikan Kedai Ini (stop titipan)" → "⛔ Hentikan Kedai Ini" (2 tombol, active-trip.blade.php)
+  * Modal Akhiri Trip: "Kios Lama (Pergantian)" → "Kios Lama"; "Kios Baru (Tempat Baru)" → "Kios Baru"
+- DITUNDA SENGAJA (keputusan lintas-app terpisah — TANYA user dulu kalau mau lanjut):
+  kata "Trip" (→"Perjalanan"?) dan "Stop" (→"Hentikan"?) muncul konsisten di banyak layar.
+  Kalau diubah harus SEKALIGUS semua layar, jangan sepotong. Belum disentuh sesi ini.
+- VERIFIKASI: php artisan test 200 PASS (822 assertions, tak ada assertion teks lama yg pecah).
+  Browser mobile 360px (owner + operator + modal Akhiri Trip): 20/20 checks OK, label baru
+  tampil, istilah lama hilang, layout tidak pecah/kepotong (aman dari bug mobile columnSpan lalu).
+- Driver verifikasi ad-hoc: .claude/skills/verify-browser/verify-labels.cjs (ke-ignore pola verify-*.cjs).
 
 ## ✅ AKAR SEBENARNYA FORM KIOS RUSAK (30 Juni 2026) — columnSpan(2) di MOBILE (BUKAN cache)
 - KOREKSI: dua fix SW di bawah (v3 SWR, v4 network-first) TERNYATA BUKAN penyebab form
