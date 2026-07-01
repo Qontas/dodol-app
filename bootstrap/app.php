@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 use Illuminate\Session\TokenMismatchException;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -12,6 +13,19 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Railway di balik proxy yang terminasi TLS (edge → app via http internal).
+        // Tanpa trust proxy, $request->getScheme() = 'http' padahal klien pakai https,
+        // sementara AppServiceProvider forceScheme('https') menandatangani URL sebagai
+        // https → hasValidSignature() MISMATCH → upload foto Livewire 401 (blocker input
+        // kios di produksi, desktop & mobile). Trust proxy (X-Forwarded-Proto=https) →
+        // skema request = https → tanda tangan signed-URL cocok. Railway satu-satunya
+        // proxy di depan app (trafik cuma lewat edge mereka), jadi at:'*' aman.
+        $middleware->trustProxies(at: '*', headers: Request::HEADER_X_FORWARDED_FOR
+            | Request::HEADER_X_FORWARDED_HOST
+            | Request::HEADER_X_FORWARDED_PORT
+            | Request::HEADER_X_FORWARDED_PROTO
+            | Request::HEADER_X_FORWARDED_AWS_ELB);
+
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'no-store' => \App\Http\Middleware\NoStoreAuthPages::class,
