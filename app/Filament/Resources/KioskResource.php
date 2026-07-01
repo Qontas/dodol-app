@@ -117,11 +117,19 @@ class KioskResource extends Resource
                             ->showZoomControl()
                             ->tilesUrl('https://tile.openstreetmap.org/{z}/{x}/{y}.png')
                             ->zoom(13)
-                            ->detectRetina()
+                            // detectRetina default paket = true; matikan eksplisit supaya
+                            // mobile retina tidak minta tile @2x (memperparah grey saat zoom).
+                            ->detectRetina(false)
                             ->showMyLocationButton()
-                            ->extraTileControl([])
-                            ->extraControl(['zoomDelta' => 1, 'zoomSnap' => 2])
+                            // zoomSnap 1 (default Leaflet) — sebelumnya zoomSnap 2 bikin
+                            // langkah zoom tak lazim & memicu tile kosong saat pinch di mobile.
+                            ->extraControl(['zoomSnap' => 1, 'zoomDelta' => 1])
                             ->dehydrated(false),
+
+                        // Paksa Leaflet hitung ulang ukuran container setelah layout mobile
+                        // settle / section Lokasi dibuka → hilangkan peta abu-abu (grey tiles).
+                        Forms\Components\View::make('filament.forms.map-invalidate-size')
+                            ->columnSpanFull(),
 
                         // Kolom asli tetap disimpan ke DB lewat hidden field
                         Forms\Components\Hidden::make('latitude'),
