@@ -2,17 +2,45 @@
 *Sesi terakhir: 1 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 204 PASS. Sudah deploy Railway (produksi jalan).
-Fix upload foto (CORS temp-upload, commit 0455b58) + fix peta grey-saat-zoom (cap maxZoom 20 +
-Carto, commit bad45b7) SUDAH PUSHED — WAJIB redeploy Railway biar upload jalan. GitHub synced.
-Baca NEXT_SESSION.md untuk context lengkap.
+Bg, lanjut dodol-app. 204 PASS. Live di Railway. Upload foto kios + peta zoom SUDAH DIFIX &
+TERVERIFIKASI DI PRODUKSI ASLI (desktop + mobile, owner + operator): upload 200 + foto mendarat
+R2 + peta Carto no-grey. 3 commit fix (0455b58 CORS temp-disk, bad45b7 peta, 5e8a032 trust-proxy
+401). GitHub synced. Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
 - 204 PASS (843 assertions)
-- Fix upload foto kios (CORS R2 temp-upload) pushed commit 0455b58 — ⚠️ WAJIB redeploy Railway
-- Fix peta grey-saat-zoom (cap maxZoom 20 + Carto Voyager, owner+operator) pushed commit bad45b7
-- Sudah live di Railway: https://dodol-app-production.up.railway.app
+- ✅ Upload foto kios FIXED & verified PRODUKSI (desktop+mobile, owner+operator): 2 blocker beruntun
+  dibereskan — (1) CORS temp-upload R2 (commit 0455b58: pin temp disk local) + (2) 401 signed-URL
+  di balik proxy Railway (commit 5e8a032: trustProxies). Bukti: /livewire/upload-file 200, foto
+  mendarat pub-*.r2.dev HTTP 200 (create→R2→delete di prod, sudah dibersihkan).
+- ✅ Peta grey-saat-zoom FIXED & verified PRODUKSI (commit bad45b7: cap maxZoom 20 + Carto Voyager,
+  owner+operator): hard-zoom ke max coverage 100%, no grey, desktop+mobile.
+- Live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
+
+## ✅ FIX UPLOAD FOTO 401 DI PRODUKSI — trust proxy Railway (2 Juli 2026, commit 5e8a032)
+- KONTEKS: user info PENTING — issue upload + peta dialami di LAPTOP (DESKTOP browser), BUKAN HP.
+  Selama ini salah asumsi (fokus tes mobile). Fix harus jalan desktop & mobile, di PRODUKSI ASLI.
+- Setelah commit 0455b58 (fix CORS temp-disk) DEPLOY, verifikasi produksi nemu BLOCKER KEDUA:
+  upload tak lagi CORS (temp disk local, hits /livewire/upload-file server) TAPI balas HTTP 401
+  (body {"message":""}). Livewire FileUploadController: abort_unless(request()->hasValidSignature(), 401).
+- AKAR (terbukti lokal + produksi): AppServiceProvider forceScheme('https') di produksi →
+  signed-URL (temp upload) ditandatangani sebagai https. TAPI bootstrap/app.php TIDAK punya
+  trustProxies → di balik proxy Railway (terminasi TLS, forward http internal) request ke-baca
+  http → hasValidSignature() recompute pakai http → MISMATCH → 401. Bukti lokal deterministik:
+  https-signed + request http = INVALID(401); + request https = VALID(200). Kena SEMUA signed-URL
+  di produksi (desktop & mobile) — makanya user kena di laptop.
+- FIX (bootstrap/app.php): $middleware->trustProxies(at: '*', headers: X_FORWARDED_FOR|HOST|PORT|
+  PROTO|AWS_ELB). Skema request = https (dari X-Forwarded-Proto Railway) → tanda tangan cocok →
+  upload 200. Railway satu-satunya proxy di depan app → at:'*' aman. 204 PASS.
+- ⚠️ CATATAN GENERAL: semua fitur signed-URL/temporaryUrl di produksi bergantung ke trustProxies
+  ini. Kalau ada yang otak-atik middleware, JANGAN buang trustProxies.
+- VERIFIKASI PRODUKSI ASLI (https://dodol-app-production..., login owner+operator, DESKTOP 1280px
+  + MOBILE 360px): upload /livewire/upload-file 200 + "Upload complete" (owner), no CORS, no
+  direct-R2, keempat kombinasi. END-TO-END: buat kios test + foto → mendarat pub-*.r2.dev HTTP 200
+  → foto ke-load → kios test DIHAPUS (bersih, 0 baris tersisa). Peta produksi: config Carto Voyager
+  + maxZoom 20 + detectRetina false (dibaca dari HTML prod), hard-zoom ke max coverage 100% no grey,
+  desktop+mobile owner+operator.
 
 ## ✅ FIX UPLOAD FOTO KIOS GAGAL DI PRODUKSI — CORS temp-upload R2 (1 Juli 2026, commit 0455b58)
 - GEJALA (screenshot user, HP asli): form Create Kios OWNER (Filament) → field "Foto Kios" →
