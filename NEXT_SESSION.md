@@ -3,15 +3,65 @@
 
 ## TRIGGER SENTENCE
 Bg, lanjut dodol-app. 204 PASS. Sudah deploy Railway (produksi jalan).
-Peta map-picker abu-abu di mobile SUDAH DIFIX (owner, commit 1d713c0 pushed) — peta operator
-dicek AMAN, tak diubah. GitHub: Qontas/dodol-app synced. PWA installable + offline shell.
+Fix upload foto (CORS temp-upload, commit 0455b58) + fix peta grey-saat-zoom (cap maxZoom 20 +
+Carto, commit bad45b7) SUDAH PUSHED — WAJIB redeploy Railway biar upload jalan. GitHub synced.
 Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
 - 204 PASS (843 assertions)
-- Fix peta owner abu-abu mobile pushed (commit 1d713c0); peta operator dicek aman (tak diubah)
+- Fix upload foto kios (CORS R2 temp-upload) pushed commit 0455b58 — ⚠️ WAJIB redeploy Railway
+- Fix peta grey-saat-zoom (cap maxZoom 20 + Carto Voyager, owner+operator) pushed commit bad45b7
 - Sudah live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
+
+## ✅ FIX UPLOAD FOTO KIOS GAGAL DI PRODUKSI — CORS temp-upload R2 (1 Juli 2026, commit 0455b58)
+- GEJALA (screenshot user, HP asli): form Create Kios OWNER (Filament) → field "Foto Kios" →
+  pilih foto WhatsApp 134 KB (kecil!) → merah "Error during upload / tap to retry" +
+  "The data.photo_path.[uuid] failed to upload". BLOCKER — user ga bisa input kios.
+- AKAR (terbukti via reproduksi bertingkat, BUKAN ukuran): CORS. Di PRODUKSI FILESYSTEM_DISK=s3
+  → disk default = R2. Livewire pakai disk default utk TEMPORARY upload. Begitu temp disk = disk
+  's3', Livewire beralih ke mode presigned PUT LANGSUNG dari browser ke R2. R2 tanpa CORS policy
+  → browser BLOKIR PUT (net::ERR_FAILED / "blocked by CORS") → "failed to upload". Size-independent
+  (repro file 3 KB gagal sama seperti 134 KB). Reproduksi: FILESYSTEM_DISK=local → upload-file 200 OK;
+  FILESYSTEM_DISK=s3 → CORS block (repro); s3 + fix → 200 OK.
+- KENAPA verifikasi foto operator kemarin lolos: tes jalan di server LOKAL (FILESYSTEM_DISK=local)
+  → temp upload masuk server dulu, lalu simpan R2 server-side (tanpa CORS). Produksi (s3) memicu
+  jalur browser→R2 yang kena CORS. Pola sama dgn columnSpan: kondisi tes ≠ kondisi HP asli.
+- FIX: config/livewire.php (BARU, di-publish) → temporary_file_upload.disk = 'local' (JANGAN ikut
+  FILESYSTEM_DISK). Temp upload masuk server dulu (tanpa CORS), file FINAL tetap ke R2 server-side
+  (config('app.media_disk')). Membenerkan owner (Filament) DAN operator (Livewire) sekaligus. Aman
+  apa pun nilai FILESYSTEM_DISK di produksi. Alternatif "set CORS di bucket R2" DITOLAK (butuh infra
+  R2 + upload file mentah full-size dari HP = boros data mobile).
+- VERIFIKASI (FILESYSTEM_DISK=s3, mobile 360px): temp upload /livewire/upload-file 200 tanpa CORS;
+  final store ke R2 exists=YES + public URL HTTP 200. 204 PASS. ⚠️ WAJIB redeploy Railway (config
+  di-cache saat runtime → ke-pickup pas redeploy). Belum bisa baca env Railway langsung (no CLI),
+  tapi error CORS yg ter-reproduksi PERSIS cocok dgn error user → indikasi kuat prod = FILESYSTEM_DISK=s3.
+
+## ✅ FIX PETA GREY SAAT ZOOM KUAT — cap maxZoom 20 + Carto (1 Juli 2026, commit bad45b7)
+- GEJALA (HP asli, user MASIH ngalamin walau hard-restart): peta owner grey pas ZOOM KUAT (nyari
+  rumah persis). Fix invalidateSize kemarin (commit 1d713c0) nutup scroll-in TAPI TIDAK nutup zoom.
+- AKAR BEDA dari fix kemarin (terbukti via hard-zoom repro): peta owner boleh zoom sampai z28
+  (maxZoom default paket filament-map-picker), TAPI tile OSM cuma ada s/d z19. Zoom lewat itu →
+  tile.openstreetmap.org balas HTTP 400 / tanpa tile → GREY. Bukti: hard-zoom z13→z26 → coverage
+  0% (fully grey), tile statuses {"200":13,"400":4}. invalidateSize (resize) TAK bisa nolong —
+  tile-nya memang tidak ada, bukan sizing. Verifikasi kemarin cuma zoom ringan (~z16) jadi tak kena.
+- FIX (owner + operator KONSISTEN): (1) cap maxZoom = 20 (map & tileLayer) → user tak bisa over-zoom
+  ke zona tanpa-tile; z20 = level bangunan, cukup nunjuk lokasi kios. (2) ganti OSM → Carto Voyager
+  (https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png) — tetap GRATIS, CDN +
+  subdomain a/b/c/d (tile keisi paralel → transient-grey lebih pendek), usage lebih longgar dari OSM
+  single-host (anti-throttle). Native 256px + atribusi "© OpenStreetMap, © CARTO".
+  * Owner (KioskResource.php): ->maxZoom(20), tilesUrl Carto, ->extraTileControl([tileSize 256,
+    zoomOffset 0, maxZoom 20, attribution]).
+  * Operator (create-kiosk.blade.php): L.map(...,{maxZoom:20}), Carto tileLayer subdomains 'abcd',
+    maxNativeZoom 20, maxZoom 20.
+- ⚠️ KOREKSI catatan "PETA OPERATOR AMAN, TIDAK DIUBAH" kemarin (di bawah): TERNYATA kurang lengkap
+  utk kasus OVER-ZOOM. Operator memang tak grey pas scroll-in, TAPI utk konsistensi + benefit Carto
+  (CDN/anti-throttle) + cap zoom, peta operator SEKARANG IKUT diubah (Carto + maxZoom 20). Jadi
+  kedua peta kini seragam.
+- VERIFIKASI (mobile 360px, throttle 4G, hard-zoom ke MAX + zoom cepat bolak-balik): owner & operator
+  coverage 100% di semua tahap; hard-zoom owner 29 tile semua 200 (0×400/404), operator 30 tile semua
+  200; 4 subdomain Carto paralel; 0 throttle. Screenshot at-max-zoom dua-duanya keisi tile bangunan
+  asli (Jalan Sei Deli), nol grey, tombol "+" ke-disable di batas z20. 204 PASS.
 
 ## ✅ FIX PETA MAP-PICKER ABU-ABU DI MOBILE (1 Juli 2026) — owner form (commit 1d713c0)
 - GEJALA: peta pemilih lokasi kios di form owner (KioskResource) tampil ABU-ABU di HP —
@@ -42,6 +92,9 @@ Baca NEXT_SESSION.md untuk context lengkap.
 - Driver verifikasi ad-hoc di scratchpad (di luar repo): map-verify.cjs.
 
 ## ✅ PETA OPERATOR (create-kiosk.blade.php) — DICEK & AMAN, TIDAK DIUBAH (1 Juli 2026)
+> ⚠️ SEBAGIAN DISUSUL commit bad45b7: benar "tak grey pas scroll-in", TAPI kasus OVER-ZOOM
+> belum tercakup. Peta operator KINI diubah juga (Carto + cap maxZoom 20). Lihat section
+> "FIX PETA GREY SAAT ZOOM KUAT" di atas.
 - Ada peta KEDUA di app: pemilih lokasi di form operator (Livewire create-kiosk). Sudah dicek
   apakah kena bug abu-abu yang sama → TIDAK. Beda implementasi total: Leaflet hand-rolled
   (bukan paket filament-map-picker), #operator-map fixed height 300px.
