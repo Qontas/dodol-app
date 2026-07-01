@@ -355,11 +355,11 @@
                         <span class="font-bold text-slate-900">{{ $tripSummary['kios_visited'] }}</span>
                     </div>
                     <div class="flex justify-between pl-3 text-xs text-slate-500">
-                        <span>— Kios Lama (Pergantian)</span>
+                        <span>— Kios Lama</span>
                         <span>{{ $tripSummary['kios_lama'] }}</span>
                     </div>
                     <div class="flex justify-between pl-3 text-xs text-slate-500">
-                        <span>— Kios Baru (Tempat Baru)</span>
+                        <span>— Kios Baru</span>
                         <span>{{ $tripSummary['kios_baru'] }}</span>
                     </div>
                     <div class="border-t border-slate-200 my-2"></div>
@@ -676,7 +676,7 @@
                         {{-- Hentikan Kedai (stop titipan) — satu pintu, pilih cara di layar berikutnya --}}
                         <button type="button" wire:click="startStop"
                             class="w-full mt-4 text-center p-3 rounded-xl border border-red-200 bg-red-50 text-sm font-bold text-red-700 active:bg-red-100">
-                            ⛔ Hentikan Kedai Ini (stop titipan)
+                            ⛔ Hentikan Kedai Ini
                         </button>
                     @else
                         <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Mau ngapain di kios ini?</p>
@@ -696,7 +696,7 @@
                         {{-- Hentikan Kedai (stop titipan) — satu pintu, pilih cara di layar berikutnya --}}
                         <button type="button" wire:click="startStop"
                             class="w-full mt-4 text-center p-3 rounded-xl border border-red-200 bg-red-50 text-sm font-bold text-red-700 active:bg-red-100">
-                            ⛔ Hentikan Kedai Ini (stop titipan)
+                            ⛔ Hentikan Kedai Ini
                         </button>
                     @endif
                 @else

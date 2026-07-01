@@ -106,7 +106,7 @@
         {{-- Default Qty Mika --}}
         <div>
             <label for="defaultQtyMika" class="block text-sm font-bold text-slate-900 mb-2">
-                Default Qty Mika <span class="text-red-500">*</span>
+                Jumlah Mika Biasanya <span class="text-red-500">*</span>
             </label>
             <input
                 type="number"

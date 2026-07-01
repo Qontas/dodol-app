@@ -94,7 +94,8 @@ class KioskResource extends Resource
                             ->columnSpanFull(),
 
                         Map::make('location')
-                            ->label('Lokasi Kios (klik titik di peta)')
+                            ->label('Lokasi Kios')
+                            ->helperText('Klik titik di peta')
                             ->columnSpanFull()
                             ->defaultLocation(latitude: 3.5952, longitude: 98.6722)
                             ->draggable()
@@ -148,16 +149,16 @@ class KioskResource extends Resource
                             ->columnSpanFull(),
 
                         Forms\Components\TextInput::make('warning_visit_interval_days')
-                            ->label('Threshold Warning (hari)')
+                            ->label('Peringatan kalau belum dikunjungi (hari)')
                             ->numeric()
                             ->default(10)
                             ->minValue(1)
                             ->maxValue(60)
                             ->suffix('hari')
-                            ->helperText('Kios akan ditandai warning kalau melewati threshold ini'),
+                            ->helperText('Kios ditandai peringatan kalau lewat sekian hari belum dikunjungi.'),
 
                         Forms\Components\TextInput::make('target_visit_interval_days')
-                            ->label('Target Interval Kunjungan (hari)')
+                            ->label('Idealnya dikunjungi tiap berapa hari (hari)')
                             ->numeric()
                             ->default(14)
                             ->minValue(1)
@@ -166,22 +167,22 @@ class KioskResource extends Resource
                             ->helperText('Berapa hari sekali kios ini harus dikunjungi'),
 
                         Forms\Components\TextInput::make('fast_mover_threshold_days')
-                            ->label('Threshold Fast Mover (hari)')
+                            ->label('Batas kios laris (hari)')
                             ->numeric()
                             ->nullable()
                             ->minValue(1)
                             ->maxValue(120)
                             ->suffix('hari')
-                            ->helperText('Rata-rata habis < X hari = Fast Mover. Kosongkan = tidak dimonitor.')
+                            ->helperText('Kalau dodol biasanya habis di bawah sekian hari, kios ini dianggap laris. Kosongkan kalau tidak dipantau.')
                             ->placeholder('Contoh: 5'),
 
                         Forms\Components\TextInput::make('default_qty_mika')
-                            ->label('Default Qty Mika per Antar')
+                            ->label('Jumlah Mika Biasanya per Antar')
                             ->numeric()
                             ->minValue(1)
                             ->maxValue(100)
                             ->suffix('mika')
-                            ->helperText('Optional. Berapa mika default tiap antar (kosongkan kalau variabel)'),
+                            ->helperText('Berapa mika yang biasa dititip tiap pengantaran (kosongkan kalau berubah-ubah).'),
 
                         Forms\Components\Toggle::make('is_active')
                             ->label('Status Aktif')
@@ -189,9 +190,9 @@ class KioskResource extends Resource
                             ->helperText('Nonaktifkan kalau kios ini stop/tutup'),
 
                         Forms\Components\Toggle::make('is_cash_only')
-                            ->label('Kios Cash Only')
+                            ->label('Kios Bayar Tunai Langsung')
                             ->default(false)
-                            ->helperText('Aktifkan jika kios ini selalu bayar cash langsung (tidak ada konsinyasi)'),
+                            ->helperText('Aktifkan kalau kios ini selalu bayar tunai saat itu juga, tidak menitip dulu.'),
                     ]),
 
                 Section::make('Riwayat Stop Titipan')
@@ -270,18 +271,18 @@ class KioskResource extends Resource
                     ->sortable(),
 
                 Tables\Columns\IconColumn::make('is_cash_only')
-                    ->label('Cash Only')
+                    ->label('Tunai')
                     ->boolean()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('target_visit_interval_days')
-                    ->label('Interval')
+                    ->label('Jadwal')
                     ->suffix(' hari')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('fast_mover_threshold_days')
-                    ->label('Fast Mover')
+                    ->label('Laris')
                     ->suffix(' hari')
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
