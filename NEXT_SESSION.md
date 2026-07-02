@@ -20,6 +20,36 @@ R2 + peta Carto no-grey. 3 commit fix (0455b58 CORS temp-disk, bad45b7 peta, 5e8
 - Live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
 
+## ✅ FIX BOCOR MULTI-TENANT DROPDOWN FILAMENT + "kios tidak muncul di list" (2 Juli 2026, commit 6edad9f)
+- GEJALA (produksi, Ismi input kios pertama): create kios di panel OWNER → submit → kios TIDAK
+  muncul di list. (User juga sebut "error aneh pas refresh" — TIDAK bisa direproduksi; list
+  reload 4x semua 200, tak ada 500. Butuh log Railway / teks error asli buat pin; dugaan transient.)
+- AKAR (terbukti read-only di prod): dropdown "Area" (cluster) di form Buat Kios owner TIDAK
+  di-scope owner — cuma `->where('is_active', true)`. Ismi punya 1 cluster ("Marelan Mabar") tapi
+  dropdown nampilin 2 (+ "Tempat Titipan" milik owner lain). Ismi pilih cluster owner lain → kios
+  ke-assign ke situ → di-filter keluar dari list Ismi (getEloquentQuery: whereHas cluster.owner_id
+  = auth id) → "tidak muncul". Sekaligus BOCOR multi-tenant. BelongsToOwner cuma auto-set owner_id
+  saat create, TIDAK ada global scope baca → makanya relationship dropdown bocor.
+- AUDIT SEMUA relationship dropdown Filament (bukan tambal 1) — yang di-scope owner:
+  * KioskResource: cluster form dropdown (AKAR) + table filter → FIX scope owner.
+  * ProcurementBatchResource: supplier + productVariant form dropdown + filter → FIX (supplier
+    owner_id direct; varian lewat product.owner_id).
+  * ProductVariantResource: product table filter → FIX (form dropdown-nya SUDAH scoped sebelumnya).
+  * Pola: `->when(! (auth()->user()?->isSuperAdmin() ?? false), fn($q)=>$q->where('owner_id', auth()->id()))`
+    (varian pakai whereHas('product',...)). Super admin tetap lihat semua.
+- VERIFIKASI: 205 PASS (+1 test: owner form kiosk cluster dropdown cuma nampilin cluster miliknya).
+  PRODUKSI (login Ismi): deploy transisi ke-capture live — dropdown [Marelan Mabar, Tempat Titipan]
+  → [Marelan Mabar] saja; "Tempat Titipan" HILANG. Create kios (cluster sendiri) → MUNCUL di list
+  → dihapus (bersih).
+- ⏳ BELUM DIKERJAKAN (perlu keputusan user):
+  * DATA NYANGKUT: kalau Ismi terlanjur buat kios di bawah "Tempat Titipan" saat percobaan asli,
+    kios itu di tenant owner lain — TAK bisa kuidentifikasi dari sini (admin panel cuma UserResource;
+    no akses DB/log Railway). User cek manual / kasih akses DB → bisa dibantu reassign (jangan
+    auto-hapus). Setelah fix, Ismi tinggal buat ulang dgn benar.
+  * GUARD OPERATOR: operator CreateKiosk izinkan cluster_id NULL (`clusterId nullable` →
+    `cluster_id => $this->clusterId ?: null`) → kios tanpa cluster juga invisible di list owner.
+    Bikin cluster_id WAJIB = ubah perilaku existing → TUNGGU konfirmasi user sebelum diubah.
+
 ## ✅ AUDIT PERFORMA MENYELURUH + 3 FIX MURAH (2 Juli 2026, commit 6909dab, 995e604, 46a9d27)
 - KONTEKS: audit menyeluruh setelah banyak perubahan sesi (foto operator, peta Carto, upload-fix,
   trust-proxy, istilah) — pastikan app masih RINGAN buat owner input data + operator hectic di HP.
