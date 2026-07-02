@@ -9,6 +9,8 @@ R2 + peta Carto no-grey. 3 commit fix (0455b58 CORS temp-disk, bad45b7 peta, 5e8
 
 ## STATUS
 - 204 PASS (843 assertions)
+- ✅ Audit performa: RINGAN, Fase-1 utuh. 3 fix murah dieksекусi (whereDate→where #1, N+1 batchStok
+  #3, guard memory GD #4). Ditunda: #2 thumbnail foto, #5 denormalisasi owner_id (sblm 10k+ settlement).
 - ✅ Upload foto kios FIXED & verified PRODUKSI (desktop+mobile, owner+operator): 2 blocker beruntun
   dibereskan — (1) CORS temp-upload R2 (commit 0455b58: pin temp disk local) + (2) 401 signed-URL
   di balik proxy Railway (commit 5e8a032: trustProxies). Bukti: /livewire/upload-file 200, foto
@@ -17,6 +19,40 @@ R2 + peta Carto no-grey. 3 commit fix (0455b58 CORS temp-disk, bad45b7 peta, 5e8
   owner+operator): hard-zoom ke max coverage 100%, no grey, desktop+mobile.
 - Live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
+
+## ✅ AUDIT PERFORMA MENYELURUH + 3 FIX MURAH (2 Juli 2026, commit 6909dab, 995e604, 46a9d27)
+- KONTEKS: audit menyeluruh setelah banyak perubahan sesi (foto operator, peta Carto, upload-fix,
+  trust-proxy, istilah) — pastikan app masih RINGAN buat owner input data + operator hectic di HP.
+- VERDICT: **RINGAN, tidak ada regresi.** Kemenangan Fase-1 UTUH: snapshot Livewire operator tetap
+  0.3–0.4KB (foto=WithFileUploads null/file-ref, piutang+tertunda semua scalar — bukan koleksi);
+  ActiveTrip render 6 query FLAT (≤ baseline 9), DISPLAY_LIMIT 50 + search debounce utuh; operator
+  dashboard 24KB/9 req/58 DOM/TTFB 62ms. Bundle: app.js 42KB, app.css 108KB, Leaflet 148KB
+  (operator), filament-map-picker 447KB (OWNER-only, bukan operator). Latency prod TTFB 51–77ms
+  (owner kiosks-list Filament 437ms outlier). GD di ImageResizer di-imagedestroy → tak bocor Octane.
+- 3 FIX MURAH NO-MIGRASI YANG DIEKSEKUSI (verified, 204 PASS):
+  * #1 (commit 6909dab, OwnerDashboardController): whereDate('visit_date'/'trip_date', today()) →
+    where(..., today()->toDateString()). whereDate bikin DATE(col) → batalin index (full-scan saat
+    settlement numpuk). Kolom sudah tipe DATE → hasil IDENTIK (bukti: sum 50000==50000, SQL jadi
+    `where visit_date = ?` bukan `date(visit_date) = ?`).
+  * #3 (commit 995e604, ProcurementBatch + OwnerDashboardController): N+1 batchStok. remaining_packs
+    dulu `deliveries()->sum()` (query tiap panggil, 3x/batch). Diubah: `relationLoaded('deliveries')
+    ? $this->deliveries->sum() : $this->deliveries()->sum()` → dashboard eager-loaded = 0 query,
+    kode lain (baca ulang stok setelah nambah delivery di instance sama) tetap FRESH (perilaku lama
+    utuh — awalnya sempat bikin BatchStokTest merah karena lazy-cache basi, diperbaiki dgn
+    relationLoaded). Map hitung $stok sekali. Bukti: 3 baca accessor 4→0 query, stok/flag identik.
+  * #4 (commit 46a9d27, ImageResizer): guard memory GD. Setelah early-return foto normal (≤1280,
+    hasil kompres browser — tak tersentuh): tolak decode >24MP (patologis/bomb) + raise/restore
+    memory_limit sementara buat foto besar wajar (mis. 12MP fallback ~48MB) → cegah OOM worker
+    Octane. Bukti: 2400x1800→1280x960 OK, 800x600 untouched, memory_limit restored.
+- DITUNDA SENGAJA (belum dikerjakan — putуskan nanti):
+  * #2 THUMBNAIL FOTO: foto modal kunjungan masih full-res 1280px (≤~0.5MB) tanpa thumbnail /
+    loading=lazy / width-height. Bounded (1 foto/waktu, ga numpuk) tapi tiap buka kios ber-foto =
+    download ≤0.5MB di sinyal jelek. Fix = derivative thumbnail ~320px saat upload + loading=lazy.
+    Paling ngaruh ke operator lapangan; terpisah karena butuh generate derivative.
+  * #5 DENORMALISASI owner_id: tabel level-2 (settlements/deliveries/kiosk_visits) tak punya
+    owner_id → tiap widget owner resolve lewat whereHas('delivery.kiosk.cluster', owner_id) 3–4
+    tabel. Index-backed, OK sekarang. TUNDA sampai settlement/kiosk_visit tembus ~10k baris, lalu
+    denormalisasi owner_id (+kiosk_id) ke settlements + composite (owner_id, visit_date)/(owner_id, status).
 
 ## ✅ FIX UPLOAD FOTO 401 DI PRODUKSI — trust proxy Railway (2 Juli 2026, commit 5e8a032)
 - KONTEKS: user info PENTING — issue upload + peta dialami di LAPTOP (DESKTOP browser), BUKAN HP.
