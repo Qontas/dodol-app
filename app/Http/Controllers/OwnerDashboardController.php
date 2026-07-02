@@ -140,15 +140,22 @@ class OwnerDashboardController extends Controller
             ->with('deliveries')
             ->orderBy('created_at')
             ->get()
-            ->map(fn ($batch) => [
-                'id' => $batch->id,
-                'purchase_date' => $batch->purchase_date,
-                'qty_packs' => $batch->qty_packs,
-                'stok_tersisa' => $batch->stok_tersisa,
-                'is_habis' => $batch->is_habis,
-                'is_hampis_habis' => $batch->is_hampis_habis,
-                'cost_per_pack' => $batch->cost_per_pack,
-            ]);
+            ->map(function ($batch) {
+                // Hitung stok SEKALI (pakai koleksi deliveries yang sudah di-eager-load),
+                // turunkan flag dari nilai itu — jangan panggil ulang accessor is_habis/
+                // is_hampis_habis yang tiap kali menghitung ulang stok. Nilai identik.
+                $stok = $batch->stok_tersisa;
+
+                return [
+                    'id' => $batch->id,
+                    'purchase_date' => $batch->purchase_date,
+                    'qty_packs' => $batch->qty_packs,
+                    'stok_tersisa' => $stok,
+                    'is_habis' => $stok <= 0,
+                    'is_hampis_habis' => $stok > 0 && $stok <= 10,
+                    'cost_per_pack' => $batch->cost_per_pack,
+                ];
+            });
 
         $totalStokTersisa = $batchStok->sum('stok_tersisa');
 
