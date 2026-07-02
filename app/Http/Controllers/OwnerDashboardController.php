@@ -37,7 +37,9 @@ class OwnerDashboardController extends Controller
         ];
 
         // Widget 1 — Omset hari ini: total uang masuk dari settlement hari ini
-        $omsetHariIni = Settlement::whereDate('visit_date', today())
+        // where('visit_date', ...) (bukan whereDate) → tidak membungkus kolom dengan DATE()
+        // sehingga index `visit_date` kepakai. visit_date bertipe DATE, jadi hasil identik.
+        $omsetHariIni = Settlement::where('visit_date', today()->toDateString())
             ->where($settlementOwnerScope)
             ->sum('amount_paid');
 
@@ -92,8 +94,9 @@ class OwnerDashboardController extends Controller
 
         // Widget — Untung bersih hari ini: jumlah untung_bersih_owner dari trip
         // milik owner yang sudah selesai hari ini.
+        // where('trip_date', ...) (bukan whereDate) → index kepakai; trip_date bertipe DATE.
         $untungBersihHariIni = Trip::where('owner_id', $ownerId)
-            ->whereDate('trip_date', today())
+            ->where('trip_date', today()->toDateString())
             ->whereNotNull('ended_at')
             ->get()
             ->sum('untung_bersih_owner');
