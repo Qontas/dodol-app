@@ -134,7 +134,10 @@ class ProductVariantResource extends Resource
             ->filters([
                 SelectFilter::make('product_id')
                     ->label('Produk')
-                    ->relationship('product', 'name')
+                    // 🔒 Filter di-scope owner (samakan dgn form dropdown di atas).
+                    ->relationship('product', 'name', fn ($query) => $query
+                        ->when(! (auth()->user()?->isSuperAdmin() ?? false),
+                            fn ($q) => $q->where('owner_id', auth()->id())))
                     ->searchable()
                     ->preload()
                     ->multiple(),

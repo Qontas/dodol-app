@@ -48,7 +48,14 @@ class KioskResource extends Resource
 
                         Forms\Components\Select::make('cluster_id')
                             ->label('Area')
-                            ->relationship('cluster', 'name', fn($query) => $query->where('is_active', true))
+                            ->relationship('cluster', 'name', fn ($query) => $query
+                                ->where('is_active', true)
+                                // 🔒 Owner hanya boleh pilih area MILIKNYA; super admin lihat semua.
+                                // Tanpa ini dropdown bocor cluster owner lain → kios ke-assign ke
+                                // cluster owner lain → hilang dari list owner (di-filter cluster.owner_id)
+                                // + bocor multi-tenant.
+                                ->when(! (auth()->user()?->isSuperAdmin() ?? false),
+                                    fn ($q) => $q->where('owner_id', auth()->id())))
                             ->searchable()
                             ->preload()
                             ->required()
@@ -336,7 +343,10 @@ class KioskResource extends Resource
             ->filters([
                 SelectFilter::make('cluster_id')
                     ->label('Area')
-                    ->relationship('cluster', 'name')
+                    // 🔒 Filter juga di-scope owner (jangan bocorin nama area owner lain).
+                    ->relationship('cluster', 'name', fn ($query) => $query
+                        ->when(! (auth()->user()?->isSuperAdmin() ?? false),
+                            fn ($q) => $q->where('owner_id', auth()->id())))
                     ->searchable()
                     ->preload()
                     ->multiple(),

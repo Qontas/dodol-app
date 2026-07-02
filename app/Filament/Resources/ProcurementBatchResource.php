@@ -42,7 +42,11 @@ class ProcurementBatchResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('supplier_id')
                             ->label('Supplier')
-                            ->relationship('supplier', 'name', fn ($query) => $query->where('is_active', true))
+                            // 🔒 Owner hanya boleh pilih supplier miliknya; super admin lihat semua.
+                            ->relationship('supplier', 'name', fn ($query) => $query
+                                ->where('is_active', true)
+                                ->when(! (auth()->user()?->isSuperAdmin() ?? false),
+                                    fn ($q) => $q->where('owner_id', auth()->id())))
                             ->searchable()
                             ->preload()
                             ->required()
@@ -51,7 +55,11 @@ class ProcurementBatchResource extends Resource
 
                         Forms\Components\Select::make('product_variant_id')
                             ->label('Varian Produk')
-                            ->relationship('productVariant', 'name', fn ($query) => $query->where('is_active', true))
+                            // 🔒 Varian Level 2: owner lewat product.owner_id — hanya varian milik owner.
+                            ->relationship('productVariant', 'name', fn ($query) => $query
+                                ->where('is_active', true)
+                                ->when(! (auth()->user()?->isSuperAdmin() ?? false),
+                                    fn ($q) => $q->whereHas('product', fn ($p) => $p->where('owner_id', auth()->id()))))
                             ->getOptionLabelFromRecordUsing(fn ($record) => "{$record->product->name} - {$record->name}")
                             ->searchable()
                             ->preload()
@@ -299,14 +307,20 @@ class ProcurementBatchResource extends Resource
             ->filters([
                 SelectFilter::make('supplier_id')
                     ->label('Supplier')
-                    ->relationship('supplier', 'name')
+                    // 🔒 Filter di-scope owner.
+                    ->relationship('supplier', 'name', fn ($query) => $query
+                        ->when(! (auth()->user()?->isSuperAdmin() ?? false),
+                            fn ($q) => $q->where('owner_id', auth()->id())))
                     ->searchable()
                     ->preload()
                     ->multiple(),
 
                 SelectFilter::make('product_variant_id')
                     ->label('Varian Produk')
-                    ->relationship('productVariant', 'name')
+                    // 🔒 Filter di-scope owner (varian lewat product.owner_id).
+                    ->relationship('productVariant', 'name', fn ($query) => $query
+                        ->when(! (auth()->user()?->isSuperAdmin() ?? false),
+                            fn ($q) => $q->whereHas('product', fn ($p) => $p->where('owner_id', auth()->id()))))
                     ->searchable()
                     ->preload()
                     ->multiple(),

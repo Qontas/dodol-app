@@ -3,6 +3,7 @@
 namespace Tests\Feature\MultiTenant;
 
 use App\Filament\Resources\ClusterResource\Pages\ListClusters;
+use App\Filament\Resources\KioskResource\Pages\CreateKiosk;
 use App\Filament\Resources\UserResource\Pages\ListUsers;
 use App\Models\Cluster;
 use App\Models\User;
@@ -58,6 +59,31 @@ class TenantScopingTest extends TestCase
         Livewire::test(ListClusters::class)
             ->assertCanSeeTableRecords(Cluster::where('owner_id', $ownerA->id)->get())
             ->assertCanNotSeeTableRecords(Cluster::where('owner_id', $ownerB->id)->get());
+    }
+
+    public function test_owner_kiosk_form_cluster_dropdown_only_shows_own_clusters(): void
+    {
+        // 🔒 Regresi: dropdown "Area" di form Buat Kios (owner panel) HARUS cuma nampilin
+        // cluster milik owner yang login — bukan cluster owner lain (bug "kios tidak muncul
+        // di list" + bocor multi-tenant).
+        $ownerA = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $ownerB = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+
+        $this->actingAs($ownerA);
+        $clusterA = Cluster::create(['name' => 'Area Milik A', 'is_active' => true]);
+        $this->actingAs($ownerB);
+        $clusterB = Cluster::create(['name' => 'Area Milik B', 'is_active' => true]);
+
+        Filament::setCurrentPanel(Filament::getPanel('owner'));
+        Livewire::actingAs($ownerA);
+        $options = Livewire::test(CreateKiosk::class)
+            ->instance()
+            ->getForm('form')
+            ->getComponent('data.cluster_id')
+            ->getOptions();
+
+        $this->assertArrayHasKey($clusterA->id, $options, 'Owner A harus lihat area miliknya');
+        $this->assertArrayNotHasKey($clusterB->id, $options, 'Owner A TIDAK boleh lihat area owner B');
     }
 
     public function test_super_admin_sees_all_clusters_in_filament(): void
