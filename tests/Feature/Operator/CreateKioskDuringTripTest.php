@@ -82,6 +82,67 @@ class CreateKioskDuringTripTest extends TestCase
             ->assertRedirect(route('operator.dashboard'));
     }
 
+    public function test_operator_cannot_save_kiosk_without_cluster(): void
+    {
+        // Area WAJIB: kios tanpa area = invisible di list owner (di-filter cluster.owner_id).
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
+        // 2 area → mount tidak auto-pilih → clusterId tetap null (operator lupa pilih).
+        Cluster::create(['name' => 'Area Satu', 'owner_id' => $owner->id]);
+        Cluster::create(['name' => 'Area Dua', 'owner_id' => $owner->id]);
+
+        $this->actingAs($operator);
+        Livewire::actingAs($operator);
+        Livewire::test(CreateKiosk::class)
+            ->set('namaKios', 'Kios Tanpa Area')
+            ->set('namaPemilik', 'Pak X')
+            ->set('defaultQtyMika', 1)
+            ->call('saveKiosk')
+            ->assertHasErrors(['clusterId' => 'required']);
+
+        $this->assertDatabaseMissing('kiosks', ['name' => 'Kios Tanpa Area']);
+    }
+
+    public function test_operator_cluster_dropdown_only_shows_own_owner_clusters(): void
+    {
+        // 🔒 Dropdown area operator TIDAK boleh bocor area owner lain.
+        $ownerA = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $ownerB = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operatorA = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $ownerA->id]);
+
+        $clusterA = Cluster::create(['name' => 'Area A', 'owner_id' => $ownerA->id]);
+        $clusterB = Cluster::create(['name' => 'Area B', 'owner_id' => $ownerB->id]);
+
+        $this->actingAs($operatorA);
+        Livewire::actingAs($operatorA);
+        $ids = Livewire::test(CreateKiosk::class)->instance()->clusters->pluck('id');
+
+        $this->assertTrue($ids->contains($clusterA->id), 'Operator harus lihat area owner-nya');
+        $this->assertFalse($ids->contains($clusterB->id), 'Operator TIDAK boleh lihat area owner lain');
+    }
+
+    public function test_operator_cannot_assign_other_owners_cluster(): void
+    {
+        // Defense-in-depth: walau clusterId owner lain dipaksa dari klien, exists di-scope
+        // owner → ditolak (bukan kesimpen ke tenant owner lain).
+        $ownerA = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $ownerB = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operatorA = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $ownerA->id]);
+        $clusterB = Cluster::create(['name' => 'Area B', 'owner_id' => $ownerB->id]);
+
+        $this->actingAs($operatorA);
+        Livewire::actingAs($operatorA);
+        Livewire::test(CreateKiosk::class)
+            ->set('namaKios', 'Kios Curang')
+            ->set('namaPemilik', 'Pak Y')
+            ->set('clusterId', $clusterB->id)
+            ->set('defaultQtyMika', 1)
+            ->call('saveKiosk')
+            ->assertHasErrors(['clusterId']);
+
+        $this->assertDatabaseMissing('kiosks', ['name' => 'Kios Curang']);
+    }
+
     public function test_create_kiosk_stores_and_resizes_uploaded_photo(): void
     {
         Storage::fake('public');

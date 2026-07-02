@@ -87,7 +87,7 @@
         {{-- Area --}}
         <div>
             <label for="clusterId" class="block text-sm font-bold text-slate-900 mb-2">
-                Area (opsional)
+                Area <span class="text-red-500">*</span>
             </label>
             <select
                 id="clusterId"

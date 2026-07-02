@@ -5,6 +5,7 @@ namespace App\Livewire\Operator;
 use App\Models\Cluster;
 use App\Models\Kiosk;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -45,10 +46,20 @@ class CreateKiosk extends Component
 
     public function saveKiosk()
     {
+        $ownerId = auth()->user()->owner_id;
+
         $validated = $this->validate([
             'namaKios' => 'required|string|max:255',
             'namaPemilik' => 'required|string|max:255',
-            'clusterId' => 'nullable|exists:clusters,id',
+            // Area WAJIB (kios tanpa area = invisible di list owner karena di-filter
+            // cluster.owner_id). exists di-scope ke area AKTIF milik owner operator →
+            // cegah kios nyangkut & tolak clusterId owner lain walau di-utak-atik dari klien.
+            'clusterId' => ['required', Rule::exists('clusters', 'id')->where(function ($q) use ($ownerId) {
+                $q->where('is_active', true);
+                if ($ownerId !== null) {
+                    $q->where('owner_id', $ownerId);
+                }
+            })],
             'defaultQtyMika' => 'required|integer|min:1',
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
@@ -57,6 +68,7 @@ class CreateKiosk extends Component
         ], [
             'namaKios.required' => 'Nama kios wajib diisi',
             'namaPemilik.required' => 'Nama pemilik wajib diisi',
+            'clusterId.required' => 'Pilih area dulu',
             'clusterId.exists' => 'Area tidak valid',
             'defaultQtyMika.required' => 'Isi default jumlah mika',
             'defaultQtyMika.min' => 'Minimal 1 mika',
@@ -67,7 +79,7 @@ class CreateKiosk extends Component
                 'name' => $this->namaKios,
                 'owner_name' => $this->namaPemilik,
                 'phone' => $this->telepon ?: null,
-                'cluster_id' => $this->clusterId ?: null,
+                'cluster_id' => $this->clusterId, // wajib & tervalidasi milik owner.
                 'default_qty_mika' => $this->defaultQtyMika,
                 'latitude' => $this->latitude,
                 'longitude' => $this->longitude,
