@@ -8,7 +8,7 @@ R2 + peta Carto no-grey. 3 commit fix (0455b58 CORS temp-disk, bad45b7 peta, 5e8
 401). GitHub synced. Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 204 PASS (843 assertions)
+- 214 PASS (890 assertions)
 - ✅ Audit performa: RINGAN, Fase-1 utuh. 3 fix murah dieksекусi (whereDate→where #1, N+1 batchStok
   #3, guard memory GD #4). Ditunda: #2 thumbnail foto, #5 denormalisasi owner_id (sblm 10k+ settlement).
 - ✅ Upload foto kios FIXED & verified PRODUKSI (desktop+mobile, owner+operator): 2 blocker beruntun
@@ -19,6 +19,44 @@ R2 + peta Carto no-grey. 3 commit fix (0455b58 CORS temp-disk, bad45b7 peta, 5e8
   owner+operator): hard-zoom ke max coverage 100%, no grey, desktop+mobile.
 - Live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
+
+## ✅ AUDIT ISOLASI MULTI-TENANT MENYELURUH + LANGKAH 1 (fix darurat operator) SELESAI (2-3 Juli 2026)
+- KONTEKS: user minta JAMINAN isolasi tenant tahan-banting (bug dropdown kemarin lolos test → pertahanan
+  rapuh karena scope MANUAL per-query). Audit exhaustive 5 permukaan (model/rantai, Filament, operator
+  Livewire, controller/export/route, test) — BUKAN sampling.
+- HASIL AUDIT: Filament (8 resource getEloquentQuery + semua dropdown form/filter), controller/export/route,
+  observer, importer, CLI = SEMUA SCOPED (0 bocor — fix dropdown kemarin memang rapat). TAPI ditemukan
+  **4 LUBANG WRITE/READ CROSS-TENANT KRITIS di panel OPERATOR (Livewire ActiveTrip)** — akar sama:
+  BelongsToOwner cuma auto-set owner_id saat create, TIDAK ada global read scope → isolasi opt-in per query.
+- AKAR TEKNIS: `openVisitModal($kioskId)` load `Kiosk::find()` TANPA scope → `$selectedKiosk`/`$pendingDelivery`
+  (properti publik Livewire, bisa di-tamper klien) dipercaya mentah oleh write sink: `saveVisit`,
+  `stopWithSettle`, `stopWithoutSettle`. Operator owner A bisa TULIS transaksi / MATIKAN kios / catat
+  kerugian palsu ke kios owner B. (Gerbang benar SUDAH ADA di `saveKioskPhoto`:650 & `scopedPendingSettlements`:479
+  — tinggal belum dipasang di 4 titik ini = bukti kerapuhan "ketergantungan developer ingat".)
+- ✅ LANGKAH 1 (DARURAT) — SELESAI (commit ini): tutup 4 lubang pakai gerbang yang terbukti.
+  * Helper baru `ownedKiosk($kioskId)` (pola identik saveKioskPhoto): ambil kios HANYA jika
+    `whereHas('cluster', owner_id == auth()->user()->owner_id)`, null kalau bukan milik operator.
+    `when($ownerId !== null)` → operator legacy tanpa owner_id tetap jalan (sama pola lama).
+  * `openVisitModal` → pakai ownedKiosk; kios owner lain → tolak, modal TAK dibuka, selectedKiosk null.
+  * `saveVisit` / `stopWithSettle` / `stopWithoutSettle` → re-verifikasi ownedKiosk sebelum tulis/matikan.
+  * DEFENSE-IN-DEPTH: cek konsistensi `pendingDelivery->kiosk_id === selectedKiosk->id` (properti pendingDelivery
+    juga di-hidrasi klien → cegah settle titipan owner lain walau kios sendiri).
+  * TEST BARU: tests/Feature/Operator/ActiveTripCrossTenantTest.php (6 test) — 4 serangan lintas-owner
+    diblokir (openVisitModal/saveVisit/stopWithSettle/stopWithoutSettle, selectedKiosk+pendingDelivery
+    dipaksa via ->set meniru snapshot di-tamper) + 2 happy-path (operator normal atas kios SENDIRI saat
+    owner_id di-set = skenario prod). **214 PASS (890 assertions), nol regresi.**
+- ⏳ LANGKAH 2 (MASIH PENDING — keputusan user #2, JANGAN kerjakan tanpa konfirmasi): GLOBAL SCOPE
+  secure-by-default. Tambah Eloquent global read scope ke BelongsToOwner utk 5 model Level-1 (clusters,
+  suppliers, products, procurement_batches, trips — murah, indexed) + Kiosk via whereHas cluster
+  (menutup class openVisitModal by-default: Kiosk::find auto-null utk kios owner lain). Harus: resolver
+  "owner aktif" (owner=id, operator=owner_id, super_admin+CLI/seeder=bypass), withoutGlobalScope di widget
+  super_admin/sentinel, tangani Kiosk.cluster_id NULLABLE (orphan), jalankan full suite (risiko regresi).
+  Jangka panjang: denormalisasi owner_id ke tabel Level-2 → scope seragam murah, buang whereHas.
+- ⏳ RESIDUAL MINOR (dibereskan di Langkah 2): `resolveActiveVariant()` :1009 pilih varian aktif TANPA
+  scope owner (varian, bukan kios — dampak kecil); rule `exists:clusters,id` di StartTrip::startTrip :142
+  tak owner-scoped (RAGU, ke-intersect jadi kosong oleh list scoped, tak ada bocor teramati); UserResource
+  EditUser tak ada mutateFormDataBeforeSave re-force (RAGU rendah, aman via field tak-dirender);
+  ProcurementBatch getBatchNumberAttribute count lintas-owner (kosmetik, penomoran).
 
 ## ✅ FIX BOCOR MULTI-TENANT DROPDOWN FILAMENT + "kios tidak muncul di list" (2 Juli 2026, commit 6edad9f)
 - GEJALA (produksi, Ismi input kios pertama): create kios di panel OWNER → submit → kios TIDAK

@@ -417,9 +417,37 @@ class ActiveTrip extends Component
     }
 
     // --- METODE TRANSAKSI MODAL ---
+
+    /**
+     * 🔒 Gerbang multi-tenant: ambil kios HANYA jika milik owner operator ini.
+     * Mengembalikan null kalau kios bukan milik operator (atau tidak ada). Jangan
+     * pernah percaya $kioskId / $selectedKiosk mentah dari klien — pola identik
+     * dengan saveKioskPhoto() (:650) & scopedPendingSettlements() (:479).
+     */
+    private function ownedKiosk($kioskId): ?Kiosk
+    {
+        if (! $kioskId) {
+            return null;
+        }
+
+        $ownerId = auth()->user()->owner_id;
+
+        return Kiosk::whereKey($kioskId)
+            ->when($ownerId !== null, fn ($q) => $q->whereHas('cluster', fn ($c) => $c->where('owner_id', $ownerId)))
+            ->first();
+    }
+
     public function openVisitModal($kioskId)
     {
-        $this->selectedKiosk = Kiosk::find($kioskId);
+        // 🔒 Re-verifikasi kepemilikan server-side SEBELUM membuka modal / memuat
+        // data kios. Kios owner lain → tolak, jangan buka modal.
+        $this->selectedKiosk = $this->ownedKiosk($kioskId);
+
+        if (! $this->selectedKiosk) {
+            $this->addError('general', 'Kios ini bukan milik Anda.');
+            return;
+        }
+
         $this->isCashOnly = (bool) ($this->selectedKiosk?->is_cash_only);
 
         $this->pendingDelivery = Delivery::where('kiosk_id', $kioskId)
@@ -779,8 +807,14 @@ class ActiveTrip extends Component
      */
     private function stopWithSettle(): void
     {
-        if (! $this->selectedKiosk || ! $this->pendingDelivery) {
-            $this->addError('general', 'Kios tidak valid atau tidak punya titipan. Tutup form dan coba lagi.');
+        // 🔒 Re-verifikasi kepemilikan server-side SEBELUM menonaktifkan/menyettle
+        // kios + pastikan titipan yang di-settle milik kios ini (bukan owner lain).
+        if (! $this->selectedKiosk || ! $this->ownedKiosk($this->selectedKiosk->id)) {
+            $this->addError('general', 'Kios tidak valid atau bukan milik Anda. Tutup form dan coba lagi.');
+            return;
+        }
+        if (! $this->pendingDelivery || (int) $this->pendingDelivery->kiosk_id !== (int) $this->selectedKiosk->id) {
+            $this->addError('general', 'Kios tidak punya titipan yang cocok. Tutup form dan coba lagi.');
             return;
         }
         if (! array_key_exists($this->stopReason, Kiosk::STOP_REASONS)) {
@@ -838,8 +872,14 @@ class ActiveTrip extends Component
      */
     private function stopWithoutSettle(): void
     {
-        if (! $this->selectedKiosk) {
-            $this->addError('general', 'Kios tidak valid. Tutup form dan coba lagi.');
+        // 🔒 Re-verifikasi kepemilikan server-side SEBELUM menonaktifkan kios +
+        // (kalau ada titipan) pastikan titipannya milik kios ini, bukan owner lain.
+        if (! $this->selectedKiosk || ! $this->ownedKiosk($this->selectedKiosk->id)) {
+            $this->addError('general', 'Kios tidak valid atau bukan milik Anda. Tutup form dan coba lagi.');
+            return;
+        }
+        if ($this->pendingDelivery && (int) $this->pendingDelivery->kiosk_id !== (int) $this->selectedKiosk->id) {
+            $this->addError('general', 'Data titipan tidak cocok dengan kios. Tutup form dan coba lagi.');
             return;
         }
         if (! array_key_exists($this->stopReason, Kiosk::STOP_REASONS)) {
@@ -990,8 +1030,15 @@ class ActiveTrip extends Component
 
         $this->resetErrorBag('general');
 
-        if (!$this->selectedKiosk) {
-            $this->addError('general', 'Kios tidak valid. Tutup form dan coba lagi.');
+        // 🔒 Re-verifikasi kepemilikan server-side (jangan percaya $selectedKiosk
+        // mentah dari klien) + pastikan titipan yang mau di-settle memang milik
+        // kios ini. Menutup penulisan lintas-tenant lewat properti yang di-hidrasi.
+        if (! $this->selectedKiosk || ! $this->ownedKiosk($this->selectedKiosk->id)) {
+            $this->addError('general', 'Kios tidak valid atau bukan milik Anda. Tutup form dan coba lagi.');
+            return;
+        }
+        if ($this->pendingDelivery && (int) $this->pendingDelivery->kiosk_id !== (int) $this->selectedKiosk->id) {
+            $this->addError('general', 'Data titipan tidak cocok dengan kios. Tutup form dan coba lagi.');
             return;
         }
 
