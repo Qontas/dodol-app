@@ -1006,7 +1006,13 @@ class ActiveTrip extends Component
      */
     private function resolveActiveVariant(): ProductVariant
     {
-        $variant = ProductVariant::where('is_active', true)->first();
+        // 🔒 Varian ter-scope owner operator (varian → product.owner_id). Jangan
+        // ambil varian owner lain untuk mencatat penjualan.
+        $ownerId = auth()->user()?->owner_id;
+
+        $variant = ProductVariant::where('is_active', true)
+            ->when($ownerId !== null, fn ($q) => $q->whereHas('product', fn ($p) => $p->where('owner_id', $ownerId)))
+            ->first();
 
         if (!$variant) {
             throw new \RuntimeException('Tidak ada varian produk aktif.');

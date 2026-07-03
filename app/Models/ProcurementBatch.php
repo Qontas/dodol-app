@@ -61,7 +61,11 @@ class ProcurementBatch extends Model
             return '—';
         }
 
-        $counter = self::whereDate('created_at', $this->created_at->toDateString())
+        // 🔒 Nomor batch di-hitung PER-OWNER (jangan ikut hitung batch owner lain →
+        // penomoran per-tenant, tak bocor lintas-owner). Ter-scope ke owner batch ini
+        // sendiri, deterministik siapa pun yang melihat.
+        $counter = self::where('owner_id', $this->owner_id)
+            ->whereDate('created_at', $this->created_at->toDateString())
             ->where('id', '<=', $this->id)
             ->count();
 

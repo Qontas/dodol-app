@@ -16,4 +16,19 @@ class EditUser extends EditRecord
             Actions\DeleteAction::make(),
         ];
     }
+
+    /**
+     * Defense-in-depth (parity dengan CreateUser): owner tidak boleh mengubah
+     * operatornya menjadi role lain atau memindahkannya ke owner lain, walau
+     * payload di-tamper. Super admin tidak dipaksa.
+     */
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        if (auth()->user()?->isOwner()) {
+            $data['role'] = 'operator';
+            $data['owner_id'] = auth()->id();
+        }
+
+        return $data;
+    }
 }

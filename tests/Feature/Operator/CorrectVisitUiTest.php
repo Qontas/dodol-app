@@ -37,7 +37,8 @@ class CorrectVisitUiTest extends TestCase
         $this->kiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id, 'default_qty_mika' => 10, 'is_active' => true,
         ]);
-        ProductVariant::factory()->create(['is_active' => true, 'sale_price_per_pack' => 12000]);
+        $productUi = \App\Models\Product::factory()->create(['owner_id' => $this->owner->id]);
+        ProductVariant::factory()->create(['product_id' => $productUi->id, 'is_active' => true, 'sale_price_per_pack' => 12000]);
 
         $this->trip = Trip::factory()->create([
             'owner_id' => $this->owner->id,

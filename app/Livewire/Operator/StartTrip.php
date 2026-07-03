@@ -6,6 +6,7 @@ use App\Models\Cluster;
 use App\Models\Kiosk;
 use App\Models\KioskVisit;
 use App\Models\Trip;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -139,7 +140,14 @@ class StartTrip extends Component
     public function startTrip()
     {
         // Trip Bebas: cluster tidak wajib. Trip biasa: cluster wajib dipilih.
-        $clusterRule = $this->tripBebas ? 'nullable|exists:clusters,id' : 'required|exists:clusters,id';
+        // 🔒 exists di-scope owner operator (samakan pola CreateKiosk) → operator tak
+        // bisa mulai trip pakai cluster owner lain walau ID dipaksa dari klien.
+        $ownerId = auth()->user()->owner_id;
+        $existsRule = Rule::exists('clusters', 'id');
+        if ($ownerId !== null) {
+            $existsRule->where('owner_id', $ownerId);
+        }
+        $clusterRule = $this->tripBebas ? ['nullable', $existsRule] : ['required', $existsRule];
 
         $this->validate([
             'selectedClusterId' => $clusterRule,

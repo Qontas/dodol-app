@@ -37,7 +37,8 @@ class ActiveTripPiutangTest extends TestCase
             'role' => 'operator', 'is_active' => true, 'owner_id' => $this->owner->id,
         ]);
         $this->cluster = Cluster::create(['name' => 'Cluster Piutang', 'owner_id' => $this->owner->id]);
-        $this->variant = ProductVariant::factory()->create(['is_active' => true, 'sale_price_per_pack' => 12000]);
+        $productPiutang = \App\Models\Product::factory()->create(['owner_id' => $this->owner->id]);
+        $this->variant = ProductVariant::factory()->create(['product_id' => $productPiutang->id, 'is_active' => true, 'sale_price_per_pack' => 12000]);
         $this->trip = Trip::factory()->create([
             'operator_id' => $this->operator->id, 'owner_id' => $this->owner->id,
             'starting_cluster_id' => $this->cluster->id, 'qty_carried_total' => 60,

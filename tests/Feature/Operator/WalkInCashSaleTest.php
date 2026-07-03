@@ -38,7 +38,8 @@ class WalkInCashSaleTest extends TestCase
         $this->realKiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id, 'name' => 'Kios Nyata', 'is_active' => true,
         ]);
-        ProductVariant::factory()->create(['is_active' => true, 'sale_price_per_pack' => 12000]);
+        $productWalkin = \App\Models\Product::factory()->create(['owner_id' => $this->owner->id]);
+        ProductVariant::factory()->create(['product_id' => $productWalkin->id, 'is_active' => true, 'sale_price_per_pack' => 12000]);
 
         $this->trip = Trip::factory()->create([
             'owner_id' => $this->owner->id,

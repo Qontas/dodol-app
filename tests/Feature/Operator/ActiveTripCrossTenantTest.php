@@ -53,7 +53,8 @@ class ActiveTripCrossTenantTest extends TestCase
             'started_at' => now(),
             'trip_date' => today()->format('Y-m-d'),
         ]);
-        $this->variant = ProductVariant::factory()->create(['is_active' => true, 'sale_price_per_pack' => 12000]);
+        $productA = \App\Models\Product::factory()->create(['owner_id' => $this->ownerA->id]);
+        $this->variant = ProductVariant::factory()->create(['product_id' => $productA->id, 'is_active' => true, 'sale_price_per_pack' => 12000]);
 
         $this->ownerB = User::factory()->create(['role' => 'owner', 'is_active' => true]);
         $this->clusterB = Cluster::create(['name' => 'Area B', 'owner_id' => $this->ownerB->id]);

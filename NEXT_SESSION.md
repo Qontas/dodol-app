@@ -8,7 +8,7 @@ R2 + peta Carto no-grey. 3 commit fix (0455b58 CORS temp-disk, bad45b7 peta, 5e8
 401). GitHub synced. Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 221 PASS (920 assertions)
+- 228 PASS (939 assertions)
 - ✅ Audit performa: RINGAN, Fase-1 utuh. 3 fix murah dieksекусi (whereDate→where #1, N+1 batchStok
   #3, guard memory GD #4). Ditunda: #2 thumbnail foto, #5 denormalisasi owner_id (sblm 10k+ settlement).
 - ✅ Upload foto kios FIXED & verified PRODUKSI (desktop+mobile, owner+operator): 2 blocker beruntun
@@ -58,10 +58,22 @@ R2 + peta Carto no-grey. 3 commit fix (0455b58 CORS temp-disk, bad45b7 peta, 5e8
 - VERIFIKASI PER-ROLE BROWSER NYATA (data lokal 2 owner: Ismi=2 kios, Aidil=957): Owner Ismi lihat
   HANYA kiosnya (bukan 957, bukan kosong); super_admin dashboard "Total Kios 957" + tabel komisi
   KEDUA owner (bypass tembus semua); operator render 200 ter-scope. 4/4 cek + screenshot (bukan blank).
-- ⏳ RESIDUAL LANGKAH 2 (dari audit, BELUM dikerjakan — minor, sesi lain): resolveActiveVariant()
-  :1009 varian tanpa scope owner; StartTrip exists:clusters rule :142 tak owner-scoped (RAGU, ter-intersect
-  kosong); UserResource EditUser tanpa mutateFormDataBeforeSave re-force (RAGU rendah); ProcurementBatch
-  getBatchNumberAttribute count lintas-owner (kosmetik).
+- ✅ RESIDUAL LANGKAH 2 SELESAI (3 Juli 2026, Tugas B) — 4 fix scoping minor + test:
+  * B1 resolveActiveVariant() :1007 → scope owner (varian via product.owner_id). Efek: owner tanpa
+    varian aktif kini DITOLAK ("Tidak ada varian produk aktif") alih-alih diam-diam pakai varian owner
+    lain. Fixture 5 test dibikin realistis (varian pakai product milik owner sama) — sama pola TripFactory.
+  * B2 StartTrip exists:clusters :142 → owner-scoped (Rule::exists->where owner_id, pola CreateKiosk).
+  * B3 UserResource EditUser → mutateFormDataBeforeSave re-force role=operator + owner_id (parity CreateUser).
+  * B4 ProcurementBatch getBatchNumberAttribute :58 → count PER-OWNER (nomor batch tak hitung owner lain).
+  * Test baru tests/Feature/MultiTenant/ResidualScopingTest.php (7). 228 PASS.
+- ✅ AUDIT PERFORMA Langkah 1+2 @ 957 kios (Tugas A) — VERDICT RINGAN. Global scope nambah 0 query
+  (identik with/without di semua surface). whereHas Kiosk = EXISTS terindeks (EXPLAIN type=ref,
+  clusters_owner_id_foreign→kiosks_cluster_id_foreign, rows=1), BUKAN N+1. Index clusters.owner_id ADA.
+  operator ActiveTrip render 9q FLAT, owner dashboard 37q bounded, Filament list 4q (latensi = boot
+  Filament, bukan query). Snapshot operator 1385B (~1.35KB) flat vs jumlah kios, tak berubah oleh Langkah 1/2.
+- ⏳ TODO PRODUKSI ORPHAN (Tugas C — query sudah disiapkan buat user): jalankan di Railway
+  `SELECT COUNT(*) FROM kiosks WHERE cluster_id IS NULL;` + list. Kalau ada, backfill cluster ke owner
+  yang benar (JANGAN borongan kalau lintas owner). Kios orphan invisible sejak OwnerScope (aman, tak bocor).
 
 ## ✅ AUDIT ISOLASI MULTI-TENANT MENYELURUH + LANGKAH 1 (fix darurat operator) SELESAI (2-3 Juli 2026)
 - KONTEKS: user minta JAMINAN isolasi tenant tahan-banting (bug dropdown kemarin lolos test → pertahanan

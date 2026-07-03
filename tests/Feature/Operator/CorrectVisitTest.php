@@ -42,7 +42,8 @@ class CorrectVisitTest extends TestCase
             'first_titip_date' => today(),
             'is_active' => true,
         ]);
-        $this->variant = ProductVariant::factory()->create(['is_active' => true, 'sale_price_per_pack' => 12000]);
+        $productKoreksi = \App\Models\Product::factory()->create(['owner_id' => $this->owner->id]);
+        $this->variant = ProductVariant::factory()->create(['product_id' => $productKoreksi->id, 'is_active' => true, 'sale_price_per_pack' => 12000]);
 
         $this->trip = Trip::factory()->create([
             'owner_id' => $this->owner->id,
