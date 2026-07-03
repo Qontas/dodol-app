@@ -90,7 +90,9 @@ class ReportExportTest extends TestCase
         [$owner, $trip] = $this->ownerWithTrip();
         $intruder = User::factory()->create(['role' => 'owner', 'is_active' => true]);
 
-        $this->actingAs($intruder)->get(route('owner.trips.export.pdf', $trip))->assertForbidden();
+        // Secure-by-default (global OwnerScope): route-model binding tak menemukan
+        // trip owner lain → 404 (bukan 403). Guard controller abort(403) tetap ada.
+        $this->actingAs($intruder)->get(route('owner.trips.export.pdf', $trip))->assertNotFound();
     }
 
     public function test_monthly_report_page_loads(): void

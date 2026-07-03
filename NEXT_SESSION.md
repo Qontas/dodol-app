@@ -8,7 +8,7 @@ R2 + peta Carto no-grey. 3 commit fix (0455b58 CORS temp-disk, bad45b7 peta, 5e8
 401). GitHub synced. Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 214 PASS (890 assertions)
+- 221 PASS (920 assertions)
 - ✅ Audit performa: RINGAN, Fase-1 utuh. 3 fix murah dieksекусi (whereDate→where #1, N+1 batchStok
   #3, guard memory GD #4). Ditunda: #2 thumbnail foto, #5 denormalisasi owner_id (sblm 10k+ settlement).
 - ✅ Upload foto kios FIXED & verified PRODUKSI (desktop+mobile, owner+operator): 2 blocker beruntun
@@ -19,6 +19,49 @@ R2 + peta Carto no-grey. 3 commit fix (0455b58 CORS temp-disk, bad45b7 peta, 5e8
   owner+operator): hard-zoom ke max coverage 100%, no grey, desktop+mobile.
 - Live di Railway: https://dodol-app-production.up.railway.app
 - Semua fitur complete
+
+## ✅ LANGKAH 2 — GLOBAL SCOPE SECURE-BY-DEFAULT SELESAI (3 Juli 2026)
+- JAMINAN ISOLASI TENANT KINI BY DESIGN, BUKAN MANUAL: lupa nambah `where owner_id` = data
+  ke-FILTER (aman), bukan bocor. Menutup akar kerapuhan yang bikin bug dropdown + lubang operator.
+- IMPLEMENTASI (arah user: 5 model Level-1 + Kiosk; TANPA denormalisasi Level-2 = #5 tetap ditunda):
+  * BARU `app/Models/Scopes/OwnerScope.php` — global read scope + resolver `activeOwnerId()`.
+    - Level-1 (punya kolom owner_id): `where('<table>.owner_id', $active)` → clusters, suppliers,
+      products, procurement_batches, trips. Didaftarkan via `BelongsToOwner::bootBelongsToOwner()`.
+    - Kiosk (Level-2, owner via cluster): `whereHas('cluster', owner_id=$active)`. Didaftarkan di
+      `Kiosk::booted()` (Kiosk tak pakai trait).
+  * RESOLVER `activeOwnerId()` (aturan per role):
+    owner login → auth()->id(); operator login → auth()->user()->owner_id;
+    super_admin → NULL (BYPASS, lihat semua); tanpa auth (seeder/factory/CLI/queue/migration) →
+    NULL (BYPASS); operator legacy owner_id null → bypass (konsisten pola lama).
+- withoutGlobalScope: **0 titik perlu ditambah**. Semua query lintas-owner yang disengaja aman
+  OTOMATIS via bypass: 4 widget super_admin (canView super_admin → bypass), OwnerOmsetChart
+  (pakai ->join raw, scope tak sentuh tabel di-join), EnsureWalkInSentinel + CLI + migrasi backfill
+  (tanpa auth → bypass), importer/observer (owner sama). Escape hatch `withoutGlobalScope(OwnerScope::class)`
+  tetap tersedia + ada test-nya kalau nanti butuh lintas-owner sengaja.
+- REGRESI DITANGANI (221 PASS, 920 assertions):
+  * TripFactory backfill owner_id dari operator (di prod selalu terisi; factory tanpa auth → hook
+    creating tak jalan). Fixture realistis, tak bikin user baru. → benerin 11 test operator.
+  * 2 test 403→404 (TripDeleteTest, ReportExportTest) = PENINGKATAN keamanan: route-model-binding
+    kini 404 intruder SEBELUM controller (intruder tak tahu record ada). Guard abort(403) controller
+    tetap ada sbg defense-in-depth. Test di-update ke assertNotFound.
+  * 1 fixture BatchStokTest: product/variant/supplier dibuat konsisten milik owner yang sama
+    (relasi product kini kena OwnerScope → data null-owner bikin kolom productVariant.product.name null).
+- KASUS ORPHAN (kios cluster_id null): TER-FILTER (tak tampil) saat ada owner aktif — AMAN (kios
+  tak-ber-owner tak bocor). Data BARU tak mungkin orphan (cluster wajib sejak commit 5c9b3e7).
+  ⏳ TODO PRODUKSI: cek `SELECT COUNT(*) FROM kiosks WHERE cluster_id IS NULL` — kalau ada, backfill
+  cluster (jangan biarkan invisible). Sentinel walk-in TIDAK orphan (selalu punya cluster sentinel).
+- TEST BARU `tests/Feature/MultiTenant/OwnerScopeTest.php` (7): owner/operator lihat data sendiri +
+  `Kiosk::find(id_owner_lain)`=NULL; super_admin bypass lihat semua; tanpa-auth bypass; escape hatch;
+  orphan ter-filter; NO N+1 (Kiosk::get 21 kios = 1 query EXISTS inline).
+- PERFORMA before/after IDENTIK (bypass vs scope): owner dashboard 28 query, operator ActiveTrip
+  render 7 query — scope nambah 0 round-trip, cuma klausa WHERE / 1 subquery EXISTS (terindeks).
+- VERIFIKASI PER-ROLE BROWSER NYATA (data lokal 2 owner: Ismi=2 kios, Aidil=957): Owner Ismi lihat
+  HANYA kiosnya (bukan 957, bukan kosong); super_admin dashboard "Total Kios 957" + tabel komisi
+  KEDUA owner (bypass tembus semua); operator render 200 ter-scope. 4/4 cek + screenshot (bukan blank).
+- ⏳ RESIDUAL LANGKAH 2 (dari audit, BELUM dikerjakan — minor, sesi lain): resolveActiveVariant()
+  :1009 varian tanpa scope owner; StartTrip exists:clusters rule :142 tak owner-scoped (RAGU, ter-intersect
+  kosong); UserResource EditUser tanpa mutateFormDataBeforeSave re-force (RAGU rendah); ProcurementBatch
+  getBatchNumberAttribute count lintas-owner (kosmetik).
 
 ## ✅ AUDIT ISOLASI MULTI-TENANT MENYELURUH + LANGKAH 1 (fix darurat operator) SELESAI (2-3 Juli 2026)
 - KONTEKS: user minta JAMINAN isolasi tenant tahan-banting (bug dropdown kemarin lolos test → pertahanan

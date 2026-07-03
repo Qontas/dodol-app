@@ -80,9 +80,12 @@ class TripDeleteTest extends TestCase
 
         $intruder = User::factory()->create(['role' => 'owner', 'is_active' => true]);
 
+        // Secure-by-default (global OwnerScope): route-model binding tak menemukan
+        // trip owner lain → 404 (bukan 403) — intruder bahkan tak tahu trip itu ada.
+        // Guard controller abort(403) tetap ada sebagai defense-in-depth.
         $this->actingAs($intruder)
             ->delete(route('owner.trips.destroy', $trip))
-            ->assertForbidden();
+            ->assertNotFound();
 
         $this->assertDatabaseHas('trips', ['id' => $trip->id]);
     }

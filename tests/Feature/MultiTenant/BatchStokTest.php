@@ -5,6 +5,9 @@ namespace Tests\Feature\MultiTenant;
 use App\Filament\Resources\ProcurementBatchResource\Pages\ListProcurementBatches;
 use App\Models\Delivery;
 use App\Models\ProcurementBatch;
+use App\Models\Product;
+use App\Models\ProductVariant;
+use App\Models\Supplier;
 use App\Models\User;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -67,7 +70,18 @@ class BatchStokTest extends TestCase
     public function test_procurement_batch_list_page_renders_with_summary(): void
     {
         $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
-        ProcurementBatch::factory()->create(['owner_id' => $owner->id, 'qty_packs' => 72]);
+        // Data konsisten milik owner (realistis produksi): product/variant/supplier
+        // ter-scope owner yang sama, agar relasi product (yang kini kena OwnerScope)
+        // ter-resolve saat kolom tabel me-render productVariant.product.name.
+        $product = Product::factory()->create(['owner_id' => $owner->id]);
+        $variant = ProductVariant::factory()->create(['product_id' => $product->id]);
+        $supplier = Supplier::factory()->create(['owner_id' => $owner->id]);
+        ProcurementBatch::factory()->create([
+            'owner_id' => $owner->id,
+            'product_variant_id' => $variant->id,
+            'supplier_id' => $supplier->id,
+            'qty_packs' => 72,
+        ]);
 
         // ProcurementBatchResource hidup di owner panel; set konteks panel agar
         // URL tabel ter-resolve ke route owner.

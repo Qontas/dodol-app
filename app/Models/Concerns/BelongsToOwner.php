@@ -2,21 +2,26 @@
 
 namespace App\Models\Concerns;
 
+use App\Models\Scopes\OwnerScope;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * Multi-tenant: model Level 1 yang punya kolom owner_id langsung.
  *
- * Auto-set owner_id saat create berdasarkan user yang login:
- * - owner    → owner_id = id-nya sendiri
- * - operator → owner_id = owner_id operator tsb
- * Super admin / tanpa auth (seeder, factory) tidak di-set otomatis.
+ * 1. READ (secure-by-default): global scope OwnerScope memfilter setiap query
+ *    baca ke owner yang aktif (bypass untuk super admin & konteks tanpa auth).
+ * 2. WRITE: auto-set owner_id saat create berdasarkan user yang login:
+ *    - owner    → owner_id = id-nya sendiri
+ *    - operator → owner_id = owner_id operator tsb
+ *    Super admin / tanpa auth (seeder, factory) tidak di-set otomatis.
  */
 trait BelongsToOwner
 {
     public static function bootBelongsToOwner(): void
     {
+        static::addGlobalScope(new OwnerScope);
+
         static::creating(function ($model) {
             if ($model->owner_id !== null || ! auth()->check()) {
                 return;

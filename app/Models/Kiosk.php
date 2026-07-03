@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\OwnerScope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,6 +13,17 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class Kiosk extends Model
 {
     use HasFactory;
+
+    /**
+     * Global read scope multi-tenant: Kiosk owner lewat rantai cluster
+     * (whereHas cluster.owner_id). Secure-by-default — lihat OwnerScope.
+     * Kios tanpa cluster (cluster_id null / orphan) TER-FILTER (tak tampil)
+     * saat ada owner aktif; cluster kini wajib jadi data baru tidak orphan.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new OwnerScope);
+    }
 
     /**
      * Penjualan walk-in (pembeli random di jalan, bukan kios terdaftar) dicatat

@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -18,5 +19,21 @@ class TripFactory extends Factory
             'operator_id' => User::factory(),
             'qty_carried_total' => 60,
         ];
+    }
+
+    /**
+     * Di produksi owner_id trip selalu terisi otomatis (BelongsToOwner saat operator
+     * membuat trip). Factory dipakai tanpa auth → hook itu tak jalan, jadi backfill
+     * di sini dari owner operator agar data test realistis & lolos global OwnerScope.
+     * Tidak menimpa owner_id yang sudah diisi eksplisit oleh test.
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (Trip $trip) {
+            if ($trip->owner_id === null && $trip->operator?->owner_id !== null) {
+                $trip->owner_id = $trip->operator->owner_id;
+                $trip->saveQuietly();
+            }
+        });
     }
 }
