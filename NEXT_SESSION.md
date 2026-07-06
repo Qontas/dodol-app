@@ -1,15 +1,57 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 1 Juli 2026*
+*Sesi terakhir: 6 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 204 PASS. Live di Railway. Upload foto kios + peta zoom SUDAH DIFIX &
-TERVERIFIKASI DI PRODUKSI ASLI (desktop + mobile, owner + operator): upload 200 + foto mendarat
-R2 + peta Carto no-grey. 3 commit fix (0455b58 CORS temp-disk, bad45b7 peta, 5e8a032 trust-proxy
-401). GitHub synced. Baca NEXT_SESSION.md untuk context lengkap.
+Bg, lanjut dodol-app. 249 PASS. Live di Railway. Fitur input lokasi Google Maps (Tier 1 regex +
+Tier 2 short-link resolver) SUDAH SELESAI & PUSHED (HEAD 47ed5ac): Tier 1 solid & teruji beneran,
+Tier 2 short-link BARU mock-tested — BELUM pernah kena link maps.app.goo.gl asli, TODO user tes
+link pendek asli dari HP. Audit performa pasca-OwnerScope+maps: RINGAN, angka ada di STATUS.
+Advisor sekarang tulis brief kerja langsung di chat (code block), BUKAN file PROMPT.md lagi.
+Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 228 PASS (939 assertions)
-- ✅ Audit performa: RINGAN, Fase-1 utuh. 3 fix murah dieksекусi (whereDate→where #1, N+1 batchStok
+- 249 PASS (985 assertions), runtime ~63-102s tergantung beban sistem (tak ada test abnormal lambat
+  dari fitur maps — semua kasus <1s; satu outlier 2.98s pre-existing tak terkait, DeliveryObserverTest).
+- ✅ FITUR INPUT LOKASI GOOGLE MAPS SELESAI & PUSHED (6 Juli 2026, commit 1bf6e48/0c7bd4c/47ed5ac):
+  * Tier 1 (KioskLocationParser, regex murni 0-network): koordinat langsung, @lat,lng, ?q=, ?ll=,
+    !3d!4d — SOLID, teruji beneran unit test.
+  * Tier 2 (GoogleMapsShortLinkResolver): resolve short-link maps.app.goo.gl/goo.gl/g.co via
+    HTTP redirect hop-by-hop + SSRF safeguard (allowlist host per-hop + DNS private-IP guard).
+    CATATAN PENTING: HANYA teruji via Http::fake() (mock) — BELUM PERNAH divalidasi terhadap
+    link pendek ASLI. Primary use-case (operator share lokasi dari HP via WhatsApp/Maps app)
+    MASIH BELUM diverifikasi end-to-end. TODO USER: coba tempel link maps.app.goo.gl asli
+    di form owner (tombol "Loncat") dan form operator (create-kiosk), pastikan benar landing
+    di koordinat yang benar.
+  * Wiring UX: tombol "Loncat" di form owner (KioskResource, Filament Action) + operator
+    (CreateKiosk, wire:click="jumpToMapsLocation") — resolver Tier 2 HANYA jalan saat tombol
+    diklik (bukan di form load/validasi rutin, dikonfirmasi via audit performa di bawah).
+  * Fix bonus: invalidateSize peta pakai IntersectionObserver (map-invalidate-size.blade.php)
+    biar peta owner ga blank kalau tombol "Loncat" diklik sebelum peta pernah ke-scroll ke layar.
+- ✅ AUDIT PERFORMA PASCA-OwnerScope+maps (6 Juli 2026) — VERDICT RINGAN, dibuktikan pakai query
+  log nyata (bukan teori):
+  * Owner dashboard: 21 query (EXISTS/IN-batched, tak ada loop per-row).
+  * Owner list kios (Filament): 4 query (identik baseline lama).
+  * Owner form Buat Kios (render): 1 query (dropdown cluster).
+  * Operator form Buat Kios (mount): 2 query — method jumpToMapsLocation() SENDIRI 0 query DB
+    (murni regex + HTTP kondisional).
+  * Operator modal kunjungan: mount 8 query, openVisitModal +12 query (delta) — flat, batched,
+    konsisten baseline lama (~7-9q).
+  * Resolver Tier 2: DIKONFIRMASI hanya terpasang di ->action()/wire:click tombol "Loncat" —
+    BUKAN ->live()/afterStateUpdated()/mount. 0 query DB, 0 HTTP call kecuali tombol diklik DAN
+    Tier 1 gagal DAN host lolos allowlist. Tak ada resiko lambat di form load/validasi rutin.
+  * TEMUAN (bukan regresi dari maps, sudah ada sejak Langkah 2/OwnerScope): beberapa query Kiosk
+    (KioskResource::getEloquentQuery, ActiveTrip::kioskViewData/ownedKiosk) punya KLAUSA EXISTS
+    ganda — manual whereHas('cluster', owner_id) peninggalan Langkah 1 (pre-OwnerScope) + EXISTS
+    otomatis dari OwnerScope, terlihat dobel di SQL log. TAPI: 0 query tambahan, 0 round-trip
+    tambahan — cuma predikat terindeks yang diulang dalam SATU statement yang sama (murah). Di
+    ActiveTrip gate ini SENGAJA dipertahankan sbg defense-in-depth (cegah properti Livewire
+    di-tamper klien, lihat catatan Langkah 1) — JANGAN dibuang tanpa pertimbangan keamanan. Di
+    Filament resource scoping murni jadi dead-weight kosmetik (aman dibuang kapan saja, tak ada
+    rush). TAK PERLU FIX SEKARANG (dampak nol pada jumlah query/latency), dicatat buat cleanup
+    opsional sesi depan.
+  * Asset: 0 dependency baru (package.json/composer.json tak berubah). JS fitur maps ~30 baris
+    vanilla/Alpine inline di file blade yang sudah ada — tak nambah bundle Vite.
+- ✅ Audit performa: RINGAN, Fase-1 utuh. 3 fix murah dieksekusi (whereDate→where #1, N+1 batchStok
   #3, guard memory GD #4). Ditunda: #2 thumbnail foto, #5 denormalisasi owner_id (sblm 10k+ settlement).
 - ✅ Upload foto kios FIXED & verified PRODUKSI (desktop+mobile, owner+operator): 2 blocker beruntun
   dibereskan — (1) CORS temp-upload R2 (commit 0455b58: pin temp disk local) + (2) 401 signed-URL
@@ -17,8 +59,12 @@ R2 + peta Carto no-grey. 3 commit fix (0455b58 CORS temp-disk, bad45b7 peta, 5e8
   mendarat pub-*.r2.dev HTTP 200 (create→R2→delete di prod, sudah dibersihkan).
 - ✅ Peta grey-saat-zoom FIXED & verified PRODUKSI (commit bad45b7: cap maxZoom 20 + Carto Voyager,
   owner+operator): hard-zoom ke max coverage 100%, no grey, desktop+mobile.
-- Live di Railway: https://dodol-app-production.up.railway.app
-- Semua fitur complete
+- Live di Railway: https://dodol-app-production.up.railway.app — PRODUKSI SUDAH LIVE dengan user asli.
+- ⚠️ UTANG KRITIKAL GANTUNG — ROTASI KREDENSIAL: token R2 (akses bucket foto kios) + password DB
+  produksi BELUM PERNAH dirotasi sejak setup awal. Makin lama makin beresiko sekarang produksi
+  sudah live & dipakai user asli. ⏳ TODO: jadwalkan rotasi R2 token + DB password produksi, update
+  env Railway, redeploy, verifikasi upload+DB masih jalan setelah rotasi.
+- Semua fitur complete (Tier 2 maps butuh verifikasi link asli sebelum dianggap 100% tuntas)
 
 ## ✅ LANGKAH 2 — GLOBAL SCOPE SECURE-BY-DEFAULT SELESAI (3 Juli 2026)
 - JAMINAN ISOLASI TENANT KINI BY DESIGN, BUKAN MANUAL: lupa nambah `where owner_id` = data
