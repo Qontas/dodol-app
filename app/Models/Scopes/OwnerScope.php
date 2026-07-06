@@ -3,6 +3,7 @@
 namespace App\Models\Scopes;
 
 use App\Models\Kiosk;
+use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -19,6 +20,10 @@ use Illuminate\Database\Eloquent\Scope;
  * - Model Level-1 (punya kolom owner_id langsung): clusters, suppliers, products,
  *   procurement_batches, trips → lewat trait BelongsToOwner.
  * - Kiosk (Level-2, owner via cluster) → lewat whereHas('cluster', owner_id).
+ * - ProductVariant (Level-2, owner via product) → lewat whereHas('product', owner_id).
+ *   Didaftarkan di ProductVariant::booted(), cabang terpisah dari Kiosk di apply()
+ *   (menutup temuan residual audit isolasi 6 Juli — model ini sebelumnya HANYA
+ *   dilindungi scope manual per call-site, bukan secure-by-default).
  *
  * Resolver "owner aktif" (activeOwnerId) menentukan konteks; null = BYPASS
  * (tak di-filter) untuk super admin & konteks tanpa auth (seeder, factory, CLI,
@@ -40,6 +45,14 @@ class OwnerScope implements Scope
         if ($model instanceof Kiosk) {
             // Kiosk tak punya kolom owner_id → owner lewat rantai cluster.
             $builder->whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId));
+
+            return;
+        }
+
+        if ($model instanceof ProductVariant) {
+            // ProductVariant tak punya kolom owner_id → owner lewat rantai product.
+            // Cabang terpisah dari Kiosk di atas — tidak mengubah perilaku Kiosk.
+            $builder->whereHas('product', fn ($q) => $q->where('owner_id', $ownerId));
 
             return;
         }

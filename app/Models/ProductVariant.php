@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\OwnerScope;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,6 +11,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class ProductVariant extends Model
 {
     use HasFactory;
+
+    /**
+     * Global read scope multi-tenant: ProductVariant owner lewat rantai product
+     * (whereHas product.owner_id). Secure-by-default — lihat OwnerScope. Menutup
+     * temuan residual audit isolasi 6 Juli (ProductVariantScopeGapTest).
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new OwnerScope);
+    }
 
     protected $fillable = [
         'product_id',
