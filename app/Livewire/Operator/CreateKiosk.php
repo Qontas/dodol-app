@@ -4,6 +4,8 @@ namespace App\Livewire\Operator;
 
 use App\Models\Cluster;
 use App\Models\Kiosk;
+use App\Support\GoogleMapsShortLinkResolver;
+use App\Support\KioskLocationParser;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -22,7 +24,44 @@ class CreateKiosk extends Component
     public int $defaultQtyMika = 1;
     public ?float $latitude = null;
     public ?float $longitude = null;
+    public ?string $mapsInput = null;
     public $foto = null;
+
+    // Tier 1 (koordinat/link panjang) = murni parsing, instan. Tier 2 (link
+    // pendek maps.app.goo.gl/goo.gl) = best-effort via redirect resolve —
+    // lihat GoogleMapsShortLinkResolver utk safeguard SSRF-nya.
+    public function jumpToMapsLocation(): void
+    {
+        $this->resetErrorBag('mapsInput');
+
+        $input = trim((string) $this->mapsInput);
+        if ($input === '') {
+            $this->addError('mapsInput', 'Tempel link atau koordinat Google Maps dulu.');
+            return;
+        }
+
+        $coords = KioskLocationParser::parse($input);
+
+        if ($coords === null && GoogleMapsShortLinkResolver::isEligible($input)) {
+            $resolved = GoogleMapsShortLinkResolver::resolve($input);
+            $coords = $resolved !== null ? KioskLocationParser::parse($resolved) : null;
+
+            if ($coords === null) {
+                $this->addError('mapsInput', 'Link pendek tidak bisa dibaca. Buka dulu link-nya di browser, lalu tempel link panjang atau koordinatnya di sini.');
+                return;
+            }
+        }
+
+        if ($coords === null) {
+            $this->addError('mapsInput', 'Format tidak dikenali. Coba tempel koordinat langsung, contoh: 3.5896, 98.6739');
+            return;
+        }
+
+        $this->latitude = $coords['lat'];
+        $this->longitude = $coords['lng'];
+
+        $this->dispatch('kiosk-location-jumped', lat: $coords['lat'], lng: $coords['lng']);
+    }
 
     public function mount(): void
     {

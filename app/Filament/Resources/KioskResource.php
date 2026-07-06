@@ -4,12 +4,16 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\KioskResource\Pages;
 use App\Models\Kiosk;
+use App\Support\GoogleMapsShortLinkResolver;
+use App\Support\KioskLocationParser;
 use Illuminate\Database\Eloquent\Builder;
 use Dotswan\MapPicker\Fields\Map;
 use Filament\Forms;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Forms\Set;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
@@ -99,6 +103,74 @@ class KioskResource extends Resource
                             ->maxLength(500)
                             ->placeholder('Contoh: Jl. Persatuan No. 33, Medan')
                             ->columnSpanFull(),
+
+                        Forms\Components\TextInput::make('maps_paste_input')
+                            ->label('Tempel Link / Koordinat Google Maps')
+                            ->helperText('Cari lokasi kios di Google Maps dulu (ada patokan/nama toko), lalu tempel link atau koordinatnya di sini.')
+                            ->placeholder('Contoh: 3.5896, 98.6739 atau link Google Maps')
+                            ->dehydrated(false)
+                            ->columnSpanFull()
+                            ->suffixAction(
+                                Forms\Components\Actions\Action::make('jumpToMapsLocation')
+                                    ->icon('heroicon-o-arrow-top-right-on-square')
+                                    ->tooltip('Loncat ke lokasi')
+                                    // Tier 1 (koordinat/link panjang) = parsing murni, instan. Tier 2
+                                    // (link pendek maps.app.goo.gl/goo.gl) = best-effort via redirect
+                                    // resolve — lihat GoogleMapsShortLinkResolver utk safeguard SSRF-nya.
+                                    ->action(function (Set $set, Get $get, $livewire): void {
+                                        $input = trim((string) $get('maps_paste_input'));
+
+                                        if ($input === '') {
+                                            Notification::make()
+                                                ->title('Tempel link atau koordinat dulu.')
+                                                ->warning()
+                                                ->send();
+                                            return;
+                                        }
+
+                                        $coords = KioskLocationParser::parse($input);
+
+                                        if ($coords === null && GoogleMapsShortLinkResolver::isEligible($input)) {
+                                            $resolved = GoogleMapsShortLinkResolver::resolve($input);
+                                            $coords = $resolved !== null ? KioskLocationParser::parse($resolved) : null;
+
+                                            if ($coords === null) {
+                                                Notification::make()
+                                                    ->title('Link pendek tidak bisa dibaca')
+                                                    ->body('Buka dulu link-nya di browser, lalu tempel link panjang atau koordinatnya di sini.')
+                                                    ->danger()
+                                                    ->send();
+                                                return;
+                                            }
+                                        }
+
+                                        if ($coords === null) {
+                                            Notification::make()
+                                                ->title('Format tidak dikenali')
+                                                ->body('Coba tempel koordinat langsung, contoh: 3.5896, 98.6739')
+                                                ->danger()
+                                                ->send();
+                                            return;
+                                        }
+
+                                        $set('latitude', $coords['lat']);
+                                        $set('longitude', $coords['lng']);
+                                        $set('location', ['lat' => $coords['lat'], 'lng' => $coords['lng']]);
+
+                                        // JANGAN dispatch 'refreshMap' langsung: kalau peta lagi di
+                                        // luar layar, IntersectionObserver vendor sudah membongkar
+                                        // this.map (null) → refreshMap() crash. 'kiosk-location-jumped'
+                                        // ditangkap filament.forms.map-invalidate-size, yang scroll peta
+                                        // ke layar dulu (memicu observer membangun ulang this.map) baru
+                                        // dispatch 'refreshMap' bawaan paket setelah delay.
+                                        $livewire->dispatch('kiosk-location-jumped');
+
+                                        Notification::make()
+                                            ->title('Lokasi ditemukan!')
+                                            ->success()
+                                            ->send();
+                                    })
+                            ),
 
                         Map::make('location')
                             ->label('Lokasi Kios')

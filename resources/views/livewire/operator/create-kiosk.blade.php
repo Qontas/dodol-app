@@ -129,6 +129,29 @@
                 Klik titik di peta atau pakai tombol GPS di bawah
             </p>
 
+            {{-- Tempel link/koordinat Google Maps → auto-loncat --}}
+            <div class="mb-3">
+                <div class="flex gap-2">
+                    <input
+                        type="text"
+                        wire:model="mapsInput"
+                        placeholder="Tempel link atau koordinat Google Maps"
+                        class="flex-1 min-w-0 rounded-xl border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-2.5 text-sm">
+                    <button
+                        type="button"
+                        wire:click="jumpToMapsLocation"
+                        wire:loading.attr="disabled"
+                        wire:target="jumpToMapsLocation"
+                        class="px-3 rounded-xl bg-slate-800 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-60 whitespace-nowrap">
+                        <span wire:loading.remove wire:target="jumpToMapsLocation">Loncat</span>
+                        <span wire:loading wire:target="jumpToMapsLocation">⏳</span>
+                    </button>
+                </div>
+                @error('mapsInput')
+                    <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                @enderror
+            </div>
+
             <button type="button" id="btn-gps"
                 class="mb-2 w-full py-2 rounded-xl border border-amber-400 text-amber-700
                        text-sm font-semibold bg-amber-50 hover:bg-amber-100 transition">
@@ -334,14 +357,40 @@
             );
         }
 
-        function setMapLocation(lat, lng) {
+        function moveMarker(lat, lng) {
             if (operatorMarker) {
                 operatorMarker.setLatLng([lat, lng]);
             } else {
                 operatorMarker = L.marker([lat, lng]).addTo(operatorMap);
             }
+        }
+
+        function setMapLocation(lat, lng) {
+            moveMarker(lat, lng);
             @this.set('latitude', lat);
             @this.set('longitude', lng);
         }
+
+        // Hasil tombol "Loncat" (jumpToMapsLocation di server sudah set
+        // $latitude/$longitude dalam request yang sama) — tinggal geser peta,
+        // TIDAK perlu @this.set lagi di sini (hindari round-trip dobel).
+        document.addEventListener('livewire:init', () => {
+            Livewire.on('kiosk-location-jumped', (event) => {
+                if (!operatorMap) return;
+                moveMarker(event.lat, event.lng);
+                operatorMap.setView([event.lat, event.lng], 17);
+            });
+        });
     </script>
+
+    {{-- Toast sukses "Loncat ke lokasi" --}}
+    <div
+        x-data="{ show: false }"
+        x-on:kiosk-location-jumped.window="show = true; setTimeout(() => show = false, 2500)"
+        x-show="show"
+        x-transition
+        style="display: none;"
+        class="fixed top-4 inset-x-4 z-[9999] bg-emerald-600 text-white text-sm font-semibold rounded-xl px-4 py-3 shadow-lg text-center">
+        📍 Lokasi ditemukan!
+    </div>
 </div>
