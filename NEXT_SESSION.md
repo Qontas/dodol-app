@@ -344,6 +344,50 @@ untuk context lengkap.
   200; 4 subdomain Carto paralel; 0 throttle. Screenshot at-max-zoom dua-duanya keisi tile bangunan
   asli (Jalan Sei Deli), nol grey, tombol "+" ke-disable di batas z20. 204 PASS.
 
+## ✅ INVESTIGASI "PETA OWNER TAK GERAK SAAT LONCAT" — TIDAK ADA BUG DI KODE (6 Juli 2026)
+- LAPORAN USER: link Google Maps di-tempel di form owner (KioskResource) → notif "Lokasi
+  ditemukan!" muncul (server resolve OK) tapi pin peta di sisi owner TIDAK BERGERAK SAMA
+  SEKALI, baik sebelum maupun sesudah klik "Loncat ke lokasi". Hipotesis awal: rantai
+  event `kiosk-location-jumped` → `map-invalidate-size.blade.php` → `refreshMap` dotswan
+  putus (selector/markup vendor beda, `this.map` null saat `flyTo`, atau race timing).
+- INVESTIGASI (headed Chromium ASLI via playwright-core, BUKAN headless — instruksi user
+  eksplisit karena headless punya timing IntersectionObserver beda): direpro 2x dengan kode
+  persis di HEAD (create kiosk kosong, DAN edit kiosk #1 existing dgn lat/lng lama jauh dari
+  target, section Lokasi di luar viewport saat load — skenario paling dekat ke laporan user).
+  HASIL: `this.map` memang null sebelum interaksi (section di luar viewport → IntersectionObserver
+  vendor sudah membongkarnya, sesuai desain fix 1d713c0), TAPI begitu tombol "Loncat" diklik:
+  event diterima → `scrollIntoView` → observer membangun ulang `this.map` dengan koordinat yang
+  SUDAH ter-`$set` → peta langsung center TEPAT di koordinat target. Screenshot before/after
+  membuktikan pin pindah persis (3.6157078, 98.6758666), notif "Lokasi ditemukan!" tampil. Kode
+  di `main` (HEAD 4785acb) SUDAH BENAR — kandidat bug (selector salah/this.map null saat flyTo/
+  race 500ms/event tak sampai) SEMUA TERBANTAH oleh repro langsung.
+- CEK DEPLOY (hipotesis lanjutan: asset build basi di Railway): TERBANTAH JUGA. `public/js/
+  dotswan/filament-map-picker/filament-map-picker-scripts.js` (berisi seluruh logic mapPicker/
+  refreshMap) di-commit LANGSUNG ke git (bukan hasil `npm run build`/Vite — `.dockerignore`
+  cuma exclude `public/build`), jadi ikut ter-`COPY . /app` di Dockerfile apa pun status build
+  Vite. Diverifikasi via `curl` ke asset statis produksi (tak perlu login, murni file publik):
+  MD5 produksi vs lokal **identik byte-for-byte**, `Last-Modified` produksi (2026-07-06 08:39:28
+  UTC = 15:39:28 WIB) pas beberapa detik setelah commit HEAD lokal (15:39:02 WIB) — produksi
+  SUDAH redeploy dengan kode paling baru. Kesimpulan: pipeline Railway (Dockerfile builder,
+  `npm run build` fresh tiap deploy di stage terpisah + `COPY . /app`) TIDAK bermasalah untuk
+  file ini; tak perlu perubahan pipeline.
+- KESIMPULAN: tidak ada fix kode yang dieksekusi (tidak ada bug ditemukan). Laporan user
+  kemungkinan besar dari SEBELUM fix 1d713c0/47ed5ac ter-deploy hari ini (semua commit terkait
+  maps ada di tanggal yang sama). TODO USER: re-test di produksi SEKARANG (reload biasa, tak
+  perlu clear cache lagi — asset produksi sudah dikonfirmasi terbaru) dan konfirmasi apakah
+  pin sudah bergerak.
+- REKOMENDASI ARSITEKTUR (belum dieksekusi, perlu keputusan user): dotswan/filament-map-picker
+  sudah 2× jadi sumber bug kelas timing/lifecycle di form owner (grey-tile 1d713c0, lalu
+  investigasi ini). Peta operator (Livewire + Leaflet hand-rolled, create-kiosk.blade.php)
+  TAK PERNAH kena kelas bug ini karena kontrol penuh (tak ada IntersectionObserver pihak
+  ketiga yang bongkar-pasang peta). Opsi: ganti Map::make (dotswan) di KioskResource jadi
+  Leaflet hand-rolled seragam dgn operator. Trade-off: effort medium (perlu port draggable
+  marker + GPS button + fullscreen + zoom cap + fix grey-tile yang sudah ada ke implementasi
+  baru, ~150-250 baris, retest penuh) vs manfaat (hilangkan seluruh kelas bug integrasi vendor
+  black-box, kontrol penuh sama seperti operator yang terbukti stabil). TIDAK mendesak karena
+  mekanisme dotswan SEKARANG terbukti jalan — cocok jadi item cleanup/hardening sesi depan,
+  bukan hotfix.
+
 ## ✅ FIX PETA MAP-PICKER ABU-ABU DI MOBILE (1 Juli 2026) — owner form (commit 1d713c0)
 - GEJALA: peta pemilih lokasi kios di form owner (KioskResource) tampil ABU-ABU di HP —
   tiles cuma nutup sebagian / kosong, makin parah saat zoom. Desktop keliatan normal.
