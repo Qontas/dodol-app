@@ -58,7 +58,7 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
-     * Cegah peta Leaflet (dotswan/filament-map-picker di KioskResource) menutupi
+     * Cegah peta Leaflet (LeafletMapPicker di KioskResource) menutupi
      * sidebar & topbar Filament.
      *
      * Leaflet menempatkan kontrol zoom/atribusi pada z-index 1000, jauh di atas

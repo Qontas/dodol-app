@@ -7,7 +7,7 @@ use App\Models\Kiosk;
 use App\Support\GoogleMapsShortLinkResolver;
 use App\Support\KioskLocationParser;
 use Illuminate\Database\Eloquent\Builder;
-use Dotswan\MapPicker\Fields\Map;
+use App\Filament\Forms\Components\LeafletMapPicker;
 use Filament\Forms;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Form;
@@ -157,12 +157,9 @@ class KioskResource extends Resource
                                         $set('longitude', $coords['lng']);
                                         $set('location', ['lat' => $coords['lat'], 'lng' => $coords['lng']]);
 
-                                        // JANGAN dispatch 'refreshMap' langsung: kalau peta lagi di
-                                        // luar layar, IntersectionObserver vendor sudah membongkar
-                                        // this.map (null) → refreshMap() crash. 'kiosk-location-jumped'
-                                        // ditangkap filament.forms.map-invalidate-size, yang scroll peta
-                                        // ke layar dulu (memicu observer membangun ulang this.map) baru
-                                        // dispatch 'refreshMap' bawaan paket setelah delay.
+                                        // Leaflet hand-rolled (resources/js/... public/js/leaflet-map-picker.js):
+                                        // listener event ini langsung panggil map.setView() ke koordinat
+                                        // yang baru saja di-$set — tanpa perantara refreshMap/IntersectionObserver.
                                         $livewire->dispatch('kiosk-location-jumped');
 
                                         Notification::make()
@@ -172,13 +169,13 @@ class KioskResource extends Resource
                                     })
                             ),
 
-                        Map::make('location')
+                        LeafletMapPicker::make('location')
                             ->label('Lokasi Kios')
                             ->helperText('Klik titik di peta')
                             ->columnSpanFull()
                             ->defaultLocation(latitude: 3.5952, longitude: 98.6722)
                             ->draggable()
-                            ->clickable(true)
+                            ->clickable()
                             ->afterStateUpdated(function (Set $set, ?array $state): void {
                                 $set('latitude', $state['lat'] ?? null);
                                 $set('longitude', $state['lng'] ?? null);
@@ -189,41 +186,23 @@ class KioskResource extends Resource
                                     'lng' => $record?->longitude ?? 98.6722,
                                 ]);
                             })
-                            ->liveLocation()
-                            ->showMarker()
                             ->markerColor('#FBBF24')
                             ->showFullscreenControl()
                             ->showZoomControl()
+                            ->showMyLocationButton()
                             // Tile CARTO Voyager (gratis, CDN + subdomain {s}=abcd → tile keisi
                             // lebih cepat & kebijakan usage lebih longgar dari tile.openstreetmap.org
-                            // yang rawan throttle/400). Native 256px (tileSize 256 + zoomOffset 0).
+                            // yang rawan throttle/400). Native 256px — sudah default Leaflet, sama
+                            // seperti peta operator (create-kiosk.blade.php), jadi tak perlu override
+                            // tileSize/zoomOffset lagi (itu cuma perlu utk nyamain default dotswan yg beda).
                             ->tilesUrl('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png')
+                            ->attribution('© OpenStreetMap, © CARTO')
                             ->zoom(13)
-                            // AKAR "grey saat zoom KUAT": maxZoom default paket = 28, padahal tile
-                            // cuma ada s/d ~z20. Zoom lewat itu → provider balas 400/tanpa tile →
-                            // GREY. Cap maxZoom = 20 (map & tileLayer) supaya user tak bisa over-zoom
+                            // AKAR "grey saat zoom KUAT": provider cuma ada tile s/d ~z20. Cap
+                            // maxZoom = 20 (map & tileLayer maxNativeZoom) — user tak bisa over-zoom
                             // ke zona tanpa-tile. z20 = level bangunan, cukup buat nunjuk lokasi kios.
                             ->maxZoom(20)
-                            // detectRetina default paket = true; matikan eksplisit supaya
-                            // mobile retina tidak minta tile @2x (memperparah grey saat zoom).
-                            ->detectRetina(false)
-                            ->showMyLocationButton()
-                            // zoomSnap 1 (default Leaflet) — sebelumnya zoomSnap 2 bikin
-                            // langkah zoom tak lazim & memicu tile kosong saat pinch di mobile.
-                            ->extraControl(['zoomSnap' => 1, 'zoomDelta' => 1])
-                            // tileLayer: 256px native + cap maxZoom 20 (samakan dgn map) + atribusi.
-                            ->extraTileControl([
-                                'tileSize' => 256,
-                                'zoomOffset' => 0,
-                                'maxZoom' => 20,
-                                'attribution' => '© OpenStreetMap, © CARTO',
-                            ])
                             ->dehydrated(false),
-
-                        // Paksa Leaflet hitung ulang ukuran container setelah layout mobile
-                        // settle / section Lokasi dibuka → hilangkan peta abu-abu (grey tiles).
-                        Forms\Components\View::make('filament.forms.map-invalidate-size')
-                            ->columnSpanFull(),
 
                         // Kolom asli tetap disimpan ke DB lewat hidden field
                         Forms\Components\Hidden::make('latitude'),

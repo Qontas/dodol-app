@@ -2,20 +2,22 @@
 *Sesi terakhir: 6 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 269 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
+Bg, lanjut dodol-app. 270 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
 (3 skenario dibuktikan pakai test): super_admin bikin owner baru → 0 data nyangkut; owner A tak
 bisa baca/tulis data owner B (404/ditolak semua); operator owner A tak bisa sentuh kios/trip
 owner B (4 lubang lama masih tertutup). TEMUAN residual ProductVariant tanpa OwnerScope global
 SUDAH DIFIX (6 Juli 2026): scope global terdaftar via ProductVariant::booted(), pola identik
 Kiosk, cabang terpisah di OwnerScope::apply() — Kiosk & 5 model Level-1 lain TAK REGRESI (semua
 test masih hijau), super_admin tetap bypass. Fitur input lokasi Google Maps (Tier 1+2) SELESAI &
-PUSHED (HEAD 47ed5ac), Tier 2 masih mock-tested only — TODO user tes link pendek asli. Advisor
-tulis brief kerja langsung di chat (code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md
-untuk context lengkap.
+PUSHED (HEAD 47ed5ac), Tier 2 masih mock-tested only — TODO user tes link pendek asli. Peta OWNER
+kini pakai Leaflet HAND-ROLLED (App\Filament\Forms\Components\LeafletMapPicker), dotswan/
+filament-map-picker DIHAPUS TOTAL (3x sumber bug integrasi) — lihat section "MIGRASI PETA OWNER
+DOTSWAN → LEAFLET". Advisor tulis brief kerja langsung di chat (code block), BUKAN file PROMPT.md
+lagi. Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 269 PASS (1026 assertions) — naik dari 249 (20 test baru: 17 dari audit isolasi + 3 net dari fix
-  ProductVariant scope gap di bawah).
+- 270 PASS (1039 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
+  1 test baru dari migrasi peta owner ke Leaflet di bawah).
 - ✅ AUDIT ISOLASI MULTI-TENANT MENYELURUH (6 Juli 2026) — 3 skenario DIBUKTIKAN PAKAI TEST, semua hijau:
   1. **Super_admin bikin owner baru** — alur: panel `/admin` (HANYA super_admin/owner boleh masuk),
      `UserResource` + `Pages/CreateUser.php` (app/Filament/Resources/UserResource.php:70-76: opsi
@@ -344,7 +346,78 @@ untuk context lengkap.
   200; 4 subdomain Carto paralel; 0 throttle. Screenshot at-max-zoom dua-duanya keisi tile bangunan
   asli (Jalan Sei Deli), nol grey, tombol "+" ke-disable di batas z20. 204 PASS.
 
-## ✅ INVESTIGASI "PETA OWNER TAK GERAK SAAT LONCAT" — TIDAK ADA BUG DI KODE (6 Juli 2026)
+## ✅ MIGRASI PETA OWNER: dotswan/filament-map-picker → LEAFLET HAND-ROLLED (6 Juli 2026)
+> ⚠️ MENGGANTIKAN keputusan "tidak ada bug" di section investigasi di bawah ini. Setelah user
+> jalankan console diagnostik di produksi, akar SEBENARNYA ketemu: event `kiosk-location-jumped`
+> diterima, peta hidup, `getCoordinates()` benar — TAPI `refreshMap()` bawaan dotswan tak pernah
+> ke-panggil (integrasi vendor black-box, bukan lagi soal deploy/cache). Keputusan FINAL: dotswan
+> dicopot total, diganti Leaflet hand-rolled (pola sama persis dgn peta operator yang sudah
+> terbukti stabil sejak awal — 0 bug integrasi vendor).
+- KENAPA: dotswan sudah 3× jadi sumber bug kelas integrasi/lifecycle di form owner (grey-tile
+  invalidateSize → commit 1d713c0; lalu refreshMap tak ke-panggil → investigasi sesi ini). Peta
+  operator (Livewire + Leaflet manual, `create-kiosk.blade.php`) TAK PERNAH kena kelas bug ini
+  karena kontrol penuh — `map.setView()` dipanggil LANGSUNG, tanpa refreshMap/IntersectionObserver
+  pihak ketiga yang bisa diam-diam berhenti bekerja.
+- ARSITEKTUR (dipilih: TERPISAH, bukan 1 komponen Blade reusable owner+operator): owner pakai
+  Filament Field (`Forms\Components\Field` custom, state via `$set`/`$get`/statePath) sedangkan
+  operator pakai Livewire mentah (`@this.set('latitude', ..)` dua properti scalar terpisah) — dua
+  paradigma binding state yang beda secara fundamental. Memaksa 1 abstraksi bersama nambah
+  kompleksitas tanpa manfaat nyata sekarang, DAN operator TIDAK PERNAH rusak (0 bug) jadi tak ada
+  alasan mengubah kodenya. Duplikasi yang tersisa cuma config kecil (tile URL, zoom cap, warna
+  marker) — bukan logic rawan-bug. Kalau nanti ada bug KETIGA yang sama persis di operator (belum
+  pernah), baru worth disatukan.
+- FILE BARU:
+  * `app/Filament/Forms/Components/LeafletMapPicker.php` — Filament Field custom (extends `Field`),
+    fluent API (defaultLocation/draggable/clickable/markerColor/showZoomControl/
+    showFullscreenControl/showMyLocationButton/tilesUrl/attribution/zoom/maxZoom). afterStateUpdated/
+    afterStateHydrated/dehydrated/columnSpanFull/label/helperText WARISAN dari `Field` base class
+    (Filament sendiri, bukan ditulis ulang).
+  * `resources/views/filament/forms/leaflet-map-picker.blade.php` — blade field, include
+    `vendor/leaflet/leaflet.{css,js}` + `js/leaflet-map-picker.js` langsung (pola sama dgn operator,
+    BUKAN lewat FilamentAsset::register — hindari ketergantungan pada `php artisan filament:assets`
+    publish step, persis kelas isu yang baru saja diinvestigasi utk dotswan).
+  * `public/js/leaflet-map-picker.js` — factory Alpine `leafletMapPicker($wire, config)`. Klik
+    "Loncat" → listener `window.addEventListener('kiosk-location-jumped', ...)` LANGSUNG panggil
+    `map.setView()` — TANPA scrollIntoView/500ms delay/refreshMap perantara. Ganti workaround
+    IntersectionObserver dotswan (scan 500ms + scroll listener + dispatch resize bertahap) dengan
+    `ResizeObserver` bawaan browser (invalidateSize tiap ukuran container BENERAN berubah — section
+    Lokasi dibuka/ditutup, layout mobile settle). GPS button + fullscreen custom Leaflet control
+    (bukan plugin `leaflet-fullscreen` dotswan — cukup Fullscreen API native + toggle sendiri).
+  * BUG DITEMUKAN & DIFIX saat verifikasi headed Chrome: `L.map()` bisa kepanggil 2x pada container
+    DOM yang SAMA (Livewire commit-ulang sesaat setelah load awal memicu `x-init` dobel walau node
+    DOM-nya tak berubah — `wire:ignore` melindungi children dari morph, BUKAN dari re-run x-init
+    Alpine). FIX: guard `if (el._leaflet_id) return;` di awal `init()` — panggilan kedua no-op,
+    instance PERTAMA (yang sudah pegang listener asli) tetap satu-satunya map hidup.
+- DIHAPUS: `vendor/dotswan/filament-map-picker` (`composer remove`, composer.json/lock bersih),
+  `public/{css,js}/dotswan/**` (generated, sudah orphan), `resources/views/filament/forms/
+  map-invalidate-size.blade.php` (workaround IntersectionObserver, tak dibutuhkan lagi), baris
+  `View::make('filament.forms.map-invalidate-size')` di KioskResource, komentar dotswan-specific di
+  `AppServiceProvider::fixFilamentMapPickerZIndex()` (CSS z-index-nya TETAP — masih relevan utk
+  Leaflet native), regex `/js/dotswan/` mati di `public/sw.js` (diganti eksplisit
+  `/js/leaflet-map-picker.js` masuk kebijakan NETWORK-FIRST yang sama dgn aset Filament — file ini
+  bukan hasil Vite/tak ber-hash, jadi rawan basi kalau cache-first).
+- TEST BARU: `tests/Feature/Owner/KioskMapJumpTest.php` — bukti lat/lng yang TERSIMPAN ke DB benar
+  (bukan cuma peta bergerak di browser) setelah tombol "Loncat" dgn koordinat asli Sippin Milk&Tea
+  (3.6157078, 98.6758666), termasuk assert eksplisit latitude≠longitude tertukar. 270 PASS total
+  (269 lama + 1 baru), 0 regresi.
+- VERIFIKASI HEADED CHROME ASLI (bukan headless, localhost — playwright-core + system Chrome/Edge,
+  skrip ad-hoc di scratchpad di luar repo):
+  * CREATE: paste link → jump → pin pindah TEPAT ke target (3.6157046, 98.6758733 vs target
+    3.6157078, 98.6758666). Klik di peta → lat/lng ter-set sesuai titik klik. Drag marker → update
+    lat/lng sesuai posisi baru (beda dari sebelum drag, dibuktikan eksplisit). Tombol GPS (geolocation
+    di-mock via Playwright context) → pindah PERSIS ke koordinat mock. Zoom 10× tombol "+" → mentok
+    di z20 (maxZoom cap jalan), 0 tile response error (grey-tile TIDAK regresi).
+  * EDIT kiosk existing (id=1, lat/lng lama 3.5961349/98.6810119, section Lokasi di luar viewport
+    saat load — skenario PERSIS laporan awal user): peta ter-render correctly di koordinat
+    TERSIMPAN saat load (3.596174, 98.681002 ≈ match).
+  * Screenshot max-zoom: tile penuh warna (nol grey) + kontrol custom fullscreen (kiri-atas) & GPS
+    (kanan-atas) ke-render benar dgn ikon SVG masing-masing.
+- TODO USER: verifikasi produksi (incognito, biar pasti bukan cache) — buka form owner Kios, paste
+  link `maps.app.goo.gl` ASLI, klik "Loncat ke lokasi", pastikan pin BERGERAK.
+
+## ⚠️ INVESTIGASI SEBELUMNYA "PETA OWNER TAK GERAK" — DIGANTIKAN, lihat "MIGRASI PETA OWNER" di atas
+> Disimpan sbg histori: kesimpulan "tidak ada bug" di bawah ini TERNYATA KELIRU — akar sebenarnya
+> baru ketemu setelah user jalankan diagnostik produksi (lihat section di atas).
 - LAPORAN USER: link Google Maps di-tempel di form owner (KioskResource) → notif "Lokasi
   ditemukan!" muncul (server resolve OK) tapi pin peta di sisi owner TIDAK BERGERAK SAMA
   SEKALI, baik sebelum maupun sesudah klik "Loncat ke lokasi". Hipotesis awal: rantai

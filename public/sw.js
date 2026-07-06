@@ -97,7 +97,7 @@ self.addEventListener('fetch', (event) => {
     // online, jadi tak butuh kecepatan cache-first untuk aset ini.
     if (
         /^\/(css|js)\/filament\//.test(url.pathname) ||
-        /^\/(css|js)\/dotswan\//.test(url.pathname) ||
+        url.pathname === '/js/leaflet-map-picker.js' ||
         url.pathname.startsWith('/vendor/')
     ) {
         event.respondWith(networkFirst(request));
