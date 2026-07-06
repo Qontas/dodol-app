@@ -35,4 +35,90 @@ class KioskLocationParser
 
         return ['lat' => round($lat, 6), 'lng' => round($lng, 6)];
     }
+
+    /**
+     * Parser utama untuk field "tempel link/koordinat Google Maps" di form kios
+     * (owner Filament + operator Livewire). Coba semua format yang dikenal secara
+     * berurutan, murni string parsing — TIDAK ada network call di sini (link
+     * pendek goo.gl/maps.app.goo.gl butuh resolve redirect dulu, lihat
+     * App\Services\GoogleMapsShortLinkResolver, baru hasilnya dilempar ke sini).
+     *
+     * @return array{lat: float, lng: float}|null
+     */
+    public static function parse(string $value): ?array
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        return self::parseCoordinatePair($value)
+            ?? self::dmsToDecimal($value)
+            ?? self::parseGoogleMapsUrl($value);
+    }
+
+    /**
+     * Koordinat diketik langsung, mis. "3.5896, 98.6739" (spasi opsional).
+     *
+     * @return array{lat: float, lng: float}|null
+     */
+    public static function parseCoordinatePair(string $value): ?array
+    {
+        $value = trim($value);
+
+        if (! preg_match('/^(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/', $value, $m)) {
+            return null;
+        }
+
+        return self::validated((float) $m[1], (float) $m[2]);
+    }
+
+    /**
+     * Link Google Maps PANJANG (browser/desktop) — koordinat sudah ada di URL,
+     * tidak perlu network call. Dicoba berurutan dari yang paling presisi:
+     *   1. !3dLAT!4dLNG — titik marker/place persis (dari param `data=`).
+     *   2. @lat,lng,zoom — pusat viewport peta (dipakai kalau tidak ada data param).
+     *   3. ?q=lat,lng / &q=lat,lng
+     *   4. ?ll=lat,lng / &ll=lat,lng
+     * Google selalu urutan lat,lng (bukan lng,lat) di semua pola ini.
+     *
+     * @return array{lat: float, lng: float}|null
+     */
+    public static function parseGoogleMapsUrl(string $value): ?array
+    {
+        $value = trim($value);
+
+        if (preg_match('/!3d(-?\d{1,2}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/', $value, $m)) {
+            return self::validated((float) $m[1], (float) $m[2]);
+        }
+
+        if (preg_match('/@(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)/', $value, $m)) {
+            return self::validated((float) $m[1], (float) $m[2]);
+        }
+
+        if (preg_match('/[?&]q=(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)/', $value, $m)) {
+            return self::validated((float) $m[1], (float) $m[2]);
+        }
+
+        if (preg_match('/[?&]ll=(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)/', $value, $m)) {
+            return self::validated((float) $m[1], (float) $m[2]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Guard batas lat/lng — jaring pengaman kalau regex ke-match tapi angkanya
+     * di luar jangkauan valid (mis. data korup / salah tempel).
+     *
+     * @return array{lat: float, lng: float}|null
+     */
+    private static function validated(float $lat, float $lng): ?array
+    {
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            return null;
+        }
+
+        return ['lat' => round($lat, 7), 'lng' => round($lng, 7)];
+    }
 }
