@@ -2,18 +2,20 @@
 *Sesi terakhir: 6 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 266 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
-(3 skenario dibuktikan pakai test, bukan asumsi): super_admin bikin owner baru → 0 data nyangkut;
-owner A tak bisa baca/tulis data owner B (list, edit page, delete action — semua 404/ditolak);
-operator owner A tak bisa sentuh kios/trip owner B (4 lubang lama masih tertutup + test masih
-hijau). 1 TEMUAN residual: ProductVariant tak punya OwnerScope global (beda dari Kiosk) — semua
-call site SEKARANG aman via scope manual, tapi risikonya laten buat kode baru (lihat STATUS).
-Fitur input lokasi Google Maps (Tier 1+2) SELESAI & PUSHED (HEAD 47ed5ac), Tier 2 masih
-mock-tested only — TODO user tes link pendek asli. Advisor tulis brief kerja langsung di chat
-(code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
+Bg, lanjut dodol-app. 269 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
+(3 skenario dibuktikan pakai test): super_admin bikin owner baru → 0 data nyangkut; owner A tak
+bisa baca/tulis data owner B (404/ditolak semua); operator owner A tak bisa sentuh kios/trip
+owner B (4 lubang lama masih tertutup). TEMUAN residual ProductVariant tanpa OwnerScope global
+SUDAH DIFIX (6 Juli 2026): scope global terdaftar via ProductVariant::booted(), pola identik
+Kiosk, cabang terpisah di OwnerScope::apply() — Kiosk & 5 model Level-1 lain TAK REGRESI (semua
+test masih hijau), super_admin tetap bypass. Fitur input lokasi Google Maps (Tier 1+2) SELESAI &
+PUSHED (HEAD 47ed5ac), Tier 2 masih mock-tested only — TODO user tes link pendek asli. Advisor
+tulis brief kerja langsung di chat (code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md
+untuk context lengkap.
 
 ## STATUS
-- 266 PASS (1023 assertions) — naik dari 249 (17 test baru dari audit isolasi sesi ini).
+- 269 PASS (1026 assertions) — naik dari 249 (20 test baru: 17 dari audit isolasi + 3 net dari fix
+  ProductVariant scope gap di bawah).
 - ✅ AUDIT ISOLASI MULTI-TENANT MENYELURUH (6 Juli 2026) — 3 skenario DIBUKTIKAN PAKAI TEST, semua hijau:
   1. **Super_admin bikin owner baru** — alur: panel `/admin` (HANYA super_admin/owner boleh masuk),
      `UserResource` + `Pages/CreateUser.php` (app/Filament/Resources/UserResource.php:70-76: opsi
@@ -41,18 +43,20 @@ mock-tested only — TODO user tes link pendek asli. Advisor tulis brief kerja l
      (bukan cuma andalkan OwnerScope). 4 lubang WRITE dari audit Langkah 1 (openVisitModal,
      saveVisit, stopWithSettle, stopWithoutSettle) MASIH tertutup & test MASIH HIJAU (tak perlu
      ditulis ulang): `ActiveTripCrossTenantTest` (6 test, existing, di-re-run & dikonfirmasi).
-  * 🔍 **TEMUAN RESIDUAL (bukan lubang aktif, tapi laten)**: `ProductVariant` (Level-2 via
-    `product.owner_id`, sama bentuknya dengan Kiosk) TIDAK didaftarkan di `OwnerScope::apply()`
-    (cuma `instanceof Kiosk` yang di-handle, OwnerScope.php:40) — jadi `ProductVariant::find()`/
-    `::all()` POLOS BOCOR lintas-owner kalau dipanggil tanpa scope manual (DIBUKTIKAN test).
-    Call site yang ADA SEKARANG (ProductVariantResource, ActiveTrip::resolveActiveVariant/B1)
-    semua SUDAH scope manual dengan benar → TAK ADA lubang aktif di UI produksi saat ini. Tapi
-    risiko laten: developer baru yang nambah query ProductVariant BARU tanpa ingat scope manual
-    akan bocor tanpa sadar — persis pola rapuh yang Langkah 2/OwnerScope harusnya hilangkan.
-    REKOMENDASI (belum dieksekusi, security-sensitive, perlu sesi terpisah): generalisasi
-    `OwnerScope::apply()` menerima model Level-2-via-relasi-tunggal lain (bukan cuma hardcode
-    Kiosk), atau daftarkan scope khusus mirip Kiosk di `ProductVariant::booted()`. Test:
-    `ProductVariantScopeGapTest` (3 test, baru — mendokumentasikan temuan + bukti call site aman).
+  * ✅ **TEMUAN RESIDUAL ProductVariant — SUDAH DIFIX (6 Juli 2026, commit selanjutnya)**: dulu
+    `ProductVariant` (Level-2 via `product.owner_id`, sama bentuknya dengan Kiosk) TIDAK
+    didaftarkan di `OwnerScope::apply()` → `find()`/`::all()` POLOS BOCOR lintas-owner tanpa scope
+    manual. FIX: pendekatan (a) yang dipilih (isolasi > DRY untuk kode security-critical) —
+    `ProductVariant::booted()` daftarkan `OwnerScope` persis pola `Kiosk::booted()`, dengan cabang
+    BARU & TERPISAH di `OwnerScope::apply()` (`instanceof ProductVariant` → `whereHas('product',
+    owner_id)`) yang TIDAK menyentuh/mengubah cabang `instanceof Kiosk` yang sudah ada. Opsi (b)
+    generalisasi ditolak — lebih DRY tapi lebih beresiko ngubah kode yang jaga Kiosk.
+    Call site manual (ProductVariantResource, ActiveTrip::resolveActiveVariant/B1) DIBIARKAN
+    (redundan tapi aman, pola sama dgn gerbang dobel Kiosk di ActiveTrip). Verifikasi: super_admin
+    & bypass no-auth/CLI tetap jalan (test eksplisit), escape hatch `withoutGlobalScope` tetap
+    reachable, 0 regresi di OwnerScopeTest/OwnerWriteCrossTenantTest/ActiveTripCrossTenantTest/
+    SuperAdminOwnerProvisioningTest (27 test, semua hijau). Test:
+    `ProductVariantScopeGapTest` (6 test, expectation dibalik dari "bocor" jadi "aman").
 - 249 PASS (985 assertions) sebelum audit isolasi sesi ini, runtime ~63-102s tergantung beban
   sistem (tak ada test abnormal lambat dari fitur maps — semua kasus <1s; satu outlier 2.98s
   pre-existing tak terkait, DeliveryObserverTest).
