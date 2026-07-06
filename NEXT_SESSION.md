@@ -2,16 +2,60 @@
 *Sesi terakhir: 6 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 249 PASS. Live di Railway. Fitur input lokasi Google Maps (Tier 1 regex +
-Tier 2 short-link resolver) SUDAH SELESAI & PUSHED (HEAD 47ed5ac): Tier 1 solid & teruji beneran,
-Tier 2 short-link BARU mock-tested — BELUM pernah kena link maps.app.goo.gl asli, TODO user tes
-link pendek asli dari HP. Audit performa pasca-OwnerScope+maps: RINGAN, angka ada di STATUS.
-Advisor sekarang tulis brief kerja langsung di chat (code block), BUKAN file PROMPT.md lagi.
-Baca NEXT_SESSION.md untuk context lengkap.
+Bg, lanjut dodol-app. 266 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
+(3 skenario dibuktikan pakai test, bukan asumsi): super_admin bikin owner baru → 0 data nyangkut;
+owner A tak bisa baca/tulis data owner B (list, edit page, delete action — semua 404/ditolak);
+operator owner A tak bisa sentuh kios/trip owner B (4 lubang lama masih tertutup + test masih
+hijau). 1 TEMUAN residual: ProductVariant tak punya OwnerScope global (beda dari Kiosk) — semua
+call site SEKARANG aman via scope manual, tapi risikonya laten buat kode baru (lihat STATUS).
+Fitur input lokasi Google Maps (Tier 1+2) SELESAI & PUSHED (HEAD 47ed5ac), Tier 2 masih
+mock-tested only — TODO user tes link pendek asli. Advisor tulis brief kerja langsung di chat
+(code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 249 PASS (985 assertions), runtime ~63-102s tergantung beban sistem (tak ada test abnormal lambat
-  dari fitur maps — semua kasus <1s; satu outlier 2.98s pre-existing tak terkait, DeliveryObserverTest).
+- 266 PASS (1023 assertions) — naik dari 249 (17 test baru dari audit isolasi sesi ini).
+- ✅ AUDIT ISOLASI MULTI-TENANT MENYELURUH (6 Juli 2026) — 3 skenario DIBUKTIKAN PAKAI TEST, semua hijau:
+  1. **Super_admin bikin owner baru** — alur: panel `/admin` (HANYA super_admin/owner boleh masuk),
+     `UserResource` + `Pages/CreateUser.php` (app/Filament/Resources/UserResource.php:70-76: opsi
+     role 'owner'/'super_admin' cuma muncul kalau `isSuperAdmin()`). Owner baru TERBUKTI mulai
+     dengan 0 kios/0 cluster/0 operator walau owner lain sudah punya data (test create user via
+     Livewire form asli → login owner baru → assert count=0). Owner sendiri TAK BISA bikin owner
+     lain (CreateUser::mutateFormDataBeforeCreate paksa role=operator+owner_id=diri walau payload
+     di-tamper — dites eksplisit). Test: `SuperAdminOwnerProvisioningTest` (4 test, baru).
+  2. **Isolasi antar-owner, READ + WRITE** — OwnerScope aktif di 5 model Level-1 (Cluster, Supplier,
+     Product, ProcurementBatch, Trip via trait `BelongsToOwner`) + Kiosk (Level-2 via cluster,
+     didaftarkan langsung di `Kiosk::booted()`). READ sudah lama dibuktikan (`OwnerScopeTest`).
+     WRITE cross-tenant di panel owner (Filament CRUD) BARU dibuktikan sesi ini: GET edit page
+     kios/cluster/supplier/product/procurement-batch/product-variant milik owner lain → 404 semua
+     (route-model-binding gagal nemu record duluan, intruder tak tahu record itu ada); mount
+     Livewire EditKiosk paksa ID asing → ModelNotFoundException; delete table action utk kios
+     owner lain → DITOLAK Filament (record tak pernah "visible" di query yang di-scope); list
+     kios TAK PERNAH memuat kios owner lain. Bonus temuan: super_admin JUSTRU DITOLAK (403) masuk
+     `/owner-panel/*` sama sekali (panel itu cuma untuk role 'owner' — beda dari bypass "lihat
+     semua" yang berlaku di widget dashboard admin panel, BUKAN di rute Filament resource
+     owner-panel). Test: `OwnerWriteCrossTenantTest` (10 test, baru).
+  3. **Isolasi operator per-owner** — scope lewat `cluster.owner_id`, enforced ganda: OwnerScope
+     global (otomatis) + gerbang manual `ownedKiosk()`/`whereHas('cluster', owner_id)` di
+     ActiveTrip.php (openVisitModal, saveVisit, stopWithSettle, stopWithoutSettle) — SENGAJA
+     dipertahankan dobel sebagai defense-in-depth terhadap properti Livewire yang di-tamper klien
+     (bukan cuma andalkan OwnerScope). 4 lubang WRITE dari audit Langkah 1 (openVisitModal,
+     saveVisit, stopWithSettle, stopWithoutSettle) MASIH tertutup & test MASIH HIJAU (tak perlu
+     ditulis ulang): `ActiveTripCrossTenantTest` (6 test, existing, di-re-run & dikonfirmasi).
+  * 🔍 **TEMUAN RESIDUAL (bukan lubang aktif, tapi laten)**: `ProductVariant` (Level-2 via
+    `product.owner_id`, sama bentuknya dengan Kiosk) TIDAK didaftarkan di `OwnerScope::apply()`
+    (cuma `instanceof Kiosk` yang di-handle, OwnerScope.php:40) — jadi `ProductVariant::find()`/
+    `::all()` POLOS BOCOR lintas-owner kalau dipanggil tanpa scope manual (DIBUKTIKAN test).
+    Call site yang ADA SEKARANG (ProductVariantResource, ActiveTrip::resolveActiveVariant/B1)
+    semua SUDAH scope manual dengan benar → TAK ADA lubang aktif di UI produksi saat ini. Tapi
+    risiko laten: developer baru yang nambah query ProductVariant BARU tanpa ingat scope manual
+    akan bocor tanpa sadar — persis pola rapuh yang Langkah 2/OwnerScope harusnya hilangkan.
+    REKOMENDASI (belum dieksekusi, security-sensitive, perlu sesi terpisah): generalisasi
+    `OwnerScope::apply()` menerima model Level-2-via-relasi-tunggal lain (bukan cuma hardcode
+    Kiosk), atau daftarkan scope khusus mirip Kiosk di `ProductVariant::booted()`. Test:
+    `ProductVariantScopeGapTest` (3 test, baru — mendokumentasikan temuan + bukti call site aman).
+- 249 PASS (985 assertions) sebelum audit isolasi sesi ini, runtime ~63-102s tergantung beban
+  sistem (tak ada test abnormal lambat dari fitur maps — semua kasus <1s; satu outlier 2.98s
+  pre-existing tak terkait, DeliveryObserverTest).
 - ✅ FITUR INPUT LOKASI GOOGLE MAPS SELESAI & PUSHED (6 Juli 2026, commit 1bf6e48/0c7bd4c/47ed5ac):
   * Tier 1 (KioskLocationParser, regex murni 0-network): koordinat langsung, @lat,lng, ?q=, ?ll=,
     !3d!4d — SOLID, teruji beneran unit test.
