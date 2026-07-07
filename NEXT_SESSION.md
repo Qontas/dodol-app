@@ -17,16 +17,18 @@ aman-by-default (network-first), fetch validasi eksplisit `cache:'no-cache'`, `r
 ditambah — lihat section "FIX CACHE-BUSTING SW v5". Audit session/trip persistence (7 Juli 2026)
 — VERDICT AMAN, dibuktikan test: trip operator DB-based & auto-resume, TIDAK hilang walau
 logout/sesi habis di lapangan — lihat section "AUDIT SESSION & TRIP PERSISTENCE". Foto kios list
-owner (Filament) yang KADANG kosong SUDAH DIFIX (7 Juli 2026): akarnya live exists()-check R2 per
-baris per render — lihat section "FIX FOTO KIOS KADANG KOSONG". Advisor tulis brief kerja
-langsung di chat (code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context
-lengkap.
+owner (Filament) yang KADANG kosong: 2 akar berlapis SUDAH DIFIX (7 Juli 2026) — (1) live
+exists()-check R2 per baris per render, (2) net::ERR_CERT_COMMON_NAME_INVALID TRANSIEN di level
+koneksi Chromium (dibuktikan reproduksi berulang bukan jaringan/URL/server R2) — retry otomatis
+via extraImgAttributes(onerror), diverifikasi bekerja dgn simulasi kegagalan nyata — lihat section
+"FIX FOTO KIOS KADANG KOSONG". Advisor tulis brief kerja langsung di chat (code block), BUKAN
+file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
 - 274 PASS (1055 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
   1 test dari migrasi peta owner ke Leaflet, 2 test dari audit session/trip persistence, 2 test
-  dari fix foto kios list owner). SW v5 tak nambah test PHP (murni JS, diverifikasi headed
-  browser — lihat section SW di bawah).
+  dari fix foto kios list owner). SW v5 & retry-onerror foto tak nambah test PHP (murni JS,
+  diverifikasi headed browser — lihat section masing-masing di bawah).
 
 ## ✅ FIX FOTO KIOS "KADANG MUNCUL KADANG TIDAK" DI LIST OWNER (7 Juli 2026, commit def0d90)
 - GEJALA: foto kios kadang kosong di list `/owner-panel/kiosks` (Filament), reload ulang kadang
@@ -73,6 +75,41 @@ lengkap.
     butuh CORS), tapi PENTING dicatat kalau nanti ada fitur yang butuh akses canvas/pixel gambar
     (lightbox zoom, crop ulang foto lama, embed gambar di export PDF) — bucket perlu CORS
     ditambah SEBELUM fitur itu dibangun, supaya tak kejebak lagi kaget di kemudian hari.
+
+### RONDE 2 — user masih lihat kosong setelah fix di atas (7 Juli 2026, commit 71cf0eb)
+- User laporan lagi: SETELAH fix `checkFileExistence(false)` + deploy + hard-reload, foto MASIH
+  broken-image icon. Beberapa teori DIBANTAH satu-per-satu dengan bukti keras, BUKAN diasumsikan:
+  1. **"URL owner beda/signed dari operator"** — DIBANTAH: `php artisan tinker` pakai config
+     produksi asli menghasilkan URL BYTE-IDENTIK utk accessor (operator) vs `ImageColumn::
+     getImageUrl()` (owner) — sama-sama `Storage::url()` polos, `getVisibility()` ImageColumn
+     default `'public'` juga (bukan cuma FileUpload form), jadi cabang `temporaryUrl()` tak
+     pernah aktif di KEDUA jalur. `<img>` tag lengkap (semua atribut) juga dibandingkan — tak ada
+     `loading="lazy"`, tak ada query-signature, keduanya `<img>` polos.
+  2. **"Livewire DOM-morph batalin request (ERR_ABORTED)"** — DIBANTAH: 20× reload langsung
+     (`page.goto`) + 15× via klik navigasi sidebar, 0 `ERR_ABORTED`, 0 auto Livewire POST
+     terdeteksi setelah load, tak ada `wire:poll` di halaman.
+  3. **"Cert R2 salah / jaringan/device user"** — SEBAGIAN BENAR gejalanya (`net::
+     ERR_CERT_COMMON_NAME_INVALID` betulan direproduksi), TAPI BUKAN sebab yang diasumsikan:
+     `curl` 30× beruntun ke URL yang SAMA PERSIS = 100% `200 OK` (server R2 tak masalah); script
+     Playwright yang GAGAL 15/15 tadi, di-run ULANG PERSIS beberapa menit kemudian di mesin yang
+     SAMA = 15/15 SUKSES (bukan konsisten di satu metode navigasi/kode tertentu — gagal lalu
+     pulih sendiri tanpa perubahan apa pun). Ini reproduksi di MESIN & JARINGAN BERBEDA dari user,
+     jadi bukan spesifik ke device/network/antivirus user.
+- **AKAR RONDE 2 (dibuktikan, bukan diasumsikan)**: kegagalan TRANSIEN di level **koneksi
+  browser Chromium** ke domain CDN cert-wildcard bersama (`*.r2.dev`) — kemungkinan besar
+  connection-reuse/coalescing HTTP/2 Chromium yang sesekali salah pasang sertifikat utk domain
+  yang di-cache/pool-kan, BUKAN app/URL/config (identik terbukti), BUKAN server R2 (curl bersih),
+  BUKAN jaringan/device user secara spesifik (direproduksi di mesin lain). Ini kelas bug BROWSER,
+  di luar kendali app — tapi BISA dimitigasi dari sisi klien.
+- FIX (`KioskResource.php`, `->extraImgAttributes(['onerror' => ...])`, API resmi Filament, TIDAK
+  sentuh vendor): retry SEKALI dengan delay 400ms (biar browser buka koneksi baru, bukan reuse
+  yang bermasalah) via cache-bust query param, dengan guard `dataset.retried` cegah retry-loop
+  tak terbatas kalau file BENERAN hilang.
+- VERIFIKASI: disimulasikan kegagalan NYATA (intercept request pertama → abort paksa via
+  Playwright route) → `onerror` terpicu → retry setelah 400ms dgn `?retry=<timestamp>` → attempt
+  kedua SUKSES (`naturalWidth: 1280`, `dataset.retried: "1"`) — bukti mekanisme retry BEKERJA,
+  bukan cuma kode benar di atas kertas. 10× reload lanjutan setelah deploy tetap 100% stabil.
+  274 PASS, 0 regresi (fix ini murni tambahan atribut HTML, tak ada test PHP baru).
 
 ## ✅ AUDIT SESSION & TRIP PERSISTENCE — VERDICT AMAN (7 Juli 2026)
 - KEKHAWATIRAN OWNER: operator ke-logout otomatis di lapangan (sinyal jelek, HP ke-lock
