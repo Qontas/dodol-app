@@ -232,6 +232,27 @@ class KioskResource extends Resource
                             ->disk(config('app.media_disk', 'public'))
                             ->directory('kiosks')
                             ->visibility('public')
+                            // AKAR yang sama dgn list owner (net::ERR_CERT_COMMON_NAME_INVALID
+                            // transien ke r2.dev): default Filament (BaseFileUpload::
+                            // getUploadedFileUsing bawaan) bikin URL R2 LANGSUNG utk preview
+                            // FOTO YANG SUDAH TERSIMPAN saat form edit dibuka — celah ketiga yang
+                            // KELEWAT saat migrasi ke proxy (list & operator sudah benar, form ini
+                            // belum). Gejalanya: widget "Foto Kios" macet selamanya di "Waiting
+                            // for size" krn request browser ke r2.dev gagal cert & tak pernah
+                            // retry. Fix: pakai proxy same-origin yang sama (Kiosk::photo_url) —
+                            // SEKARANG BENAR-BENAR satu jalur di list, operator, DAN form ini.
+                            ->getUploadedFileUsing(function (Forms\Components\BaseFileUpload $component, string $file): ?array {
+                                $record = $component->getRecord();
+                                $url = ($record instanceof Kiosk) ? $record->photo_url : null;
+                                $url ??= $component->getDisk()->url($file);
+
+                                return [
+                                    'name' => basename($file),
+                                    'size' => 0,
+                                    'type' => null,
+                                    'url' => $url,
+                                ];
+                            })
                             ->helperText('Foto akan dikecilkan otomatis. Maksimal 5MB. Format: JPG, PNG, WEBP. Opsional.')
                             ->columnSpanFull(),
 
