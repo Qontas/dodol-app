@@ -10,7 +10,13 @@
 <script>
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
-            navigator.serviceWorker.register('/sw.js').catch(function () {
+            navigator.serviceWorker.register('/sw.js').then(function (registration) {
+                // Browser cuma cek sw.js baru paling cepat ~24 jam sekali secara
+                // default. Paksa cek tiap kali app dibuka biar SW baru (skipWaiting +
+                // clients.claim di sw.js) kedeteksi & aktif lebih cepat — murni
+                // tambahan, tak ubah perilaku registrasi yang sudah ada.
+                registration.update();
+            }).catch(function () {
                 /* registrasi gagal (mis. dev http non-localhost) — abaikan, app tetap jalan */
             });
         });

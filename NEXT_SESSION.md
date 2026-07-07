@@ -1,5 +1,5 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 6 Juli 2026*
+*Sesi terakhir: 7 Juli 2026*
 
 ## TRIGGER SENTENCE
 Bg, lanjut dodol-app. 270 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
@@ -12,13 +12,96 @@ test masih hijau), super_admin tetap bypass. Fitur input lokasi Google Maps (Tie
 PUSHED (HEAD 47ed5ac), Tier 2 masih mock-tested only — TODO user tes link pendek asli. Peta OWNER
 kini pakai Leaflet HAND-ROLLED (App\Filament\Forms\Components\LeafletMapPicker), dotswan/
 filament-map-picker DIHAPUS TOTAL (3x sumber bug integrasi) — lihat section "MIGRASI PETA OWNER
-DOTSWAN → LEAFLET". Advisor tulis brief kerja langsung di chat (code block), BUKAN file PROMPT.md
-lagi. Baca NEXT_SESSION.md untuk context lengkap.
+DOTSWAN → LEAFLET". Service Worker (public/sw.js) NAIK ke v5 (7 Juli 2026): default cache jadi
+aman-by-default (network-first), fetch validasi eksplisit `cache:'no-cache'`, `registration.update()`
+ditambah — lihat section "FIX CACHE-BUSTING SW v5". Advisor tulis brief kerja langsung di chat
+(code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
 - 270 PASS (1039 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
-  1 test baru dari migrasi peta owner ke Leaflet di bawah).
-- ✅ AUDIT ISOLASI MULTI-TENANT MENYELURUH (6 Juli 2026) — 3 skenario DIBUKTIKAN PAKAI TEST, semua hijau:
+  1 test baru dari migrasi peta owner ke Leaflet di bawah). SW v5 tak nambah test PHP (murni JS,
+  diverifikasi headed browser — lihat section SW di bawah).
+
+## ✅ AUDIT + FIX CACHE-BUSTING SERVICE WORKER — public/sw.js NAIK ke v5 (7 Juli 2026)
+- KONTEKS: dipicu 2 insiden cache-basi produksi (CSS Filament, lalu leaflet-map-picker.js). Audit
+  dulu (TANPA ubah kode) menemukan struktur besar SW SUDAH benar (skipWaiting/clients.claim/
+  HTML network-only/Livewire bypass semua textbook), tapi 2 celah nyata:
+  1. **`networkFirst()` tak memaksa bypass HTTP-cache browser** — `fetch(request)` polos memakai
+     cache mode default. Produksi TIDAK kirim header `Cache-Control` sama sekali (dikonfirmasi
+     `curl -D-` ke asset live) — cuma ETag + Last-Modified — jadi browser BOLEH pakai
+     heuristic-freshness dan diam-diam anggap respons lama "masih fresh" TANPA pernah nanya
+     server, walau SW-nya sendiri niatnya "network-first". Ini akar paling konkret kenapa
+     "sudah network-first" tetap bisa basi.
+  2. **Default fallback utk path tak dikenal = cache-first** (allowlist, bukan aman-by-default).
+     File baru yang lupa didaftarkan ke daftar network-first otomatis basi-selamanya — persis
+     pola 2 insiden di atas.
+- FIX (3, sesuai brief user, SEMUA additive/low-risk — TIDAK ada yang mengubah HTML/Livewire
+  handling yang sudah benar):
+  1. **`networkFirst()` pakai `fetch(request, { cache: 'no-cache' })`** (public/sw.js:182-194).
+     ⚠️ KOREKSI TEKNIS dari brief awal: brief minta `'reload'`, tapi per spek Fetch API `'reload'`
+     SKIP validator sama sekali (selalu full re-download, TAK PERNAH dapat 304) — kebalikan dari
+     yang diminta ("tetap dapat 304"). `'no-cache'` yang benar-benar memaksa validasi
+     (If-None-Match/If-Modified-Since) SAMBIL tetap membolehkan 304 cepat. Dipakai `'no-cache'`,
+     bukan literal `'reload'` — kalau dipakai `'reload'` malah lebih berat di sinyal jelek
+     (selalu full download), bertentangan dengan tujuan "sat-set operator lapangan".
+  2. **Default dibalik jadi network-first (aman-by-default)** (public/sw.js:82-148). Immutable
+     (cache-first) sekarang cuma 3 kategori eksplisit: `/build/*` (Vite hash), `APP_SHELL` (app
+     shell yang di-precache), dan **gambar/font by extension**
+     (`/\.(png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot)$/i` — mencakup foto kios upload, ikon marker
+     Leaflet, favicon.ico, dll: berat byte-wise tapi upload baru = nama file baru, jadi aman
+     cache-first selamanya). SEMUA SISANYA (Filament CSS/JS, leaflet.js/css,
+     leaflet-map-picker.js, DAN path baru apa pun di masa depan) otomatis network-first — lupa
+     daftarin = tetap fresh (aman), bukan basi (bug).
+  3. **`registration.update()`** ditambah setelah `.register()` di `pwa-head.blade.php:13-18` —
+     murni tambahan, paksa cek SW baru tiap app dibuka (bukan nunggu siklus ~24 jam default
+     browser).
+  4. `CACHE_NAME` dibump `dodol-v4` → `dodol-v5` — dipakai KARENA strategi per-path berubah
+     (beberapa path pindah bucket cache-first↔network-first), bukan rutinitas tiap deploy biasa
+     (lihat catatan arsitektur di bawah).
+- PEMETAAN CACHE BARU (v5):
+  | Kategori | Path | Strategi | Alasan |
+  |---|---|---|---|
+  | Immutable | `/build/assets/*` (Vite hash) | cache-first | nama file berubah tiap build |
+  | Immutable | App shell (`offline.html`, manifest, ikon) | cache-first | di-precache saat install |
+  | Immutable | `*.png/jpg/gif/webp/svg/ico/woff/ttf/eot` | cache-first | foto/ikon berat, upload baru = URL baru |
+  | — | Navigasi HTML | network-only | multi-tenant safety, tak pernah cache |
+  | — | `/livewire/*`, `/csrf-token` | bypass total | tak boleh nambah delay / tak boleh basi |
+  | **DEFAULT** | **semua sisanya** (Filament CSS/JS, Leaflet vendor JS/CSS, leaflet-map-picker.js, path baru) | **network-first (`no-cache`)** | aman-by-default — lupa daftarin = fresh, bukan basi |
+- AUDIT PERFORMA (headed Chrome asli, BUKAN headless, terhadap **production build** — `npm run
+  build` + `php artisan serve`, bukan `npm run dev`, karena Vite dev server tak menghasilkan
+  `/build/*` hash yang perlu diuji):
+  * Cache-first assets (Vite `/build/*`, `favicon.png`) pada load ke-2: **transferSize = 0B**,
+    duration ~1ms — instan dari Cache Storage, tak ada request jaringan sama sekali. Ini yang
+    menjaga operator tetap sat-set utk aset berat.
+  * Network-first assets (Filament CSS/JS) pada load ke-2 di **dev server lokal**: status 200
+    (bukan 304) — TAPI ini keterbatasan `php artisan serve` sendiri, dikonfirmasi via curl:
+    dev server TIDAK PERNAH kirim header `ETag`/`Last-Modified` sama sekali, jadi browser tak
+    punya validator apa pun untuk dikirim balik, terlepas dari sw.js. **Produksi BEDA**: `curl`
+    langsung ke asset live dengan `If-None-Match` dari ETag sebelumnya → server balas
+    **`304 Not Modified`** (dikonfirmasi eksplisit). Jadi fix `no-cache` akan dapat manfaat 304
+    penuh begitu di-deploy — cuma tak bisa didemonstrasikan di dev server lokal.
+  * SW update mechanics: simulasi "deploy baru" (byte-diff sw.js di disk + `registration.update()`
+    manual) → event `controllerchange` fire **47ms** kemudian, SW baru ambil alih tab yang SUDAH
+    TERBUKA tanpa perlu ditutup. skipWaiting+clients.claim terbukti jalan cepat.
+  * Throttle Slow 3G (CDP `Network.emulateNetworkConditions`, ~400kbps/400ms latency): repeat-load
+    operator/dashboard = 1649ms, halaman tetap render & usable.
+  * Offline fallback: server dimatikan BENERAN (bukan cuma CDP offline-emulation — itu tak
+    menjangkau execution context Service Worker-nya sendiri, jadi under-test kalau cuma
+    emulasi), navigasi ke halaman baru → benar-benar jatuh ke `offline.html` ("Kamu sedang
+    offline... Cek sinyal atau Wi-Fi kamu, lalu coba lagi"), BUKAN dashboard lama & BUKAN error
+    browser generik.
+- KESIMPULAN PERFORMA: operator lapangan **TIDAK jadi lebih lambat**. Aset kritikal-kecepatan
+  (Vite bundle, foto kios, ikon) tetap cache-first instan. Yang berubah cuma aset non-hash
+  (Filament panel CSS/JS — TIDAK dipakai operator sama sekali, cuma owner/admin panel — dan
+  leaflet-map-picker.js/vendor Leaflet JS/CSS yang sudah kecil) jadi selalu validasi ke server,
+  yang di produksi dapat 304 cepat (bukan re-download penuh).
+- php artisan test: 270 PASS (1039 assertions) — SW murni JS, tak menyentuh test PHP, dicek untuk
+  pastikan tak ada regresi tak terduga.
+- TODO USER: setelah deploy, verifikasi produksi — buka DevTools Application tab, konfirmasi
+  `dodol-v5` jadi cache aktif (v4 lama otomatis dibuang), dan cek Network tab utk asset Filament/
+  Leaflet menunjukkan 304 pada reload kedua.
+
+## ✅ MIGRASI PETA OWNER: dotswan/filament-map-picker → LEAFLET HAND-ROLLED (6 Juli 2026)
   1. **Super_admin bikin owner baru** — alur: panel `/admin` (HANYA super_admin/owner boleh masuk),
      `UserResource` + `Pages/CreateUser.php` (app/Filament/Resources/UserResource.php:70-76: opsi
      role 'owner'/'super_admin' cuma muncul kalau `isSuperAdmin()`). Owner baru TERBUKTI mulai
