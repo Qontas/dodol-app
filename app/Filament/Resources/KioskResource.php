@@ -319,28 +319,18 @@ class KioskResource extends Resource
             ->columns([
                 Tables\Columns\ImageColumn::make('photo_path')
                     ->label('')
-                    ->disk(config('app.media_disk', 'public'))
-                    // AKAR "foto kadang muncul kadang tidak" di list ini (BUKAN operator):
-                    // default Filament checkFileExistence=true menembak live HeadObject
-                    // ke R2 PER BARIS PER RENDER (server Railway -> R2 API). Gagal transient
-                    // (jaringan/rate-limit sesaat) -> baris itu kosong utk render tsb saja,
-                    // reload berikutnya bisa muncul lagi. Operator pakai Kiosk::photo_url
-                    // (accessor ->url() langsung, 0 API call) makanya tak pernah kena.
-                    // Matikan exists-check: list ini ikut jalur seragam dgn operator — tampilkan
-                    // URL langsung, browser yang urus fetch (fallback broken-image kalau
-                    // memang file-nya sungguh hilang dari bucket, bukan disembunyikan diam-diam).
-                    ->checkFileExistence(false)
+                    // SATU sumber URL foto — Kiosk::photo_url, SAMA PERSIS dipakai operator
+                    // (active-trip.blade.php). Dua jalur beda (dulu: ImageColumn generate URL
+                    // sendiri via disk/exists-check, operator pakai accessor) terbukti jadi
+                    // sumber diagnosa panjang & berlapis. State berupa URL penuh (proxy
+                    // same-origin KioskPhotoController, BUKAN R2 langsung lagi) -> Filament
+                    // ImageColumn otomatis pakai apa adanya (getImageUrl() short-circuit utk
+                    // state yang sudah valid URL), tak perlu ->disk()/->checkFileExistence()
+                    // lagi sama sekali.
+                    ->getStateUsing(fn (Kiosk $record): ?string => $record->photo_url)
                     ->defaultImageUrl(self::PHOTO_PLACEHOLDER)
-                    // AKAR LANJUTAN (dibuktikan headed Chrome asli, reproduksi berulang):
-                    // kegagalan net::ERR_CERT_COMMON_NAME_INVALID ke pub-*.r2.dev ini
-                    // TRANSIEN & di level koneksi browser (Chromium connection-reuse/coalescing
-                    // ke domain CDN cert-wildcard bersama) — BUKAN app/URL/config (dibuktikan
-                    // identik & benar via tinker+HTML), BUKAN server R2 (curl 30x beruntun
-                    // 100% 200 OK), BUKAN jaringan/device user (direproduksi di mesin lain
-                    // beda jaringan, lalu HILANG SENDIRI di reload berikutnya tanpa perubahan
-                    // apa pun). Retry sekali dengan delay singkat (browser buka koneksi baru,
-                    // bukan reuse yang bermasalah) menyelesaikan tanpa perlu utak-atik
-                    // storage/URL yang sudah terbukti benar.
+                    // Retry sekali kalau gagal transient (proxy sendiri kena hiccup Railway<->R2,
+                    // dsb) — jaring pengaman murah, tak ada downside.
                     ->extraImgAttributes([
                         'onerror' => "if(!this.dataset.retried){this.dataset.retried='1';var el=this;setTimeout(function(){el.src=el.src.split('?')[0]+'?retry='+Date.now();},400);}",
                     ])

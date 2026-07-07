@@ -185,8 +185,21 @@ class Kiosk extends Model
     }
 
     /**
-     * URL publik foto kios dari disk media (configurable, lihat config app.media_disk).
-     * Null kalau belum ada foto. Jangan hardcode /storage/... di view — pakai ini.
+     * URL foto kios — SATU sumber kebenaran dipakai owner (Filament ImageColumn)
+     * DAN operator (active-trip.blade.php), sengaja bukan URL R2 langsung.
+     *
+     * AKAR yang dihindari: URL R2 langsung (pub-*.r2.dev) terbukti kena
+     * net::ERR_CERT_COMMON_NAME_INVALID transien di sebagian browser/environment
+     * (koneksi HTTPS lintas-origin ke domain CDN cert-wildcard bersama) —
+     * dikonfirmasi BUKAN app/URL/server (byte-identik, curl 100% bersih), BUKAN
+     * device/jaringan spesifik user (direproduksi di mesin lain juga). Proxy
+     * same-origin lewat KioskPhotoController menghilangkan kelas bug ini sama
+     * sekali karena browser tak pernah lagi koneksi langsung ke r2.dev.
+     *
+     * `?v=` = timestamp `updated_at` → cache-bust otomatis tiap kios disimpan
+     * ulang (termasuk saat photo_path berganti karena upload baru), aman di-cache
+     * agresif (lihat KioskPhotoController + sw.js) karena URL berubah begitu
+     * kontennya berubah — sama seperti pola asset Vite ber-hash.
      */
     public function getPhotoUrlAttribute(): ?string
     {
@@ -194,8 +207,7 @@ class Kiosk extends Model
             return null;
         }
 
-        return \Illuminate\Support\Facades\Storage::disk(config('app.media_disk', 'public'))
-            ->url($this->photo_path);
+        return route('kiosks.photo', $this).'?v='.$this->updated_at?->timestamp;
     }
 
     public function getMapsUrlAttribute(): ?string

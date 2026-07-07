@@ -8,6 +8,9 @@
  *  - Aset "berat tapi immutable" (gambar/ikon/font, by extension) -> CACHE-FIRST.
  *    Nama file baru = URL baru (foto kios upload baru, ikon marker Leaflet, dst),
  *    jadi aman cache selamanya — ini yang bikin operator lapangan tetap sat-set.
+ *  - Foto kios (/kiosks/{id}/photo, proxy same-origin KioskPhotoController,
+ *    BUKAN r2.dev langsung lagi) -> CACHE-FIRST juga. URL ber-versi ?v=updated_at
+ *    dari Kiosk::photo_url, aman selamanya sama seperti Vite hash.
  *  - SEMUA SISANYA (default) -> NETWORK-FIRST. v4 pakai allowlist eksplisit
  *    (path Filament/vendor/leaflet-map-picker.js) dengan fallback cache-first utk
  *    path tak dikenal — TERBUKTI rawan: file baru yang lupa didaftarkan otomatis
@@ -122,6 +125,16 @@ self.addEventListener('fetch', (event) => {
     // Gambar/font (foto kios, ikon marker Leaflet, dll) — lihat komentar
     // IMMUTABLE_ASSET_PATTERN di atas.
     if (IMMUTABLE_ASSET_PATTERN.test(url.pathname)) {
+        event.respondWith(cacheFirst(request));
+        return;
+    }
+
+    // Foto kios via proxy same-origin (KioskPhotoController, bukan r2.dev
+    // langsung lagi — lihat Kiosk::photo_url). URL selalu ber-versi
+    // ?v=<updated_at>, jadi aman cache-first selamanya (URL berubah begitu
+    // foto diganti, pola sama dgn aset Vite ber-hash) — sekaligus bikin foto
+    // kios kebuka OFFLINE buat operator lapangan.
+    if (/^\/kiosks\/\d+\/photo$/.test(url.pathname)) {
         event.respondWith(cacheFirst(request));
         return;
     }

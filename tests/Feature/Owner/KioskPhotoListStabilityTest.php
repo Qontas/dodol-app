@@ -12,35 +12,34 @@ use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
- * Bukti fix "foto kios kadang muncul kadang tidak" di list owner: akarnya
- * Tables\Columns\ImageColumn default checkFileExistence(true) menembak live
- * HeadObject ke R2 PER BARIS PER RENDER — gagal transient (jaringan Railway<->R2)
- * bikin baris kosong utk render itu saja. Operator TAK kena (jalur accessor
- * Kiosk::photo_url murni ->url(), 0 API call) — lihat KioskResource.php.
+ * Bukti fix "foto kios kadang muncul kadang tidak" di list owner.
  *
- * checkFileExistence(false) menghilangkan panggilan itu SAMA SEKALI. Test ini
- * membuktikan itu langsung (bukan cuma baca kode): render list kios TIDAK
- * PERNAH memanggil Storage::exists(), walau kios punya photo_path.
+ * Ronde 1: akarnya Tables\Columns\ImageColumn default checkFileExistence(true)
+ * menembak live HeadObject ke R2 PER BARIS PER RENDER. Ronde 2: URL R2 langsung
+ * (pub-*.r2.dev) kena net::ERR_CERT_COMMON_NAME_INVALID transien di level
+ * koneksi browser (bukan app/server — dikonfirmasi curl 100% bersih & direproduksi
+ * di banyak environment). FIX FINAL: proxy same-origin (KioskPhotoController)
+ * lewat SATU accessor Kiosk::photo_url dipakai owner (ImageColumn::getStateUsing)
+ * DAN operator (active-trip.blade.php) — tak ada lagi dua jalur beda, dan
+ * browser tak pernah lagi konek langsung ke r2.dev.
  */
 class KioskPhotoListStabilityTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_kiosk_list_renders_photo_url_even_when_object_does_not_exist_on_disk(): void
+    public function test_kiosk_list_renders_proxy_route_url_regardless_of_disk_state(): void
     {
-        // Fake disk, TAPI file di path ini SENGAJA TIDAK dibuat. Kalau
-        // checkFileExistence masih aktif (default Filament), ImageColumn akan
-        // panggil Storage::exists() -> false -> gambar disembunyikan (null).
-        // Kalau fix checkFileExistence(false) benar-benar aktif, exists() tidak
-        // pernah dicek -> URL tetap dirender walau file "tidak ada" di disk fake.
-        // Ini bukti PERILAKU langsung (bukan cuma baca kode) bahwa live-check
-        // sudah hilang dari jalur ini.
+        // Fake disk, file di path ini SENGAJA TIDAK dibuat. List owner TIDAK
+        // PERNAH cek keberadaan file saat render (getStateUsing cuma bangun URL
+        // proxy dari accessor, tanpa exists()-check apa pun) — beda dari
+        // KioskPhotoController yang BARU cek file saat foto BENERAN diminta
+        // browser (async, tak memblokir render list).
         Storage::fake('s3');
 
         $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
         $cluster = Cluster::create(['name' => 'Area Foto', 'is_active' => true, 'owner_id' => $owner->id]);
 
-        Kiosk::factory()->create([
+        $kiosk = Kiosk::factory()->create([
             'cluster_id' => $cluster->id,
             'photo_path' => 'kiosks/tidak-ada-di-disk.jpg',
         ]);
@@ -50,9 +49,13 @@ class KioskPhotoListStabilityTest extends TestCase
         $this->actingAs($owner);
         \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('owner'));
 
+        // URL proxy same-origin ter-render, BUKAN URL R2 apa pun, BUKAN raw
+        // photo_path (path internal storage tak lagi bocor ke HTML sama sekali).
         Livewire::test(ListKiosks::class)
             ->assertOk()
-            ->assertSee('kiosks/tidak-ada-di-disk.jpg', escape: false);
+            ->assertSee(route('kiosks.photo', $kiosk), escape: false)
+            ->assertDontSee('r2.dev', escape: false)
+            ->assertDontSee('tidak-ada-di-disk.jpg', escape: false);
     }
 
     public function test_kiosk_without_photo_shows_placeholder_not_blank(): void

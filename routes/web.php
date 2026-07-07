@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\KioskPhotoController;
 use App\Http\Controllers\Owner\MonthlyReportController;
 use App\Http\Controllers\Owner\TripDeleteController;
 use App\Http\Controllers\Owner\TripExportController;
@@ -37,6 +38,16 @@ Route::get('csrf-token', function () {
         'home' => auth()->user()?->homePath(),
     ])->header('Cache-Control', 'no-store, no-cache, private, must-revalidate');
 })->middleware('auth')->name('csrf-token');
+
+// Proxy same-origin foto kios (R2 -> app -> browser). SENGAJA TANPA 'no-store':
+// endpoint ini butuh Cache-Control publik (KioskPhotoController) supaya browser
+// & SW bisa cache-first — 'no-store' akan menimpa itu jadi tak pernah ke-cache.
+// Tanpa batasan role: owner/operator/super_admin sama-sama boleh lihat foto
+// kios; isolasi tenant sudah otomatis lewat OwnerScope pada route model binding
+// Kiosk (owner lain -> ModelNotFoundException -> 404).
+Route::middleware(['auth'])
+    ->get('/kiosks/{kiosk}/photo', [KioskPhotoController::class, 'show'])
+    ->name('kiosks.photo');
 
 Route::middleware(['auth', 'verified', 'no-store'])->group(function () {
     Route::get('/dashboard', function () {

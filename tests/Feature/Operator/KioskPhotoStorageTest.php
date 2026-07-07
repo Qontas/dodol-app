@@ -16,17 +16,21 @@ class KioskPhotoStorageTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_photo_url_accessor_uses_media_disk_and_is_null_without_photo(): void
+    public function test_photo_url_accessor_uses_proxy_route_and_is_null_without_photo(): void
     {
+        // Akar net::ERR_CERT_COMMON_NAME_INVALID transien ke R2 langsung (lihat
+        // NEXT_SESSION.md) -> photo_url sekarang proxy same-origin
+        // (KioskPhotoController), BUKAN URL disk/R2 langsung lagi.
         config(['app.media_disk' => 'public']);
 
         $kiosk = Kiosk::factory()->create(['photo_path' => null]);
         $this->assertNull($kiosk->photo_url);
 
         $kiosk->update(['photo_path' => 'kiosks/contoh.jpg']);
+        $kiosk = $kiosk->fresh();
         $this->assertSame(
-            Storage::disk('public')->url('kiosks/contoh.jpg'),
-            $kiosk->fresh()->photo_url
+            route('kiosks.photo', $kiosk).'?v='.$kiosk->updated_at->timestamp,
+            $kiosk->photo_url
         );
     }
 
@@ -53,8 +57,11 @@ class KioskPhotoStorageTest extends TestCase
         $kiosk = Kiosk::where('name', 'Kios Foto Disk')->firstOrFail();
         $this->assertNotNull($kiosk->photo_path);
         Storage::disk('public')->assertExists($kiosk->photo_path);
-        // Accessor membentuk URL dari disk media yang sama.
-        $this->assertSame(Storage::disk('public')->url($kiosk->photo_path), $kiosk->photo_url);
+        // Accessor membentuk URL proxy same-origin, bukan URL disk langsung.
+        $this->assertSame(
+            route('kiosks.photo', $kiosk).'?v='.$kiosk->updated_at->timestamp,
+            $kiosk->photo_url
+        );
     }
 
     public function test_app_does_not_crash_when_media_disk_points_to_unconfigured_s3(): void
