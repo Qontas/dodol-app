@@ -2,7 +2,7 @@
 *Sesi terakhir: 7 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 272 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
+Bg, lanjut dodol-app. 274 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
 (3 skenario dibuktikan pakai test): super_admin bikin owner baru → 0 data nyangkut; owner A tak
 bisa baca/tulis data owner B (404/ditolak semua); operator owner A tak bisa sentuh kios/trip
 owner B (4 lubang lama masih tertutup). TEMUAN residual ProductVariant tanpa OwnerScope global
@@ -16,14 +16,63 @@ DOTSWAN → LEAFLET". Service Worker (public/sw.js) NAIK ke v5 (7 Juli 2026): de
 aman-by-default (network-first), fetch validasi eksplisit `cache:'no-cache'`, `registration.update()`
 ditambah — lihat section "FIX CACHE-BUSTING SW v5". Audit session/trip persistence (7 Juli 2026)
 — VERDICT AMAN, dibuktikan test: trip operator DB-based & auto-resume, TIDAK hilang walau
-logout/sesi habis di lapangan — lihat section "AUDIT SESSION & TRIP PERSISTENCE". Advisor tulis
-brief kerja langsung di chat (code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md untuk
-context lengkap.
+logout/sesi habis di lapangan — lihat section "AUDIT SESSION & TRIP PERSISTENCE". Foto kios list
+owner (Filament) yang KADANG kosong SUDAH DIFIX (7 Juli 2026): akarnya live exists()-check R2 per
+baris per render — lihat section "FIX FOTO KIOS KADANG KOSONG". Advisor tulis brief kerja
+langsung di chat (code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context
+lengkap.
 
 ## STATUS
-- 272 PASS (1050 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
-  1 test dari migrasi peta owner ke Leaflet, 2 test dari audit session/trip persistence). SW v5
-  tak nambah test PHP (murni JS, diverifikasi headed browser — lihat section SW di bawah).
+- 274 PASS (1055 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
+  1 test dari migrasi peta owner ke Leaflet, 2 test dari audit session/trip persistence, 2 test
+  dari fix foto kios list owner). SW v5 tak nambah test PHP (murni JS, diverifikasi headed
+  browser — lihat section SW di bawah).
+
+## ✅ FIX FOTO KIOS "KADANG MUNCUL KADANG TIDAK" DI LIST OWNER (7 Juli 2026, commit def0d90)
+- GEJALA: foto kios kadang kosong di list `/owner-panel/kiosks` (Filament), reload ulang kadang
+  muncul lagi. Owner sempat lihat "asal muncul di operator" — jadi kecurigaan awal: dua jalur
+  beda antara owner & operator (bukan soal data foto hilang).
+- AKAR (audit dulu, dibuktikan bukan diasumsikan): `Tables\Columns\ImageColumn` (dipakai
+  `KioskResource.php` list owner) punya `checkFileExistence` default **TRUE**
+  (`vendor/filament/tables/src/Columns/ImageColumn.php:55,156-164`) — tiap baris berfoto, tiap
+  render, menembak **live HeadObject API call ke R2** (`Storage::disk('s3')->exists($path)`,
+  server Railway → R2) SEBELUM menampilkan gambar. Gagal transient (jaringan/rate-limit sesaat)
+  → exception ketangkep → baris itu kosong utk render tsb SAJA, reload berikutnya bisa sukses
+  lagi. **Operator TIDAK kena** karena `Kiosk::photo_url` (accessor, dipakai `active-trip.blade.php`)
+  murni `Storage::disk($disk)->url($path)` — 0 API call, cuma generate string URL.
+  * BUKAN URL expired/signed (`->visibility('public')` eksplisit di FileUpload field →
+    cabang `temporaryUrl()` di ImageColumn TIDAK PERNAH aktif — dikonfirmasi kode+reproduksi:
+    URL foto R2 permanen, `<img>` sukses 200 berulang kali).
+  * BUKAN Service Worker — R2 (`r2.dev`) beda origin dari app, `sw.js:93-95` bypass total
+    request cross-origin, tak pernah intersep/cache foto.
+- FIX (`app/Filament/Resources/KioskResource.php`, ImageColumn `photo_path`):
+  1. `->checkFileExistence(false)` — hilangkan live-check, list owner ikut jalur SAMA dengan
+     operator (tampilkan URL langsung, browser yang urus fetch + fallback broken-image kalau
+     file BENERAN hilang dari bucket — bukan disembunyikan diam-diam).
+  2. `->defaultImageUrl(self::PHOTO_PLACEHOLDER)` — SVG inline (bukan file baru) utk kios yang
+     memang belum punya foto (`photo_path` NULL, data import lama) → placeholder ikon rapi,
+     dibedakan jelas dari kasus "foto ada tapi gagal tampil" di atas.
+- TEST BARU (`KioskPhotoListStabilityTest`, 2 test): membuktikan PERILAKU langsung (bukan cuma
+  baca kode) — render list kios TETAP menampilkan URL foto walau file SENGAJA tidak dibuat di
+  disk fake (kalau checkFileExistence masih aktif, ini akan disembunyikan/null); kios tanpa foto
+  menampilkan placeholder SVG, bukan kotak kosong. 274 PASS total, 0 regresi.
+- VERIFIKASI PRODUKSI (headed Chrome asli, setelah deploy via push): 10× reload berturut ke
+  `/owner-panel/kiosks` — foto "HM Said 1" & "Kedai Cempaka" render KONSISTEN 1280px tiap kali
+  (sebelumnya intermiten). Operator TIDAK disentuh (`Kiosk.php`/`active-trip.blade.php` 0 diff
+  di commit ini — dikonfirmasi via `git diff --name-only`).
+- ⚠️ TEMUAN BUAT RENCANA ROTASI R2 TOKEN:
+  * SEBELUM fix ini: exists()-check pakai `AWS_ACCESS_KEY_ID`/`SECRET` (S3 API auth). Selama
+    window rotasi token (token lama invalid, token baru belum ter-deploy), exists()-check akan
+    GAGAL MASSAL → foto-foto di list owner hilang SERENTAK sementara (bukan cuma 1-2 baris).
+  * SETELAH fix ini: exists()-check sudah DIHAPUS dari jalur ini → **rotasi token R2 tidak lagi
+    berefek ke tampilan foto owner sama sekali** (bonus tak terduga dari fix ini — rotasi jadi
+    lebih aman). URL publik (`pub-*.r2.dev`) independen dari API key (fitur "public access" di
+    level bucket Cloudflare), jadi baik jalur owner maupun operator tetap jalan normal saat rotasi.
+  * R2 bucket BELUM ada CORS policy (`Access-Control-Allow-Origin`) — dikonfirmasi via `fetch()`
+    langsung dari browser ke R2 URL, gagal CORS eksplisit. TIDAK masalah utk `<img>` biasa (tak
+    butuh CORS), tapi PENTING dicatat kalau nanti ada fitur yang butuh akses canvas/pixel gambar
+    (lightbox zoom, crop ulang foto lama, embed gambar di export PDF) — bucket perlu CORS
+    ditambah SEBELUM fitur itu dibangun, supaya tak kejebak lagi kaget di kemudian hari.
 
 ## ✅ AUDIT SESSION & TRIP PERSISTENCE — VERDICT AMAN (7 Juli 2026)
 - KEKHAWATIRAN OWNER: operator ke-logout otomatis di lapangan (sinyal jelek, HP ke-lock
