@@ -22,9 +22,12 @@ owner: FIX DEFINITIF (7 Juli 2026) — foto sekarang di-proxy same-origin lewat
 (akar net::ERR_CERT_COMMON_NAME_INVALID transien di level koneksi browser ke domain CDN
 cert-wildcard bersama, dikonfirmasi bukan app/server/jaringan tapi tak actionable dari app —
 solusinya hilangkan ketergantungan ke domain itu sama sekali). Bonus: isolasi tenant utk foto
-(OwnerScope pada route model binding) + cache-first SW (offline utk operator). Lihat section
-"FIX FOTO KIOS KADANG KOSONG". Advisor tulis brief kerja langsung di chat (code block), BUKAN
-file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
+(OwnerScope pada route model binding) + cache-first SW (offline utk operator). VALIDASI MENDALAM
+pasca-deploy (Ronde 4) menemukan 1 REGRESI NYATA — widget upload form create/edit kios pakai
+jalur URL R2 langsung sendiri (Filament bawaan, kelewat saat migrasi) → SUDAH DIFIX & diverifikasi
+produksi (kios nyata). Operator DIKONFIRMASI tetap jalan, 0 regresi lain ditemukan. Lihat section
+"FIX FOTO KIOS KADANG KOSONG" (terutama RONDE 4). Advisor tulis brief kerja langsung di chat
+(code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
 - 281 PASS (1067 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
@@ -161,6 +164,67 @@ file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
   sebenarnya) — akar sudah dibuktikan environment-dependent di sisi Chromium, jadi device lama
   itu HARUS sembuh sekarang (browser tak lagi pernah konek ke r2.dev sama sekali, kelas bug ini
   literally tak bisa terjadi lagi apa pun environment-nya).
+
+### RONDE 4 — VALIDASI MENDALAM pasca-deploy: 1 REGRESI NYATA ketemu & difix (7 Juli 2026, commit 4935057)
+- User konfirmasi foto MUNCUL di produksi, tapi minta audit "jangan bilang aman tanpa bukti" —
+  cek regresi, efek samping, & jelaskan Network log merah yang masih terlihat.
+- **(A) REGRESI NYATA DITEMUKAN — jalur KETIGA yang kelewat**: audit grep menyeluruh
+  (`photo_url`/`photo_path` di seluruh codebase) menemukan Filament `FileUpload::
+  getUploadedFileUsing()` BAWAAN (widget upload di form create/edit kios — BEDA dari
+  `Tables\Columns\ImageColumn` yang sudah difix) generate URL R2 LANGSUNG lewat
+  `$storage->url($file)` sendiri, TIDAK PERNAH ikut dikonversi ke proxy. Dibuktikan headed
+  Chrome (lokal DAN produksi, kios nyata "HM Said 1"): widget "Foto Kios" macet SELAMANYA di
+  "Waiting for size" (dipantau 20+ detik, tak pernah resolve — bukan lambat, PERMANEN rusak)
+  krn browser request `pub-*.r2.dev` kena `net::ERR_CERT_COMMON_NAME_INVALID` yang SAMA PERSIS.
+  * FIX: `->getUploadedFileUsing()` di-override pakai `Kiosk::photo_url` (proxy sama persis
+    dgn list & operator) — SEKARANG genuinely SATU jalur di SELURUH app (list, operator, form
+    create/edit), bukan cuma "hasilnya kebetulan sama" seperti klaim ronde sebelumnya.
+  * VERIFIKASI: headed Chrome produksi, kios nyata "HM Said 1" (`/owner-panel/kiosks/965/edit`)
+    — widget resolve INSTAN (bukan lagi stuck), foto asli (Google Street View kios) tampil,
+    request `/kiosks/965/photo?v=...` → `200`, `Cache-Control: immutable, max-age=31536000,
+    public`. 0 request r2.dev di seluruh sesi (login+list+edit).
+  * SEVERITY: serius kalau tak ketemu (form edit/create kios jadi tak bisa dipakai normal utk
+    kios berfoto — bukan kosmetik), TAPI sudah 100% tertutup sebelum jadi laporan user.
+- **Operator — DIKONFIRMASI TETAP JALAN** (kekhawatiran utama user): headed Chrome sbg
+  operator, buka trip aktif → modal kunjungan kios nyata → foto render `naturalWidth: 1280`,
+  request proxy `200` `content-type: image/jpeg`, 0 request r2.dev. TIDAK ADA regresi di jalur
+  operator (kode `active-trip.blade.php` 0 disentuh sejak awal).
+- **Upload foto baru**: dibuktikan `KioskPhotoStorageTest` (3 test, PASS) — upload → tersimpan
+  ke disk media → `photo_url` accessor generate proxy URL dgn benar, end-to-end.
+- **Tenant isolation — DIBUKTIKAN, bukan diasumsikan** (7 test `KioskPhotoControllerTest`):
+  guest → redirect login; owner A akses foto kios owner B → `404` (`OwnerScope` global pada
+  route model binding `Kiosk $kiosk`, otomatis, TIDAK ADA bypass); operator lintas-tenant →
+  `404`; operator tenant benar → `200`; super_admin → `200` (bypass scope, sesuai desain);
+  kios tanpa foto → `404`; `photo_path` terisi tapi file hilang dari disk → `404` bersih
+  (bukan 500). Route model binding DIKONFIRMASI kena scope (bukan query mentah) — cek kode
+  `Kiosk::booted()` + hasil test cross-tenant.
+- **(B) Efek samping performa/beban — angka konkret**:
+  * Latency: load pertama (uncached) 558–1270ms per foto (round-trip Railway↔R2 asli via
+    proxy — hop TAMBAHAN dibanding dulu browser→R2 langsung, tapi masih dalam batas wajar).
+    Reload berikutnya: **0ms, transferSize 0** (browser cache `immutable`, TANPA request
+    jaringan sama sekali) — LEBIH CEPAT dari sebelumnya (dulu selalu ke r2.dev tiap kali,
+    sekarang cuma sekali per versi foto). Operator lapangan: foto yang SUDAH pernah dilihat
+    sekali JADI BISA DIBUKA OFFLINE (bonus, tak ada sebelumnya).
+  * Memori server: `Storage::response()` (Laravel core) pakai `fpassthru($stream)` pada
+    resource stream dari `readStream()` — TIDAK memuat file penuh ke variabel PHP, genuinely
+    streaming chunk-by-chunk. Dikonfirmasi baca source `FilesystemAdapter::response()`
+    langsung, bukan asumsi.
+  * SW: aturan `/kiosks/{id}/photo` dicek TAK bentrok urutan dgn aturan lain (path tak match
+    `IMMUTABLE_ASSET_PATTERN` krn tanpa ekstensi file, jadi jatuh ke aturan eksplisit barunya
+    sendiri). Cache-bust DIBUKTIKAN jalan: simulasi ganti foto (`photo_path` baru + `updated_at`
+    ke-touch) → `?v=` berubah → reload berikutnya fetch URL BARU (bukan basi), entry cache lama
+    jadi orphan tak berbahaya (tak pernah direferensikan lagi).
+- **(C) Network log merah ERR_CERT yang user lihat — PENJELASAN**: reload BERSIH (browser
+  profile baru, 0 riwayat sebelumnya) di produksi = **0 request r2.dev**, dikonfirmasi berulang
+  kali di sesi ini. Kalau user masih lihat entry merah di DevTools dengan "Preserve log"
+  tercentang, itu request LAMA dari SEBELUM fix ter-deploy yang MENUMPUK di log (Preserve log
+  sengaja tak pernah membersihkan log lintas-navigasi) — bukan request baru dari kode yang
+  sekarang. TODO USER: uncheck "Preserve log" (atau klik 🚫 clear) lalu reload → seharusnya
+  nihil entry r2.dev baru muncul.
+- KESIMPULAN JUJUR: fix AMAN dipakai, TAK ADA fitur yang jadi korban permanen — SATU regresi
+  transisional (widget form) ketemu & tertutup DALAM audit ini sebelum sempat jadi keluhan
+  user. 281 PASS tetap (0 regresi test), 0 request r2.dev di semua jalur yang diperiksa.
+  TIDAK ada rekomendasi untuk membatalkan fix.
 
 ## ✅ AUDIT SESSION & TRIP PERSISTENCE — VERDICT AMAN (7 Juli 2026)
 - KEKHAWATIRAN OWNER: operator ke-logout otomatis di lapangan (sinyal jelek, HP ke-lock
