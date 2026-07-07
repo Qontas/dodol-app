@@ -36,6 +36,12 @@ class KioskResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Kios';
 
+    // Placeholder ikon foto (SVG inline, bukan file baru) utk kios yang photo_path-nya
+    // NULL (belum pernah difoto — data import lama, dsb). Beda dari kasus "foto ada tapi
+    // gagal tampil" di atas: ini memang tak punya foto sama sekali, jadi kotak kosong
+    // diganti ikon rapi, bukan menyembunyikan masalah.
+    private const PHOTO_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%239ca3af\' stroke-width=\'1.5\'%3E%3Crect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'/%3E%3Ccircle cx=\'8.5\' cy=\'8.5\' r=\'1.5\'/%3E%3Cpolyline points=\'21 15 16 10 5 21\'/%3E%3C/svg%3E';
+
     public static function form(Form $form): Form
     {
         return $form
@@ -314,6 +320,17 @@ class KioskResource extends Resource
                 Tables\Columns\ImageColumn::make('photo_path')
                     ->label('')
                     ->disk(config('app.media_disk', 'public'))
+                    // AKAR "foto kadang muncul kadang tidak" di list ini (BUKAN operator):
+                    // default Filament checkFileExistence=true menembak live HeadObject
+                    // ke R2 PER BARIS PER RENDER (server Railway -> R2 API). Gagal transient
+                    // (jaringan/rate-limit sesaat) -> baris itu kosong utk render tsb saja,
+                    // reload berikutnya bisa muncul lagi. Operator pakai Kiosk::photo_url
+                    // (accessor ->url() langsung, 0 API call) makanya tak pernah kena.
+                    // Matikan exists-check: list ini ikut jalur seragam dgn operator — tampilkan
+                    // URL langsung, browser yang urus fetch (fallback broken-image kalau
+                    // memang file-nya sungguh hilang dari bucket, bukan disembunyikan diam-diam).
+                    ->checkFileExistence(false)
+                    ->defaultImageUrl(self::PHOTO_PLACEHOLDER)
                     ->square()
                     ->size(50),
 
