@@ -2,7 +2,7 @@
 *Sesi terakhir: 7 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 274 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
+Bg, lanjut dodol-app. 281 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
 (3 skenario dibuktikan pakai test): super_admin bikin owner baru → 0 data nyangkut; owner A tak
 bisa baca/tulis data owner B (404/ditolak semua); operator owner A tak bisa sentuh kios/trip
 owner B (4 lubang lama masih tertutup). TEMUAN residual ProductVariant tanpa OwnerScope global
@@ -17,18 +17,20 @@ aman-by-default (network-first), fetch validasi eksplisit `cache:'no-cache'`, `r
 ditambah — lihat section "FIX CACHE-BUSTING SW v5". Audit session/trip persistence (7 Juli 2026)
 — VERDICT AMAN, dibuktikan test: trip operator DB-based & auto-resume, TIDAK hilang walau
 logout/sesi habis di lapangan — lihat section "AUDIT SESSION & TRIP PERSISTENCE". Foto kios list
-owner (Filament) yang KADANG kosong: 2 akar berlapis SUDAH DIFIX (7 Juli 2026) — (1) live
-exists()-check R2 per baris per render, (2) net::ERR_CERT_COMMON_NAME_INVALID TRANSIEN di level
-koneksi Chromium (dibuktikan reproduksi berulang bukan jaringan/URL/server R2) — retry otomatis
-via extraImgAttributes(onerror), diverifikasi bekerja dgn simulasi kegagalan nyata — lihat section
+owner: FIX DEFINITIF (7 Juli 2026) — foto sekarang di-proxy same-origin lewat
+`KioskPhotoController` (`/kiosks/{id}/photo`), browser TAK PERNAH LAGI konek langsung ke r2.dev
+(akar net::ERR_CERT_COMMON_NAME_INVALID transien di level koneksi browser ke domain CDN
+cert-wildcard bersama, dikonfirmasi bukan app/server/jaringan tapi tak actionable dari app —
+solusinya hilangkan ketergantungan ke domain itu sama sekali). Bonus: isolasi tenant utk foto
+(OwnerScope pada route model binding) + cache-first SW (offline utk operator). Lihat section
 "FIX FOTO KIOS KADANG KOSONG". Advisor tulis brief kerja langsung di chat (code block), BUKAN
 file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 274 PASS (1055 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
-  1 test dari migrasi peta owner ke Leaflet, 2 test dari audit session/trip persistence, 2 test
-  dari fix foto kios list owner). SW v5 & retry-onerror foto tak nambah test PHP (murni JS,
-  diverifikasi headed browser — lihat section masing-masing di bawah).
+- 281 PASS (1067 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
+  1 test dari migrasi peta owner ke Leaflet, 2 test dari audit session/trip persistence, 7 test
+  dari fix foto kios/proxy same-origin). SW v5 & proxy foto tak nambah test PHP tambahan di luar
+  itu (bagian JS/HTTP diverifikasi headed browser produksi — lihat section masing-masing di bawah).
 
 ## ✅ FIX FOTO KIOS "KADANG MUNCUL KADANG TIDAK" DI LIST OWNER (7 Juli 2026, commit def0d90)
 - GEJALA: foto kios kadang kosong di list `/owner-panel/kiosks` (Filament), reload ulang kadang
@@ -110,6 +112,55 @@ file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
   kedua SUKSES (`naturalWidth: 1280`, `dataset.retried: "1"`) — bukti mekanisme retry BEKERJA,
   bukan cuma kode benar di atas kertas. 10× reload lanjutan setelah deploy tetap 100% stabil.
   274 PASS, 0 regresi (fix ini murni tambahan atribut HTML, tak ada test PHP baru).
+
+### RONDE 3 — FIX DEFINITIF: proxy same-origin (7 Juli 2026, commit 1a54eca)
+- User BUKTI FINAL (menentukan arah, membantah semua teori environment sebelumnya): URL R2
+  dibuka LANGSUNG di tab (WiFi/Chrome sama persis) → foto tampil, cert valid. URL BYTE-SAMA
+  sebagai `<img>` di list owner, jaringan sama, menit berdekatan → `ERR_CERT_COMMON_NAME_INVALID`
+  konsisten, `?retry=` ikut gagal. → Koneksi browser ke `pub-*.r2.dev` **DALAM KONTEKS HALAMAN**
+  di-mishandle di environment tertentu (kemungkinan HTTP/2 connection coalescing/ECH Chromium),
+  environment-dependent, TIDAK worth dikejar lagi — solusi: hilangkan ketergantungan browser ke
+  r2.dev SEPENUHNYA, bukan lanjut diagnosa cert/DNS/antivirus.
+- IMPLEMENTASI:
+  1. `App\Http\Controllers\KioskPhotoController` — route `GET /kiosks/{kiosk}/photo`
+     (middleware `auth` saja, SENGAJA TANPA `no-store` karena butuh Cache-Control publik).
+     Route model binding `Kiosk $kiosk` otomatis kena `OwnerScope` global (`Kiosk::booted()`)
+     → owner/operator lintas-tenant dapat 404 (record "tak pernah ada" bagi mereka), super_admin
+     bypass — **peningkatan keamanan** dibanding public bucket R2 sebelumnya (siapa pun yang tahu
+     URL R2 bisa akses, sekarang wajib auth + scope tenant benar). Stream via
+     `Storage::disk($mediaDisk)->response($photo_path, ...)`, Content-Type dari ekstensi file
+     (hindari 1 round-trip `mimeType()` API R2), `Cache-Control: public, max-age=31536000,
+     immutable` + ETag.
+  2. `Kiosk::photo_url` — SATU sumber URL: `route('kiosks.photo', $this).'?v='.$this->
+     updated_at->timestamp`. Owner (`KioskResource` `ImageColumn::getStateUsing`) DAN operator
+     (`active-trip.blade.php`, TIDAK diubah — sudah pakai accessor ini) sekarang genuinely satu
+     jalur yang SAMA, bukan cuma "hasilnya identik" seperti ronde sebelumnya. `?v=` (timestamp)
+     cache-bust otomatis tiap kios disimpan ulang (termasuk upload foto baru) — aman cache
+     agresif krn URL berubah begitu konten berubah (pola sama dgn Vite hash).
+  3. `sw.js`: `/kiosks/{id}/photo` masuk cache-first (immutable karena ber-versi) → foto instan
+     + OFFLINE utk operator lapangan, bonus dari arsitektur baru.
+  4. TIDAK diubah: bucket R2, `AWS_URL`, tak ada diagnosa cert/DNS/antivirus lanjutan (final,
+     bukan actionable dari app).
+- TEST BARU (`KioskPhotoControllerTest`, 7 test): guest → redirect login; owner A akses foto
+  kios owner B → 404; operator tenant benar → 200 (`Content-Type: image/*`, `Cache-Control:
+  public`); operator lintas-tenant → 404; super_admin → 200 (bypass scope); kios tanpa foto →
+  404; `photo_path` terisi tapi file hilang dari disk → 404 bersih (bukan 500). Test lama
+  (`KioskPhotoStorageTest`, `KioskPhotoListStabilityTest`) diupdate ikut kontrak accessor baru
+  (assert URL proxy, bukan URL R2 langsung; assert `r2.dev` TIDAK PERNAH muncul di HTML).
+  281 PASS total, 0 regresi.
+- VERIFIKASI PRODUKSI (headed Chrome asli, setelah deploy):
+  * 10× reload list owner: 100% stabil, **0 request ke r2.dev/r2.cloudflarestorage.com dari
+    browser** (dikonfirmasi `page.on('response')` across semua reload — array kosong).
+    Raw HTML server: 0 occurrence `r2.dev`, 2 occurrence `/kiosks/{id}/photo` (URL proxy benar).
+  * Latency: load pertama (uncached) 558ms & 1270ms per foto (round-trip Railway↔R2 asli, wajar).
+    Reload biasa (soft): **0ms, transferSize 0** — disajikan LANGSUNG dari HTTP cache browser
+    (lebih baik dari sekadar 304 — TANPA request jaringan sama sekali, berkat `Cache-Control:
+    immutable` + URL ber-versi).
+  * Screenshot: "HM Said 1" & "Kedai Cempaka" tampil normal dari list owner produksi.
+- ⚠️ TODO USER: verifikasi FINAL di device yang SEBELUMNYA konsisten gagal (itu ujian
+  sebenarnya) — akar sudah dibuktikan environment-dependent di sisi Chromium, jadi device lama
+  itu HARUS sembuh sekarang (browser tak lagi pernah konek ke r2.dev sama sekali, kelas bug ini
+  literally tak bisa terjadi lagi apa pun environment-nya).
 
 ## ✅ AUDIT SESSION & TRIP PERSISTENCE — VERDICT AMAN (7 Juli 2026)
 - KEKHAWATIRAN OWNER: operator ke-logout otomatis di lapangan (sinyal jelek, HP ke-lock
