@@ -2,7 +2,7 @@
 *Sesi terakhir: 7 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 270 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
+Bg, lanjut dodol-app. 272 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
 (3 skenario dibuktikan pakai test): super_admin bikin owner baru → 0 data nyangkut; owner A tak
 bisa baca/tulis data owner B (404/ditolak semua); operator owner A tak bisa sentuh kios/trip
 owner B (4 lubang lama masih tertutup). TEMUAN residual ProductVariant tanpa OwnerScope global
@@ -14,13 +14,55 @@ kini pakai Leaflet HAND-ROLLED (App\Filament\Forms\Components\LeafletMapPicker),
 filament-map-picker DIHAPUS TOTAL (3x sumber bug integrasi) — lihat section "MIGRASI PETA OWNER
 DOTSWAN → LEAFLET". Service Worker (public/sw.js) NAIK ke v5 (7 Juli 2026): default cache jadi
 aman-by-default (network-first), fetch validasi eksplisit `cache:'no-cache'`, `registration.update()`
-ditambah — lihat section "FIX CACHE-BUSTING SW v5". Advisor tulis brief kerja langsung di chat
-(code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
+ditambah — lihat section "FIX CACHE-BUSTING SW v5". Audit session/trip persistence (7 Juli 2026)
+— VERDICT AMAN, dibuktikan test: trip operator DB-based & auto-resume, TIDAK hilang walau
+logout/sesi habis di lapangan — lihat section "AUDIT SESSION & TRIP PERSISTENCE". Advisor tulis
+brief kerja langsung di chat (code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md untuk
+context lengkap.
 
 ## STATUS
-- 270 PASS (1039 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
-  1 test baru dari migrasi peta owner ke Leaflet di bawah). SW v5 tak nambah test PHP (murni JS,
-  diverifikasi headed browser — lihat section SW di bawah).
+- 272 PASS (1050 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
+  1 test dari migrasi peta owner ke Leaflet, 2 test dari audit session/trip persistence). SW v5
+  tak nambah test PHP (murni JS, diverifikasi headed browser — lihat section SW di bawah).
+
+## ✅ AUDIT SESSION & TRIP PERSISTENCE — VERDICT AMAN (7 Juli 2026)
+- KEKHAWATIRAN OWNER: operator ke-logout otomatis di lapangan (sinyal jelek, HP ke-lock
+  berjam-jam) → trip yang sedang jalan HILANG / harus mulai trip baru. Klaim "login tahan
+  5 tahun" dari sesi lalu diverifikasi ULANG (bukan diasumsikan lagi).
+- **Trip persistence — DB-based, TERBUKTI, bukan teori:**
+  * `app/Models/Trip.php` — model Eloquent biasa (kolom `started_at`/`ended_at`), TIDAK ADA
+    jejak session/cache sama sekali.
+  * `Dashboard.php:26-30`, `StartTrip.php:24-33`, `ActiveTrip.php:152-160` — SEMUA query
+    `Trip::where('operator_id', auth()->id())->whereNull('ended_at')->first()` langsung ke DB
+    tiap mount. `ActiveTrip::mount()` malah MENGABAIKAN `{tripId}` dari URL sama sekali —
+    selalu cari trip aktif operator dari DB, jadi URL basi/bookmark tetap resolve ke trip benar.
+  * Dashboard tampilkan tombol "Lanjutkan Trip Aktif" (dashboard.blade.php:21-29) kalau trip
+    aktif ketemu; StartTrip auto-redirect ke trip yang sudah ada (tak pernah biarkan trip dobel).
+  * TEST BARU (commit fd46bff): `TripPersistenceAcrossLoginTest` — logout BENERAN (invalidate
+    session + `Auth::logout()` yang rotate token, bukan simulasi) lalu login ulang → Dashboard/
+    StartTrip/ActiveTrip semua resume ke trip yang SAMA, cuma 1 baris trip di DB (tak dobel);
+    plus `{tripId}` URL sembarang tetap resolve ke trip aktif yang benar. 2 test, 272 PASS total.
+- **Session/login — remember-me default-on, ~5 tahun, FAKTA framework:**
+  * `LoginForm.php:24`: `$remember = true` DEFAULT (bukan opt-in), checkbox login.blade.php:65
+    tercentang bawaan. `Auth::attempt($credentials, true)` → Laravel `SessionGuard`/`CookieJar::
+    forever()` = 2.628.000 menit = 5 tahun PERSIS (konstanta framework, bukan klaim dikarang).
+  * Konsekuensi: raw `SESSION_LIFETIME` (480 mnt/8 jam di `.env` lokal) BOLEH habis karena idle,
+    tapi remember-cookie tetap ada → request berikutnya (page load ATAU aksi Livewire AJAX,
+    keduanya lewat middleware `web` yang sama) auto re-login TRANSPARAN tanpa form. Operator
+    praktis tetap login selama device/browser sama & tak logout manual — jauh melampaui skenario
+    "HP di-lock beberapa jam".
+  * Edge-case yang SEBELUMNYA (17 Juni 2026, bukan sesi ini) bikin 419 saat rotasi sesi diam-diam
+    — dicek MASIH AKTIF sekarang: `pwa-token-refresh.blade.php` (sinkron token saat resume),
+    `bootstrap/app.php` CSRF-exempt logout + handler 419 ramah. Tak ada mekanisme logout paksa
+    lain (dicek config/auth.php + app/Http/Middleware/ — tak ada single-session/IP-lock;
+    `Filament\Http\Middleware\AuthenticateSession` di OwnerPanelProvider cuma re-validasi
+    password hash, bukan timeout tambahan, dan operator tak pernah pakai panel Filament owner).
+- ⚠️ SATU ITEM TERBUKA (tak ubah verdict): `SESSION_LIFETIME` aktual di Railway produksi BELUM
+  di-cross-check langsung sesi ini (tak ada akses Railway CLI/dashboard dari sini). Tidak
+  mengubah kesimpulan — remember-me bekerja independen dari angka lifetime itu. TODO USER:
+  cek Railway dashboard kalau mau 100% pasti angkanya, tapi tak mendesak.
+- KESIMPULAN: TIDAK ADA FIX yang direkomendasikan/dieksekusi. Kedua kekhawatiran sudah tertutup
+  desain yang ada (audit murni, test-only, 0 perubahan kode produksi).
 
 ## ✅ AUDIT + FIX CACHE-BUSTING SERVICE WORKER — public/sw.js NAIK ke v5 (7 Juli 2026)
 - KONTEKS: dipicu 2 insiden cache-basi produksi (CSS Filament, lalu leaflet-map-picker.js). Audit
