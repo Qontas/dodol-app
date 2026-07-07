@@ -331,6 +331,19 @@ class KioskResource extends Resource
                     // memang file-nya sungguh hilang dari bucket, bukan disembunyikan diam-diam).
                     ->checkFileExistence(false)
                     ->defaultImageUrl(self::PHOTO_PLACEHOLDER)
+                    // AKAR LANJUTAN (dibuktikan headed Chrome asli, reproduksi berulang):
+                    // kegagalan net::ERR_CERT_COMMON_NAME_INVALID ke pub-*.r2.dev ini
+                    // TRANSIEN & di level koneksi browser (Chromium connection-reuse/coalescing
+                    // ke domain CDN cert-wildcard bersama) — BUKAN app/URL/config (dibuktikan
+                    // identik & benar via tinker+HTML), BUKAN server R2 (curl 30x beruntun
+                    // 100% 200 OK), BUKAN jaringan/device user (direproduksi di mesin lain
+                    // beda jaringan, lalu HILANG SENDIRI di reload berikutnya tanpa perubahan
+                    // apa pun). Retry sekali dengan delay singkat (browser buka koneksi baru,
+                    // bukan reuse yang bermasalah) menyelesaikan tanpa perlu utak-atik
+                    // storage/URL yang sudah terbukti benar.
+                    ->extraImgAttributes([
+                        'onerror' => "if(!this.dataset.retried){this.dataset.retried='1';var el=this;setTimeout(function(){el.src=el.src.split('?')[0]+'?retry='+Date.now();},400);}",
+                    ])
                     ->square()
                     ->size(50),
 
