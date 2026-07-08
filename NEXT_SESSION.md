@@ -1,8 +1,12 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 7 Juli 2026*
+*Sesi terakhir: 8 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 281 PASS. Live di Railway. Audit isolasi multi-tenant MENYELURUH selesai
+Bg, lanjut dodol-app. 281 PASS. Live di Railway. Bug minor UI dropdown Area (Choices.js
+arrow-key leak teks "arrowdown"/"arrowup" ke search box abis Esc) FIXED (8 Juli 2026) — root
+cause di Choices.js sendiri (bug upstream, bukan kode kita), fix via render hook global tanpa
+sentuh vendor. Lihat section "FIX BUG UI: ARROW-KEY BOCOR JADI TEKS DI DROPDOWN SEARCHABLE
+(CHOICES.JS)". Audit isolasi multi-tenant MENYELURUH selesai
 (3 skenario dibuktikan pakai test): super_admin bikin owner baru → 0 data nyangkut; owner A tak
 bisa baca/tulis data owner B (404/ditolak semua); operator owner A tak bisa sentuh kios/trip
 owner B (4 lubang lama masih tertutup). TEMUAN residual ProductVariant tanpa OwnerScope global
@@ -34,6 +38,52 @@ produksi (kios nyata). Operator DIKONFIRMASI tetap jalan, 0 regresi lain ditemuk
   1 test dari migrasi peta owner ke Leaflet, 2 test dari audit session/trip persistence, 7 test
   dari fix foto kios/proxy same-origin). SW v5 & proxy foto tak nambah test PHP tambahan di luar
   itu (bagian JS/HTTP diverifikasi headed browser produksi — lihat section masing-masing di bawah).
+
+## ✅ FIX BUG UI: ARROW-KEY BOCOR JADI TEKS DI DROPDOWN SEARCHABLE (CHOICES.JS) (8 Juli 2026)
+- GEJALA: di form Create/Edit Kios, dropdown Area (Select `->searchable()`) — isi Nama Kios →
+  Tab ke Area → ArrowDown (navigasi normal) → Esc (tutup dropdown) → ArrowDown lagi → teks
+  "arrowdown" nyasar ke search box, menumpuk tiap Esc+ArrowDown berikutnya
+  ("arrowdownarrowdownarrowdown..."). Kosmetik, tak ada data ke-submit salah (opsi tetap dipilih
+  dari list, teks nyasar cuma di search box), tapi ganggu alur input cepat keyboard.
+- AKAR (dikonfirmasi baca langsung source Choices.js terbundel di
+  `public/js/filament/forms/components/select.js`, BUKAN dugaan): dua bug upstream Choices.js
+  yang beririsan, bukan bug di kode kita:
+  1. `_onEscapeKey()` Choices manggil `this.containerOuter.focus()` (bukan balik fokus ke search
+     input) pas nutup dropdown → `this.input.isFocussed` jadi `false` walau secara visual masih
+     di komponen yang sama.
+  2. `_onKeyDown()` Choices deteksi "apakah tombol yang ditekan itu karakter yang bisa diketik"
+     pakai `String.fromCharCode(e.keyCode)` — utk ArrowDown (`keyCode` 40) itu KEBETULAN sama
+     dengan charCode `'('`, jadi dianggap "printable". Kombinasi #1 (`isFocussed=false`) + #2
+     (`K=true`) bikin baris `this.input.isFocussed || (this.input.value += e.key.toLowerCase())`
+     nyisipin teks "arrowdown"/"arrowup" MENTAH ke search input tiap kali ArrowDown/ArrowUp
+     ditekan pas dropdown baru saja ditutup oleh Esc.
+  * Percobaan awal (fokus-balik-ke-input SEBELUM Choices baca kondisinya) GAGAL — search input
+    Choices utk select-one ada DI DALAM panel dropdown yang `display:none` selagi tertutup,
+    jadi `.focus()` ke situ adalah no-op selama dropdown belum kebuka. Ketauan lewat browser
+    verification manual (Playwright + Chrome asli), bukan asumsi.
+- FIX (`app/Providers/AppServiceProvider.php`, method `fixChoicesSelectArrowKeyFocusLeak()`,
+  dipanggil di `boot()`, TIDAK sentuh vendor sama sekali):
+  - Listener `keydown` capture-phase di `document` (jalan lebih dulu drpd listener capture-phase
+    Choices di `containerOuter`, krn `document` ancestor-nya). Khusus ArrowDown/ArrowUp & dropdown
+    lagi tertutup: rekam isi search input SEBELUM Choices proses event, lalu `setTimeout(0)` cek
+    apakah isinya sekarang persis "isi-lama + nama tombol" (tanda tangan bug ini persis) — kalau
+    ya, balikin ke isi semula. Navigasi/reopen dropdown bawaan Choices SAMA SEKALI tak disentuh
+    (tak ada `preventDefault`/`stopPropagation`), jadi tak mengganggu perilaku normal.
+  - Global (semua Select `->searchable()` di semua panel Filament kena fix ini, bukan cuma Area
+    di Kiosk) — konsisten sama pola render-hook lain di file yg sama (`fixFilamentMapPickerZIndex`),
+    dan memang sesuai krn bug-nya inheren di Choices.js, bukan spesifik satu field.
+- VERIFIKASI (browser asli via skill `verify-browser`, Playwright + Chrome sistem, headless):
+  reproduksi urutan persis (Nama→Tab→ArrowDown→Esc→ArrowDown→Esc→ArrowDown) di Area (Kiosk
+  create) → search box TETAP KOSONG di semua langkah, 0 teks nyasar, 0 penumpukan. Fungsi
+  dropdown penuh dikonfirmasi tetap jalan: klik-pilih (mouse), search-by-typing (filter), &
+  keyboard navigate+Enter — semua sukses set value dgn benar. Dropdown LAIN yg pakai Choices.js
+  juga dicek (`owner_id` di UserResource, beda resource & panel sama sekali) — bug yg sama
+  terkonfirmasi HILANG juga di situ setelah fix (fix-nya global, bukan ditempel per-field).
+  `php artisan test` tetap 281 PASS (tak ada test PHP baru — ini murni
+  fix JS/DOM, diverifikasi lewat browser nyata, bukan unit test).
+- Field `role` di UserResource TIDAK kena bug ini sama sekali (bukan `->searchable()`, jadi
+  Filament render native `<select>` browser biasa, bukan Choices.js) — konfirmasi bug ini
+  murni scoped ke Select yang `->searchable()`.
 
 ## ✅ FIX FOTO KIOS "KADANG MUNCUL KADANG TIDAK" DI LIST OWNER (7 Juli 2026, commit def0d90)
 - GEJALA: foto kios kadang kosong di list `/owner-panel/kiosks` (Filament), reload ulang kadang
