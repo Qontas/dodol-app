@@ -3,10 +3,13 @@
 
 ## TRIGGER SENTENCE
 Bg, lanjut dodol-app. 281 PASS. Live di Railway. Bug minor UI dropdown Area (Choices.js
-arrow-key leak teks "arrowdown"/"arrowup" ke search box abis Esc) FIXED (8 Juli 2026) — root
-cause di Choices.js sendiri (bug upstream, bukan kode kita), fix via render hook global tanpa
-sentuh vendor. Lihat section "FIX BUG UI: ARROW-KEY BOCOR JADI TEKS DI DROPDOWN SEARCHABLE
-(CHOICES.JS)". Audit isolasi multi-tenant MENYELURUH selesai
+arrow-key leak teks "arrowdown"/"arrowright"/dst ke search box abis Esc) FIXED TUNTAS (8 Juli
+2026) — fix pertama (6696a87) cuma allowlist ArrowDown/Up, BOCOR ke ArrowRight (whack-a-mole);
+fix final generik pakai kriteria `e.key.length <= 1` yg nutup SEMUA named key sekaligus (panah 4
+arah + Home/End/PageUp/PageDown/dst), bukan tambal per-tombol. Root cause di Choices.js sendiri
+(bug upstream, bukan kode kita), fix via render hook global tanpa sentuh vendor. Lihat section
+"FIX BUG UI: ARROW-KEY BOCOR JADI TEKS DI DROPDOWN SEARCHABLE (CHOICES.JS)" + subsection
+"LANJUTAN". Audit isolasi multi-tenant MENYELURUH selesai
 (3 skenario dibuktikan pakai test): super_admin bikin owner baru → 0 data nyangkut; owner A tak
 bisa baca/tulis data owner B (404/ditolak semua); operator owner A tak bisa sentuh kios/trip
 owner B (4 lubang lama masih tertutup). TEMUAN residual ProductVariant tanpa OwnerScope global
@@ -84,6 +87,33 @@ produksi (kios nyata). Operator DIKONFIRMASI tetap jalan, 0 regresi lain ditemuk
 - Field `role` di UserResource TIDAK kena bug ini sama sekali (bukan `->searchable()`, jadi
   Filament render native `<select>` browser biasa, bukan Choices.js) — konfirmasi bug ini
   murni scoped ke Select yang `->searchable()`.
+
+### ⚠️→✅ LANJUTAN (8 Juli 2026, commit setelah 6696a87): fix di atas BOCOR ke ArrowRight
+- GEJALA LANJUTAN: user tes ArrowRight setelah Esc → teks "arrowright" tetap nyasar & menumpuk,
+  padahal ArrowDown/ArrowUp sudah ketutup. Fix awal (6696a87) cuma allowlist 2 tombol
+  (`e.key !== 'ArrowDown' && e.key !== 'ArrowUp'`) — WHACK-A-MOLE, salah pendekatan.
+- AKAR YG LEBIH LENGKAP: bug `String.fromCharCode(keyCode)` Choices.js itu collide utk SEMUA
+  named key yang keyCode-nya kebetulan jatuh di rentang charCode printable (>31), bukan cuma
+  ArrowDown(40)/ArrowUp(38) — juga ArrowLeft(37), ArrowRight(39), Home(36), End(35), PageUp(33),
+  PageDown(34), Delete(46), Insert(45), F-keys, dst. ArrowLeft/Right/Home/End malah TIDAK punya
+  `case` handler sendiri di switch Choices (cuma Up/Down/PageUp/PageDown yg punya), tapi bug
+  leak-nya terjadi SEBELUM switch dispatch (di leading comma-expression), jadi tetap bocor teks
+  walau key-nya sendiri tak melakukan navigasi apapun.
+- FIX DIPERBAIKI JADI GENERIK (tutup KELAS, bukan instance): ganti allowlist 2-tombol dengan
+  kriteria `e.key.length <= 1` → skip. Named key (ArrowDown, Home, Delete, dst) SELALU py
+  `e.key.length > 1`; karakter tunggal yg MEMANG sah masuk sbg teks pencarian (huruf/angka/spasi)
+  SELALU `e.key.length === 1`. Kriteria ini otomatis menutup SEMUA named key sekaligus (termasuk
+  yg belum pernah dites eksplisit spt Home/End/PageUp/PageDown/Delete/Insert) TANPA daftar
+  per-tombol yg gampang bolong lagi kalau ada named key lain yg kelewat.
+- VERIFIKASI (browser asli, Playwright): urutan Esc→key diulang utk SEMUA 8 tombol —
+  ArrowDown, ArrowUp, ArrowRight, ArrowLeft, Home, End, PageUp, PageDown — 0 dari 8 yang bocor
+  teks (sebelumnya cuma 2/8 yg ketutup). Dicek juga di dropdown Choices.js LAIN (`owner_id` di
+  UserResource) dgn ArrowRight — sama-sama bersih. Regresi dicek & AMAN: search-by-typing
+  (isolated fresh-context test, krn di test gabungan sempat ada artifact timing yg tak terkait
+  fix — dikonfirmasi via kriteria `e.key.length <= 1` yg secara struktural TAK PERNAH menyentuh
+  ketikan huruf tunggal), mouse-click-select, navigasi panah SAAT dropdown terbuka (highlight
+  tetap jalan, tak diblok — fix tak pernah `preventDefault`/`stopPropagation`). `php artisan test`
+  tetap 281 PASS.
 
 ## ✅ FIX FOTO KIOS "KADANG MUNCUL KADANG TIDAK" DI LIST OWNER (7 Juli 2026, commit def0d90)
 - GEJALA: foto kios kadang kosong di list `/owner-panel/kiosks` (Filament), reload ulang kadang

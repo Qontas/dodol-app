@@ -88,23 +88,37 @@ class AppServiceProvider extends ServiceProvider
      * Bug upstream Choices.js (dipakai semua Select ->searchable() Filament,
      * termasuk field Area di KioskResource): saat dropdown tertutup dan Esc
      * baru saja memindahkan fokus DOM ke containerOuter (bukan ke search
-     * input), _onKeyDown() Choices salah mengira ArrowDown/ArrowUp adalah
-     * "printable character" (bug String.fromCharCode(keyCode) — keyCode 40
-     * kebetulan sama dengan charCode '('). Karena input-nya tidak fokus,
-     * Choices lalu menyisipkan teks mentah "arrowdown"/"arrowup" ke search
-     * input via input.value += e.key. Tidak bisa diperbaiki dengan memaksa
-     * fokus balik ke search input itu SEBELUM Choices sempat baca kondisinya:
-     * search input Choices untuk select-one ada DI DALAM panel dropdown yang
-     * display:none saat tertutup, sehingga .focus() ke situ adalah no-op
-     * selama dropdown masih tertutup.
+     * input), _onKeyDown() Choices mendeteksi "apakah tombol ini bisa
+     * diketik" pakai String.fromCharCode(e.keyCode) — legacy & SALAH, krn
+     * banyak named key (panah, Home/End, PageUp/PageDown, Delete, Insert,
+     * dst) kebetulan py keyCode yg nge-collide dgn rentang charCode
+     * printable (mis. ArrowDown keyCode 40 == charCode '(', ArrowRight
+     * keyCode 39 == charCode "'"). Setiap kali collide, Choices menyisipkan
+     * teks mentah nama tombol (mis. "arrowdown", "arrowright") ke search
+     * input via input.value += e.key. Awalnya cuma ArrowDown/ArrowUp yg
+     * ditutup (lihat commit 6696a87) — ternyata whack-a-mole, ArrowRight
+     * masih bocor krn key-nya beda tapi akarnya SAMA. Tidak bisa diperbaiki
+     * dgn memaksa fokus balik ke search input SEBELUM Choices baca
+     * kondisinya: search input Choices utk select-one ada DI DALAM panel
+     * dropdown yg display:none saat tertutup, jadi .focus() ke situ no-op.
      *
-     * Fix ini TIDAK menyentuh Choices.js — cukup rekam isi search input
-     * SEBELUM event tsb diproses (listener capture-phase di document, jalan
-     * lebih dulu drpd listener capture-phase Choices di containerOuter), lalu
-     * di tick berikutnya cek: kalau isinya sekarang persis "isi-lama + nama
-     * tombol yang ditekan" (tanda tangan bug ini persis), balikin ke isi
-     * semula. Navigasi/reopen dropdown dari Choices sendiri tidak disentuh
-     * sama sekali (tidak ada preventDefault/stopPropagation).
+     * Fix generik (tutup KELAS bug-nya, bukan tambal per tombol): kriteria
+     * pembeda yg benar bukan "tombol apa", tapi "apakah tombol ini named key
+     * (panjang e.key > 1 char, mis. 'ArrowDown'/'Home'/'Delete') atau
+     * karakter tunggal yg MEMANG harus masuk sbg teks pencarian (mis. 'a',
+     * '5', spasi — e.key panjang 1 char)". Tidak ada satupun named key yg
+     * sah muncul sbg teks tersisip; ketikan pencarian asli SELALU 1 char per
+     * event, jadi tidak pernah kena kriteria ini. Ini otomatis menutup semua
+     * arah panah + Home/End/PageUp/PageDown/Delete/Insert/F-key dll dalam
+     * satu aturan, tanpa daftar allowlist per tombol yg gampang bolong lagi.
+     *
+     * Tidak menyentuh Choices.js — rekam isi search input SEBELUM event
+     * diproses (listener capture-phase di document, jalan lebih dulu drpd
+     * listener capture-phase Choices di containerOuter), lalu di tick
+     * berikutnya cek: kalau isinya sekarang persis "isi-lama + nama tombol"
+     * (tanda tangan bug ini persis), balikin ke isi semula. Navigasi/reopen
+     * dropdown dari Choices sendiri tidak disentuh sama sekali (tidak ada
+     * preventDefault/stopPropagation), jadi tetap membuka & navigasi normal.
      */
     private function fixChoicesSelectArrowKeyFocusLeak(): void
     {
@@ -113,7 +127,7 @@ class AppServiceProvider extends ServiceProvider
             fn (): string => <<<'HTML'
                 <script>
                     document.addEventListener('keydown', function (e) {
-                        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') {
+                        if (e.key.length <= 1) {
                             return;
                         }
 
