@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\DB;
 
 class Kiosk extends Model
 {
@@ -88,6 +89,77 @@ class Kiosk extends Model
     public function cluster(): BelongsTo
     {
         return $this->belongsTo(Cluster::class);
+    }
+
+    /**
+     * Pindahkan $kiosk ke posisi $desired DALAM cluster-nya sendiri, tanpa pernah
+     * menghasilkan duplikat ATAU lubang — pola "insert-within-list" (ala
+     * Notion/Trello reorder), bukan sekadar "increment semua >= target" (itu naif,
+     * bikin lubang kalau kios dipindah ke posisi LEBIH AWAL karena slot lamanya
+     * ditinggal kosong tanpa digeser).
+     *
+     * Hanya kios LAIN di cluster yang SAMA yang ikut tergeser — cluster/tenant lain
+     * 0 tersentuh (query di-scope `cluster_id`, OwnerScope Kiosk otomatis berlaku
+     * juga di sini, redundan tapi aman, pola sama dgn gerbang dobel di ActiveTrip).
+     *
+     * @return int|null Posisi akhir kios ini setelah di-clamp (null = dilepas dari urutan).
+     */
+    public static function reorderWithinCluster(self $kiosk, ?int $desired): ?int
+    {
+        return DB::transaction(function () use ($kiosk, $desired) {
+            $clusterId = $kiosk->cluster_id;
+
+            if ($desired === null) {
+                $kiosk->update(['sort_order' => null]);
+
+                return null;
+            }
+
+            // Rentang valid: 1..(JUMLAH kios lain yang sudah punya posisi + 1) — sengaja
+            // pakai COUNT, BUKAN MAX(sort_order). Total slot TAK berubah saat kios yang
+            // SUDAH punya posisi cuma dipindah (masih kios yang sama, cuma total-1 "lain"
+            // + kios ini = total sama); pakai MAX di sini ketangkep salah lewat test:
+            // kalau $kiosk yang dipindah BUKAN pemegang nilai tertinggi saat ini, MAX
+            // punya-orang-lain tetap = nilai tertinggi keseluruhan → +1 kelebihan satu
+            // dari batas sebenarnya (off-by-one, KETEMU lewat test clamp).
+            $totalOthers = static::query()
+                ->where('cluster_id', $clusterId)
+                ->where('id', '!=', $kiosk->id)
+                ->whereNotNull('sort_order')
+                ->count();
+
+            $target = max(1, min($desired, $totalOthers + 1));
+            $oldPos = $kiosk->sort_order;
+
+            if ($oldPos === null) {
+                // Sisip baru: kios lain di posisi >= target naik satu, beri ruang.
+                static::query()
+                    ->where('cluster_id', $clusterId)
+                    ->where('id', '!=', $kiosk->id)
+                    ->where('sort_order', '>=', $target)
+                    ->increment('sort_order');
+            } elseif ($target > $oldPos) {
+                // Pindah ke belakang: yang di ANTARA posisi lama & baru maju satu.
+                static::query()
+                    ->where('cluster_id', $clusterId)
+                    ->where('id', '!=', $kiosk->id)
+                    ->where('sort_order', '>', $oldPos)
+                    ->where('sort_order', '<=', $target)
+                    ->decrement('sort_order');
+            } elseif ($target < $oldPos) {
+                // Pindah ke depan: yang di ANTARA posisi baru & lama mundur satu.
+                static::query()
+                    ->where('cluster_id', $clusterId)
+                    ->where('id', '!=', $kiosk->id)
+                    ->where('sort_order', '>=', $target)
+                    ->where('sort_order', '<', $oldPos)
+                    ->increment('sort_order');
+            }
+
+            $kiosk->update(['sort_order' => $target]);
+
+            return $target;
+        });
     }
 
     /**

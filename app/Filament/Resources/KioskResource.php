@@ -91,7 +91,7 @@ class KioskResource extends Resource
                             ->label('Urutan Rute (dalam Area)')
                             ->numeric()
                             ->placeholder('Kosongkan = di bawah dalam area ini')
-                            ->helperText('Angka lebih kecil tampil lebih dulu DALAM AREA yang sama, di daftar & urutan kunjungan operator. Bisa juga diatur lewat drag di halaman daftar (drag per-area, jangan lintas area).'),
+                            ->helperText('Angka lebih kecil tampil lebih dulu DALAM AREA yang sama, di daftar & urutan kunjungan operator. Isi angka yang sudah dipakai kios lain? Otomatis digeser, tak akan kembar. Bisa juga diatur lewat drag di halaman daftar — filter ke satu Area dulu, tombol drag baru muncul.'),
 
                         Forms\Components\TextInput::make('phone')
                             ->label('Nomor Telepon')
@@ -368,8 +368,17 @@ class KioskResource extends Resource
                 Tables\Columns\TextInputColumn::make('sort_order')
                     ->label('Urutan')
                     ->type('number')
-                    ->rules(['nullable', 'integer'])
-                    ->placeholder('—'),
+                    ->rules(['nullable', 'integer', 'min:1'])
+                    ->placeholder('—')
+                    // Anti-duplikat: isi angka yang sudah dipakai kios LAIN di area yang
+                    // sama TIDAK membuat kembar — kios lain otomatis tergeser (insert-
+                    // within-list, lihat Kiosk::reorderWithinCluster). Tak pernah
+                    // menyentuh kios di cluster lain.
+                    ->updateStateUsing(function (Kiosk $record, $state): ?int {
+                        $desired = $state === null ? null : (int) $state;
+
+                        return Kiosk::reorderWithinCluster($record, $desired);
+                    }),
 
                 Tables\Columns\TextColumn::make('name')
                     ->label('Nama Kios')
@@ -455,7 +464,14 @@ class KioskResource extends Resource
                 ->orderByRaw('sort_order IS NULL')
                 ->orderBy('sort_order')
                 ->orderBy('name'))
-            ->reorderable('sort_order')
+            // Drag HANYA aktif kalau TEPAT 1 Area sedang difilter — Filament native
+            // reorder-mode mematikan grouping/defaultSort custom sepenuhnya saat aktif
+            // (ORDER BY sort_order polos lintas SEMUA baris yang tampil), jadi drag
+            // tanpa filter area bisa menomori ulang lintas-area. Tombol drag SEMBUNYI
+            // total (bukan cuma nonaktif) kalau kondisi ini false — lihat
+            // vendor/filament/tables/resources/views/index.blade.php:188 (`@if
+            // ($isReorderable)`), jadi tak ada jalan salah secara fisik.
+            ->reorderable('sort_order', fn ($livewire): bool => count($livewire->tableFilters['cluster_id']['values'] ?? []) === 1)
             ->filters([
                 SelectFilter::make('cluster_id')
                     ->label('Area')

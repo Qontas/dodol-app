@@ -2,21 +2,30 @@
 *Sesi terakhir: 9 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 281 PASS. Live di Railway. Fitur URUTAN KEDAI PER-AREA (sort_order) — Track 1
+Bg, lanjut dodol-app. 290 PASS. Live di Railway. Fitur URUTAN KEDAI PER-AREA (sort_order) — Track 1
 SELESAI (9 Juli 2026): kolom `sort_order` per-cluster di kiosks, owner atur lewat drag
 (`->reorderable()`) ATAU ketik angka langsung di list (`TextInputColumn`), operator (`ActiveTrip`)
 lihat kios terkelompok per-area dengan urutan yang SAMA — dibuktikan headed browser, owner→operator
-identik persis. ⚠️ CATATAN OPERASIONAL PENTING: drag HARUS dilakukan dengan filter Area aktif (satu
-area per waktu) — Filament native reorder-mode MEMATIKAN grouping/defaultSort custom sama sekali
-(`CanSortRecords.php:77-78`: saat reorder aktif, query jadi `ORDER BY sort_order` POLOS lintas
-SEMUA area yang tampil), jadi drag TANPA filter area bisa menomori ulang lintas-area dan bikin
-angka campur aduk (dibuktikan reproduksi: drag tanpa filter menomori ulang 1..N ke SEMUA baris yang
-kelihatan, termasuk kios area lain yang tak disentuh sama sekali). Ketik-angka manual di list tetap
-aman kapan saja (tak kena batasan reorder-mode ini). Track 2 (smart routing: prioritas kios laris
-lintas-area + rekomendasi kios/area terdekat berikutnya pas stok masih ada) DICATAT SEBAGAI BACKLOG
-TERPISAH, BELUM DIBANGUN — lihat section "TRACK 2 — SMART ROUTING (BACKLOG, BELUM DIBANGUN)" untuk
-status fondasi data (yang sudah siap vs yang masih gap). Lihat section "FITUR URUTAN KEDAI PER-AREA
-(sort_order) — TRACK 1" untuk detail lengkap. Bug minor UI dropdown Area (Choices.js
+identik persis. FIX UX LANJUTAN (9 Juli 2026, sesi berikutnya): angka `sort_order` dulu MEMBOLEHKAN
+duplikat (isi "3" di 2 kios → dua-duanya jadi 3) — SUDAH DIFIX pakai auto-reflow
+(`Kiosk::reorderWithinCluster()`, pola insert-within-list ala Notion/Trello, 9 test baru) — isi
+angka yang sudah dipakai kios lain di area yang sama sekarang otomatis menggeser (gapless, tak
+pernah kembar), bukan ditolak/dibiarkan. Drag TETAP dipertahankan + SEKARANG TERKUNCI otomatis:
+tombol reorder SEMBUNYI TOTAL kecuali TEPAT 1 Area difilter (`->reorderable('sort_order', fn
+($livewire) => count($livewire->tableFilters['cluster_id']['values'] ?? []) === 1)`) — menutup
+jebakan "drag lintas-area" yang ditemukan pas verifikasi Track 1, sekarang mustahil salah jalan
+secara fisik (bukan cuma diperingatkan). CATATAN: 956 kios Aidil masih SEMUA di 1 cluster (rencana
+pisah-area belum terjadi) — itulah kenapa opsi "drag-only" DITOLAK saat investigasi, angka
+anti-duplikat jadi mekanisme utama yang scalable sekarang; desain per-cluster sudah siap kalau
+area dipecah nanti tanpa perlu ubah kode lagi. Lihat section "FIX UX URUTAN KEDAI: ANTI-DUPLIKAT
+(AUTO-REFLOW) + DRAG TERKUNCI-FILTER" untuk detail lengkap, dan "FITUR URUTAN KEDAI PER-AREA
+(sort_order) — TRACK 1" untuk fondasi awalnya. ⚠️ CATATAN OPERASIONAL Track 1 (masih relevan):
+Filament native reorder-mode MEMATIKAN grouping/defaultSort custom sepenuhnya saat aktif
+(`CanSortRecords.php:77-78`) — makanya drag sekarang dikunci filter-1-area di atas, bukan cuma
+helper text. Track 2 (smart routing: prioritas kios laris lintas-area + rekomendasi kios/area
+terdekat berikutnya pas stok masih ada) DICATAT SEBAGAI BACKLOG TERPISAH, BELUM DIBANGUN — lihat
+section "TRACK 2 — SMART ROUTING (BACKLOG, BELUM DIBANGUN)" untuk status fondasi data. Bug minor
+UI dropdown Area (Choices.js
 arrow-key leak teks "arrowdown"/"arrowright"/dst ke search box abis Esc) FIXED TUNTAS (8 Juli
 2026) — fix pertama (6696a87) cuma allowlist ArrowDown/Up, BOCOR ke ArrowRight (whack-a-mole);
 fix final generik pakai kriteria `e.key.length <= 1` yg nutup SEMUA named key sekaligus (panah 4
@@ -51,13 +60,14 @@ produksi (kios nyata). Operator DIKONFIRMASI tetap jalan, 0 regresi lain ditemuk
 (code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
 
 ## STATUS
-- 281 PASS (1067 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
+- 290 PASS (1101 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
   1 test dari migrasi peta owner ke Leaflet, 2 test dari audit session/trip persistence, 7 test
-  dari fix foto kios/proxy same-origin). SW v5 & proxy foto tak nambah test PHP tambahan di luar
-  itu (bagian JS/HTTP diverifikasi headed browser produksi — lihat section masing-masing di bawah).
-  Fitur sort_order (9 Juli 2026, section di bawah) JUGA tak nambah test PHP baru — murni perubahan
-  query/kolom, diverifikasi headed browser (owner+operator, data uji dibuat lalu dihapus lagi),
-  tetap 281 PASS 0 regresi.
+  dari fix foto kios/proxy same-origin, 9 test baru dari fix UX anti-duplikat sort_order). SW v5 &
+  proxy foto tak nambah test PHP tambahan di luar itu (bagian JS/HTTP diverifikasi headed browser
+  produksi — lihat section masing-masing di bawah). Fitur sort_order Track 1 (9 Juli 2026) sendiri
+  tak nambah test PHP baru — murni perubahan query/kolom, diverifikasi headed browser (owner+
+  operator, data uji dibuat lalu dihapus lagi). Fix UX anti-duplikat (9 Juli 2026, sesi
+  berikutnya) 9 test baru + headed browser, lihat section masing-masing.
 
 ## ✅ FITUR URUTAN KEDAI PER-AREA (sort_order) — TRACK 1 SELESAI (9 Juli 2026)
 - LATAR: list kios owner (`KioskResource`) & daftar kunjungan operator (`ActiveTrip`) dulu urut
@@ -148,6 +158,83 @@ produksi (kios nyata). Operator DIKONFIRMASI tetap jalan, 0 regresi lain ditemuk
     diverifikasi lewat browser nyata di atas).
 - Commit: lihat `git log` — migration + `KioskResource.php` + `ActiveTrip.php` + `Kiosk.php`
   ($fillable `sort_order`).
+
+## ✅ FIX UX URUTAN KEDAI: ANTI-DUPLIKAT (AUTO-REFLOW) + DRAG TERKUNCI-FILTER (9 Juli 2026)
+- LAPORAN USER: `TextInputColumn` angka `sort_order` (Track 1) MEMBOLEHKAN duplikat — isi "3" di
+  dua kios berbeda dalam area yang sama → dua-duanya jadi 3, urutan ambigu. Nyisip di tengah juga
+  ribet (harus geser manual semua angka setelahnya). AKAR: kolom cuma `->rules(['nullable',
+  'integer'])`, tak ada validasi/logic keunikan sama sekali.
+- INVESTIGASI (sebelum bangun) mengevaluasi 3 opsi: (A) drag-only buang kolom angka, (B) angka
+  anti-duplikat dgn auto-reflow, (C) angka read-only + drag-only. TEMUAN KUNCI yang menentukan
+  pilihan: dicek distribusi cluster nyata — **956 kios Aidil SEMUA ada di SATU cluster**
+  ("Tempat Titipan"), rencana pisah-area belum terjadi. Ini bikin opsi A/C (murni drag) GAGAL
+  untuk kondisi nyata sekarang — filter "1 area" tak mengurangi apa pun buat tenant ini, drag 956
+  baris tetap seberat sebelum ada sort_order. Direkomendasikan & DIPILIH user: **opsi B-full**
+  (angka anti-duplikat + auto-reflow), drag TETAP dipertahankan (bukan dibuang) sebagai opsi kedua
+  yang makin berguna begitu area benar-benar dipecah nanti.
+- IMPLEMENTASI:
+  1. **`Kiosk::reorderWithinCluster()`** (`app/Models/Kiosk.php`, method static baru) — algoritma
+     "insert-within-list" (pola Notion/Trello), BUKAN naif "increment semua >= target" (itu bikin
+     lubang kalau kios dipindah ke posisi LEBIH AWAL, slot lamanya ditinggal kosong). Logic:
+     - Target di-clamp ke rentang valid `[1, totalOthers+1]` — **PAKAI COUNT kios lain yang sudah
+       punya posisi, BUKAN MAX(sort_order)-nya**. Percobaan pertama pakai MAX ketangkep BUG
+       off-by-one lewat test sendiri (`test_target_beyond_range_is_clamped_to_end` gagal duluan,
+       expected 3 dapat 4) — MAX cuma benar kalau kios yang dipindah kebetulan sedang memegang
+       nilai tertinggi; kalau bukan, MAX-nya-orang-lain tetap = nilai tertinggi keseluruhan →
+       lebih 1 dari batas asli. Diganti COUNT, robust terhadap kasus apa pun.
+     - `null` (belum punya posisi) → sisip baru: kios lain di posisi >= target naik 1.
+     - Pindah ke belakang (target > posisi lama) → HANYA kios di ANTARA posisi lama & baru
+       mundur/turun 1 (bukan semua >= target — itu akan menggeser kios yang di LUAR rentang juga).
+     - Pindah ke depan (target < posisi lama) → HANYA kios di ANTARA posisi baru & lama naik 1.
+     - `null` sebagai target → lepas dari urutan, TANPA mengompres sisanya (kios lain tak digeser).
+     - Semua dalam `DB::transaction()`, di-scope `cluster_id` (cluster/tenant lain 0 tersentuh —
+       OwnerScope Kiosk otomatis berlaku juga di query internal method ini, redundan tapi aman).
+  2. **`KioskResource.php`** — `TextInputColumn::make('sort_order')` sekarang pakai
+     `->updateStateUsing(fn ($record, $state) => Kiosk::reorderWithinCluster($record, ...))`,
+     tambah rule `min:1`. Helper text form diupdate: "Isi angka yang sudah dipakai kios lain?
+     Otomatis digeser, tak akan kembar."
+  3. **Drag terkunci-filter**: `->reorderable('sort_order', fn ($livewire) => count($livewire->
+     tableFilters['cluster_id']['values'] ?? []) === 1)`. Dikonfirmasi baca kode
+     `vendor/filament/tables/resources/views/index.blade.php:188` (`@if ($isReorderable)`) —
+     tombol drag **SEMBUNYI TOTAL dari DOM** (bukan cuma nonaktif/abu-abu) kecuali TEPAT 1 Area
+     difilter. Menutup total jebakan "drag-lintas-area" yang ditemukan pas verifikasi Track 1 —
+     sekarang mustahil salah jalan secara fisik, tak lagi cuma diperingatkan lewat helper text.
+- VERIFIKASI:
+  * **Test baru** (`tests/Feature/Owner/KioskSortOrderReflowTest.php`, 9 test): pindah ke bawah
+    (geser range lama↔baru saja, kios di luar rentang tak berubah, hasil akhir 1..5 gapless);
+    pindah ke atas (arah sebaliknya, sama-sama gapless); sisip dari null (dorong yang lain turun);
+    lepas ke null (tak mengompres sisanya); clamp melebihi rentang (ke akhir); clamp di bawah 1
+    (ke awal); pindah ke posisi sama (no-op); **reflow cluster A tidak menyentuh cluster B**;
+    **reflow tenant A tidak menyentuh tenant B**. 290 PASS total (281 + 9 baru), 0 regresi.
+  * **Headed Chrome, lewat TextInputColumn ASLI (bukan panggil method langsung)** — data uji
+    `ZZ_R_*` (5 kios, posisi 1-5) dibuat lalu DIHAPUS lagi setelah tes: ketik "3" di kios posisi 1
+    (nabrak kios yang sudah 3) → hasil B=1,C=2,A=3,D=4,E=5 (gapless, no duplikat, PERSIS sesuai
+    algoritma). Lanjut ketik "2" di kios posisi 5 (nabrak yang sekarang 2) → hasil B=1,E=2,C=3,
+    A=4,D=5 (gapless lagi, arah SEBALIKNYA sama-sama benar). Karakteristik yang sama dgn Track 1
+    berlaku lagi: DB ter-update instan, tapi urutan visual BARIS di layar butuh reload utk
+    ke-resort (Filament tak re-fetch urutan tabel dari 1 edit sel saja) — bukan regresi, sudah
+    dikonfirmasi cara kerja yang sama sejak Track 1.
+  * **Drag-lock, headed Chrome**: 0 filter → tombol reorder TAK ADA di DOM. 1 area difilter →
+    tombol MUNCUL, toggle → HANYA 5 kios area itu yang tampil di mode reorder (tak ada kebocoran
+    lintas-area). 2 area difilter → tombol HILANG lagi. Kembali ke 1 area → tombol muncul lagi.
+    Semua 4 state dikonfirmasi lewat pembacaan DOM langsung, bukan asumsi.
+  * **Operator (`ActiveTrip`) — urutan hasil reflow IDENTIK PERSIS dgn owner**: kios `ZZ_R_*` yang
+    sama, urutan B,E,C,A,D (hasil dari dua reflow di atas) tampil SAMA di kartu kunjungan operator
+    trip aktif — dicek side-by-side, 100% match. `ActiveTrip.php` 0 disentuh sesi ini (dikonfirmasi
+    `git diff` kosong) — jalur baca sort_order tetap yang dari Track 1, cuma NILAI-nya sekarang
+    dijamin bersih dari duplikat oleh sisi tulis (owner).
+  * Tenant isolation & scoping: tak ada perubahan pada `OwnerScope`/`getEloquentQuery()`; method
+    baru `reorderWithinCluster()` cuma menambah cara TULIS yang lebih aman, dibuktikan test
+    eksplisit lintas-cluster & lintas-tenant di atas.
+- CATATAN TERPISAH (dikonfirmasi, TIDAK dibangun sesi ini — permintaan user): fakta 956 kios Aidil
+  di 1 cluster berarti manfaat PENUH fitur drag baru terasa setelah kios benar-benar dipecah per
+  area. Desain `sort_order` **PER-CLUSTER** (bukan global, keputusan Track 1) sudah SIAP untuk itu
+  tanpa perlu ubah kode urutan apa pun lagi — begitu kios dipindah ke cluster baru (tinggal ganti
+  `cluster_id`), `reorderWithinCluster()` DAN `defaultSort` grouping SUDAH otomatis menghitung
+  ulang posisi dalam cluster barunya sendiri (posisi di cluster lama tak ikut terbawa/bocor,
+  dibuktikan test isolasi cluster di atas) — tak ada migrasi/refactor tambahan yang dibutuhkan.
+- Commit: lihat `git log` — `app/Models/Kiosk.php` (method baru) + `KioskResource.php`
+  (updateStateUsing + reorderable condition + helper text) + test baru.
 
 ## 📋 TRACK 2 — SMART ROUTING (BACKLOG, BELUM DIBANGUN)
 - KONTEKS: user gambarkan skenario operasional lebih kompleks dari sekadar urutan statis: (1)
