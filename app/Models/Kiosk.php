@@ -39,6 +39,7 @@ class Kiosk extends Model
         'owner_name',
         'phone',
         'cluster_id',
+        'sort_order',
         'target_visit_interval_days',
         'warning_visit_interval_days',
         'fast_mover_threshold_days',

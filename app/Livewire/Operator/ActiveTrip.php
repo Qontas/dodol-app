@@ -4,6 +4,7 @@ namespace App\Livewire\Operator;
 
 use Livewire\Component;
 use App\Models\Trip;
+use App\Models\Cluster;
 use App\Models\Kiosk;
 use App\Models\Delivery;
 use App\Models\Settlement;
@@ -236,14 +237,22 @@ class ActiveTrip extends Component
                 ->take(self::DISPLAY_LIMIT)
                 ->values();
         } else {
-            // Default: kios belum dikunjungi dulu, lalu alfabet — diurut & dibatasi di DB.
+            // Default: kios belum dikunjungi dulu, lalu dikelompokkan PER-AREA
+            // (operator seser habis satu area dulu baru pindah), lalu urutan rute
+            // (sort_order — diatur owner sesuai pengalaman lapangan, bukan abjad
+            // lagi) di dalam area itu. Kios tanpa sort_order turun ke bawah DALAM
+            // AREA-nya, tie-break alfabet.
             $countQuery = clone $query; // tangkap sebelum order/limit untuk hitung total.
             if (! empty($visitedKioskIds)) {
                 $ids = implode(',', array_map('intval', $visitedKioskIds));
                 $query->orderByRaw("CASE WHEN kiosks.id IN ($ids) THEN 1 ELSE 0 END asc");
             }
 
-            $kiosks = $query->orderBy('name')
+            $kiosks = $query
+                ->orderBy(Cluster::query()->select('name')->whereColumn('clusters.id', 'kiosks.cluster_id'))
+                ->orderByRaw('sort_order IS NULL')
+                ->orderBy('sort_order')
+                ->orderBy('name')
                 ->limit(self::DISPLAY_LIMIT)
                 ->get();
 

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\KioskResource\Pages;
+use App\Models\Cluster;
 use App\Models\Kiosk;
 use App\Support\GoogleMapsShortLinkResolver;
 use App\Support\KioskLocationParser;
@@ -85,6 +86,12 @@ class KioskResource extends Resource
                             ->label('Nama Pemilik')
                             ->maxLength(255)
                             ->placeholder('Contoh: Pak Rizki, Bu Sri'),
+
+                        Forms\Components\TextInput::make('sort_order')
+                            ->label('Urutan Rute (dalam Area)')
+                            ->numeric()
+                            ->placeholder('Kosongkan = di bawah dalam area ini')
+                            ->helperText('Angka lebih kecil tampil lebih dulu DALAM AREA yang sama, di daftar & urutan kunjungan operator. Bisa juga diatur lewat drag di halaman daftar (drag per-area, jangan lintas area).'),
 
                         Forms\Components\TextInput::make('phone')
                             ->label('Nomor Telepon')
@@ -358,6 +365,12 @@ class KioskResource extends Resource
                     ->square()
                     ->size(50),
 
+                Tables\Columns\TextInputColumn::make('sort_order')
+                    ->label('Urutan')
+                    ->type('number')
+                    ->rules(['nullable', 'integer'])
+                    ->placeholder('—'),
+
                 Tables\Columns\TextColumn::make('name')
                     ->label('Nama Kios')
                     ->searchable()
@@ -431,7 +444,18 @@ class KioskResource extends Resource
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->defaultSort('name', 'asc')
+            // Urutan rute pengantaran PER-AREA (pengalaman lapangan operator: seser
+            // habis satu area dulu baru pindah), bukan abjad. Kios dikelompokkan per
+            // cluster (subquery correlated, bukan JOIN, biar kolom kiosks.* tidak
+            // tertimpa kolom clusters.* yang senama), lalu di dalam area diurut
+            // sort_order — kios tanpa sort_order (belum diatur) turun ke bawah
+            // DALAM AREA-nya, bukan ke atas atau tercampur ke area lain.
+            ->defaultSort(fn (Builder $query): Builder => $query
+                ->orderBy(Cluster::query()->select('name')->whereColumn('clusters.id', 'kiosks.cluster_id'))
+                ->orderByRaw('sort_order IS NULL')
+                ->orderBy('sort_order')
+                ->orderBy('name'))
+            ->reorderable('sort_order')
             ->filters([
                 SelectFilter::make('cluster_id')
                     ->label('Area')

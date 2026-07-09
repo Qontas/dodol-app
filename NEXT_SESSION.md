@@ -1,8 +1,22 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 8 Juli 2026*
+*Sesi terakhir: 9 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 281 PASS. Live di Railway. Bug minor UI dropdown Area (Choices.js
+Bg, lanjut dodol-app. 281 PASS. Live di Railway. Fitur URUTAN KEDAI PER-AREA (sort_order) — Track 1
+SELESAI (9 Juli 2026): kolom `sort_order` per-cluster di kiosks, owner atur lewat drag
+(`->reorderable()`) ATAU ketik angka langsung di list (`TextInputColumn`), operator (`ActiveTrip`)
+lihat kios terkelompok per-area dengan urutan yang SAMA — dibuktikan headed browser, owner→operator
+identik persis. ⚠️ CATATAN OPERASIONAL PENTING: drag HARUS dilakukan dengan filter Area aktif (satu
+area per waktu) — Filament native reorder-mode MEMATIKAN grouping/defaultSort custom sama sekali
+(`CanSortRecords.php:77-78`: saat reorder aktif, query jadi `ORDER BY sort_order` POLOS lintas
+SEMUA area yang tampil), jadi drag TANPA filter area bisa menomori ulang lintas-area dan bikin
+angka campur aduk (dibuktikan reproduksi: drag tanpa filter menomori ulang 1..N ke SEMUA baris yang
+kelihatan, termasuk kios area lain yang tak disentuh sama sekali). Ketik-angka manual di list tetap
+aman kapan saja (tak kena batasan reorder-mode ini). Track 2 (smart routing: prioritas kios laris
+lintas-area + rekomendasi kios/area terdekat berikutnya pas stok masih ada) DICATAT SEBAGAI BACKLOG
+TERPISAH, BELUM DIBANGUN — lihat section "TRACK 2 — SMART ROUTING (BACKLOG, BELUM DIBANGUN)" untuk
+status fondasi data (yang sudah siap vs yang masih gap). Lihat section "FITUR URUTAN KEDAI PER-AREA
+(sort_order) — TRACK 1" untuk detail lengkap. Bug minor UI dropdown Area (Choices.js
 arrow-key leak teks "arrowdown"/"arrowright"/dst ke search box abis Esc) FIXED TUNTAS (8 Juli
 2026) — fix pertama (6696a87) cuma allowlist ArrowDown/Up, BOCOR ke ArrowRight (whack-a-mole);
 fix final generik pakai kriteria `e.key.length <= 1` yg nutup SEMUA named key sekaligus (panah 4
@@ -41,6 +55,135 @@ produksi (kios nyata). Operator DIKONFIRMASI tetap jalan, 0 regresi lain ditemuk
   1 test dari migrasi peta owner ke Leaflet, 2 test dari audit session/trip persistence, 7 test
   dari fix foto kios/proxy same-origin). SW v5 & proxy foto tak nambah test PHP tambahan di luar
   itu (bagian JS/HTTP diverifikasi headed browser produksi — lihat section masing-masing di bawah).
+  Fitur sort_order (9 Juli 2026, section di bawah) JUGA tak nambah test PHP baru — murni perubahan
+  query/kolom, diverifikasi headed browser (owner+operator, data uji dibuat lalu dihapus lagi),
+  tetap 281 PASS 0 regresi.
+
+## ✅ FITUR URUTAN KEDAI PER-AREA (sort_order) — TRACK 1 SELESAI (9 Juli 2026)
+- LATAR: list kios owner (`KioskResource`) & daftar kunjungan operator (`ActiveTrip`) dulu urut
+  ABJAD. Operator lapangan minta urutan sesuai RUTE PENGANTARAN (pengalaman lapangan), bukan
+  abjad, biar tidak muter-muter antar-daerah. Rencana user lebih besar dari sekadar urutan: (a)
+  urutan manual sekarang, (b) NANTI dipisah per-area, (c) JANGKA PANJANG auto-routing dari
+  koordinat GPS. Investigasi awal (sebelum eksekusi) mengecek 2 pendekatan Filament
+  (`->reorderable()` native vs kolom polos) DAN skenario operasional lanjutan user (operator
+  ngantar lintas-area, prioritas kios laris, auto-lanjut trip saat stok masih ada) SEBELUM
+  membangun apa pun — lihat section "TRACK 2" di bawah untuk hasil investigasi itu.
+- KEPUTUSAN DESAIN (dikoreksi user dari draft awal): `sort_order` **PER-CLUSTER (per-area)**,
+  BUKAN global. Alasan: operator ngantar rutin per-area dulu (seser habis satu area, baru pindah
+  lintas-area) — urutan DALAM area adalah fondasi yang tepat, dan jadi acuan buat Track 2 nanti
+  ("kios terakhir diantar di area X" → titik acuan rekomendasi area terdekat berikutnya).
+- IMPLEMENTASI:
+  1. **Migration** (`2026_07_09_000001_add_sort_order_to_kiosks_table.php`) — kolom `sort_order`
+     (integer nullable) + index composite `(cluster_id, sort_order)`. Backfill data existing
+     PER-CLUSTER: tiap cluster mulai dari 1, urut abjad saat ini sebagai titik awal (bukan urut
+     per-owner/global). Dijalankan atas SEMUA cluster lintas 2 tenant (Ismi owner_id=2, Aidil
+     owner_id=5) sekaligus — grouping by `cluster_id` otomatis tidak pernah mencampur kios
+     lintas-tenant (satu cluster = satu owner, dijamin FK). Diverifikasi: 0 NULL sort_order
+     pasca-backfill, tiap cluster restart dari 1 (dicek `Tempat Titipan` 956 kios → max_sort=956
+     persis = count, tak ada gap/duplikat).
+  2. **`KioskResource.php`** (owner) — `defaultSort` diganti jadi CLOSURE 3-level: urut nama
+     cluster dulu (subquery correlated `Cluster::query()->select('name')->whereColumn(...)`,
+     BUKAN `->join()` — sengaja, biar kolom `kiosks.*` tak tertimpa kolom `clusters.*` yang
+     senama seperti `id`/`name`/`is_active`), lalu `sort_order IS NULL` (nulls-last DALAM
+     area-nya sendiri, bukan turun ke bawah global), lalu `sort_order` asc, lalu `name` sebagai
+     tie-break akhir. Tambah `Tables\Columns\TextInputColumn::make('sort_order')` (edit angka
+     langsung di list, tak perlu buka form) + `->reorderable('sort_order')` (drag native
+     Filament) + field form `sort_order` di Section "Informasi Dasar" dengan helper text yang
+     eksplisit bilang "dalam Area" dan "jangan lintas area" saat drag.
+  3. **`ActiveTrip.php`** (operator, `kioskViewData()`) — `orderBy('name')` diganti clause yang
+     SAMA PERSIS (cluster name subquery → `sort_order IS NULL` → `sort_order` → `name`), CASE WHEN
+     "kios sudah dikunjungi turun ke bawah" yang sudah ada TETAP dipertahankan sebagai prioritas
+     paling atas (di depan clause baru). Mode `sortedByDistance` (tombol "Urutkan Jarak", nearest-
+     neighbor GPS manual) SENGAJA tidak disentuh — itu override eksplisit operator, independen
+     dari grouping area.
+  4. Import `App\Models\Cluster` ditambah di kedua file (dipakai subquery correlated).
+- ⚠️ TEMUAN PENTING SAAT VERIFIKASI (bukan bug kode kita, tapi batasan desain Filament core yang
+  WAJIB dipahami sebelum pakai fitur drag): `Filament\Tables\Concerns\CanSortRecords::
+  applySortingToTableQuery()` (baca: `vendor/filament/tables/src/Concerns/CanSortRecords.php:77-78`)
+  eksplisit begini —
+  ```php
+  if ($this->isTableReordering()) {
+      return $query->orderBy($this->getTable()->getReorderColumn());
+  }
+  ```
+  Artinya: begitu mode reorder (drag) DIAKTIFKAN, Filament SELALU pakai `ORDER BY sort_order`
+  POLOS (nulls FIRST versi MySQL, bukan last), MENGABAIKAN TOTAL `defaultSort` closure custom kita
+  (grouping per-area hilang sementara) — dan ini juga berlaku untuk fitur native `->groups()`
+  Filament (`CanGroupRecords.php:16` juga return `null` saat reordering, jadi bukan cuma masalah
+  pendekatan kita, fitur grouping BAWAAN Filament pun sama-sama dimatikan saat reorder aktif).
+  * DIBUKTIKAN via reproduksi nyata (Playwright, bukan baca kode doang): drag TANPA filter Area
+    aktif pada list 2-cluster (3 kios Area A + 2 kios Area B) → SEMUA 5 baris yang tampil
+    dinomori ulang sekuensial 1..5 LINTAS AREA (termasuk 1 kios Area B yang sama sekali tak
+    disentuh, `sort_order`-nya ikut berubah dari NULL ke angka nyata cuma karena kebetulan
+    tampil di render itu).
+  * MITIGASI YANG SUDAH ADA (tak perlu kode baru): filter `SelectFilter::make('cluster_id')`
+    ("Area") yang SUDAH ADA di `KioskResource` tetap berlaku SAAT reorder mode aktif (filter itu
+    query-level, independen dari sorting) — jadi kalau owner filter ke SATU Area dulu sebelum
+    toggle drag, drag jadi aman 100% (dibuktikan reproduksi ulang: filter ke 1 cluster → drag →
+    HANYA kios cluster itu yang dinomori ulang, cluster lain 0 tersentuh). Ini SATU-SATUNYA cara
+    aman pakai drag sekarang — didokumentasikan di helper text form + WAJIB diketahui owner
+    sebelum pakai fitur drag di skala besar (217+ kios).
+  * Edit angka manual (`TextInputColumn`) TIDAK kena batasan ini sama sekali — selalu aman dipakai
+    kapan pun, filter atau tidak (cuma nulis 1 kolom 1 baris, tak melibatkan `isTableReordering()`).
+- VERIFIKASI (headed Chrome via Playwright, `verify-browser`-style script kustom — data uji
+  `ZZ_TEST_*` + 1 cluster temp dibuat lalu DIHAPUS lagi setelah tes, tak sentuh 959 kios/2 cluster
+  asli):
+  * Owner list (tak filter): kios terkelompok per-area (Area "Marelan Mabar" duluan, lalu Area
+    "ZZ_TEST_AREA_B"), DALAM tiap area urut `sort_order` dgn null last — persis sesuai desain.
+  * Edit angka inline: ubah `sort_order` via `TextInputColumn`, refresh → kios pindah posisi
+    sesuai angka baru, DALAM area-nya sendiri (tak lompat ke area lain).
+  * Drag TANPA filter → cross-area leak (lihat temuan di atas). Drag DENGAN filter ke 1 Area →
+    aman, HANYA kios area itu yang berubah, area lain 0 tersentuh — dikonfirmasi query DB
+    langsung sebelum/sesudah.
+  * **Operator (`ActiveTrip`) — urutan IDENTIK PERSIS dengan owner**: kios yang sama, grouping
+    area yang sama, urutan dalam area yang sama — dicek side-by-side (list owner vs kartu kunjungan
+    operator di trip aktif yang sama), 100% match. Ini tujuan utama fitur (operator tak
+    muter-muter) — TERCAPAI end-to-end, bukan cuma di admin panel.
+  * Tenant isolation: `OwnerScope` (global scope Kiosk lewat `cluster.owner_id`, DAN `Cluster`
+    lewat `BelongsToOwner`) TIDAK disentuh sama sekali oleh perubahan ini — subquery correlated
+    `Cluster::query()` ikut kena scope otomatis (owner/operator masing-masing cuma lihat cluster
+    miliknya), test existing `owner panel kiosk list is scoped to owner` tetap PASS.
+  * `php artisan test`: 281 PASS (1067 assertions), 0 regresi — baseline SAMA sebelum & sesudah
+    perubahan (fitur ini murni query/kolom + UI Filament bawaan, tak butuh test PHP baru; utamanya
+    diverifikasi lewat browser nyata di atas).
+- Commit: lihat `git log` — migration + `KioskResource.php` + `ActiveTrip.php` + `Kiosk.php`
+  ($fillable `sort_order`).
+
+## 📋 TRACK 2 — SMART ROUTING (BACKLOG, BELUM DIBANGUN)
+- KONTEKS: user gambarkan skenario operasional lebih kompleks dari sekadar urutan statis: (1)
+  operator kadang ngantar LINTAS-area (bukan selalu 1 area), (2) kios LARIS (cepat habis)
+  diprioritaskan diantar duluan, bisa lintas-area, (3) trip LANJUT otomatis ke area terdekat
+  berikutnya saat stok masih ada (bukan berhenti per-area). Investigasi (BUKAN eksekusi) dilakukan
+  SEBELUM Track 1 dibangun, khusus mengecek apakah desain `sort_order` per-cluster masih pas untuk
+  skenario ini — KESIMPULAN: iya, aman (lihat bagian "Dampak ke sort_order" di bawah), Track 2
+  adalah LAPISAN TERPISAH di atasnya, bukan revisi Track 1.
+- STATUS FONDASI DATA (dicek langsung baca kode, bukan asumsi):
+  | Kebutuhan Track 2 | Status | Detail |
+  |---|---|---|
+  | Trip lintas-area | ⚠️ Parsial | `trips.starting_cluster_id` di-set SEKALI saat `StartTrip`, TAK PERNAH diubah lagi selama trip jalan (`ActiveTrip.php` cuma baca). Satu-satunya jalan lintas-area sekarang: pilih "Trip Bebas" di awal (starting_cluster_id null) — bukan transisi otomatis di tengah jalan. |
+  | Stok di tangan operator | ⚠️ Data ada, tak live | `qty_carried_total` diisi sekali di awal. "Sisa stok" (`total_mika_sisa`) CUMA dihitung di `openEndTripModal()` — muncul HANYA saat mau mengakhiri trip, bukan indikator live yang selalu kelihatan. |
+  | Prioritas kios "laris" | ⚠️ Sinyal ada, belum dipakai buat urutan | `fast_mover_threshold_days` + `avg_days` dari histori Settlement SUDAH ada & dipakai jadi badge visual (`computeKioskFlags()`) — tapi murni informasi, tak memengaruhi urutan tampil kios sama sekali. |
+  | Data histori delivery (buat metrik laris) | ✅ Cukup detail | `deliveries` (qty_delivered, created_at, kiosk_id) + `settlements` (qty_sold, visit_date) + `kiosk_visits` (visited_at) — timestamp & qty per kios granular, cukup buat hitung velocity/rata-rata hari habis TANPA kolom baru. Ini yang sudah dipakai `computeKioskFlags()`. |
+  | GPS per kios | ✅ Ada, presisi cukup | `kiosks.latitude/longitude` decimal(10,7), sudah dipakai haversine di `sortByDistance()` (operator, tombol "Urutkan Jarak" — one-shot manual, ambil GPS sekali per klik, BUKAN live-tracking). |
+  | GPS per AREA (centroid cluster) | ❌ GAP NYATA | `clusters` table TIDAK punya kolom lat/lng — "area terdekat" (bukan "kios terdekat") belum bisa dihitung tanpa kerja tambahan (perlu computed centroid dari rata-rata kios dalam cluster, kolom baru atau query on-the-fly). |
+  | "Kios terakhir diantar dalam area" | ✅ Bisa diturunkan, tak perlu kolom baru | `kiosk_visits` (trip_id, kiosk_id, visited_at) join kios→cluster sudah cukup untuk query "kios terakhir yang dikunjungi dalam area X pada trip ini" — tak ada gap skema. |
+  | Auto-lanjut trip lintas-area saat stok ada | ❌ Belum ada sama sekali | `stock_habis` cuma salah satu `ended_reason` (alasan MENGAKHIRI trip) — begitu dipilih, trip SELESAI TOTAL, operator harus `StartTrip` baru. Tak ada mekanisme "area 1 selesai diseser tapi stok masih ada → lanjut ke area 2 otomatis dalam trip yang sama." |
+- DAMPAK KE `sort_order` (Track 1): AMAN, tak perlu redesign. `sort_order` per-cluster yang sudah
+  dibangun adalah baseline urutan MANUAL dalam satu area — cocok jadi lapisan dasar untuk Track 2
+  nanti (mis. algoritma auto-routing bisa nulis ulang nilai `sort_order` per-area sebagai
+  output-nya), tapi TIDAK otomatis menyelesaikan prioritas-laris atau auto-lanjut-area — itu
+  murni lapisan tambahan di atas kolom yang sudah ada, bukan perubahan skema.
+- ESTIMASI KOMPLEKSITAS (kasar, saat Track 2 mulai dikerjakan nanti):
+  * Prioritas laris → pengaruhi urutan: SEDANG. Sinyal (`fast_mover`) sudah ada, perlu masuk ke
+    query sort + keputusan desain (override `sort_order` manual, tie-break, atau skor gabungan?).
+  * Area terdekat (bukan kios terdekat): SEDANG–BESAR. Perlu hitung centroid cluster (kolom
+    computed/on-the-fly dari rata-rata lat/lng kios anggotanya) + logic pilih cluster belum-diseser
+    terdekat dari posisi sekarang.
+  * Auto-lanjut lintas-area saat stok ada: BESAR. `starting_cluster_id` perlu jadi state yang BISA
+    berubah di tengah trip (bukan kunci sekali di awal) + trigger UI baru ("area ini selesai, lanjut
+    ke area X?") saat semua kios area aktif sudah diseser TAPI `total_mika_sisa > 0`. Menyentuh
+    `ActiveTrip.php`, mungkin skema `trips`, dan alur UX yang belum ada precedent di kode sama sekali.
+- TIDAK DIBANGUN sesi ini (sengaja) — backlog murni, tunggu keputusan user kapan mau mulai.
 
 ## ✅ FIX BUG UI: ARROW-KEY BOCOR JADI TEKS DI DROPDOWN SEARCHABLE (CHOICES.JS) (8 Juli 2026)
 - GEJALA: di form Create/Edit Kios, dropdown Area (Select `->searchable()`) — isi Nama Kios →
