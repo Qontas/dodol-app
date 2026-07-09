@@ -68,6 +68,31 @@ produksi (kios nyata). Operator DIKONFIRMASI tetap jalan, 0 regresi lain ditemuk
   tak nambah test PHP baru — murni perubahan query/kolom, diverifikasi headed browser (owner+
   operator, data uji dibuat lalu dihapus lagi). Fix UX anti-duplikat (9 Juli 2026, sesi
   berikutnya) 9 test baru + headed browser, lihat section masing-masing.
+- INFRA: Railway produksi kini plan **Hobby** (di-upgrade dari free trial) — resource lebih lega,
+  app tetap ringan (lihat audit di bawah).
+- ✅ AUDIT PENUTUPAN SESI (10 Juli 2026, read-only, 0 perubahan kode): performa DIKONFIRMASI tetap
+  ringan dengan angka, git bersih & tersinkron, tidak ada utang tersembunyi baru. Detail:
+  * Suite: 290 PASS (1101 assertions), 46.88s, 0 skip, test terlambat cuma 0.67s (tak ada anomali).
+  * List kios owner: fitur sesi ini TAK menambah query per baris — `photo_url` cuma `route()`
+    (0 query), `sort_order`/`defaultSort` grouping = subquery correlated DALAM 1 query utama (bukan
+    N+1), relasi `cluster` auto-eager-load Filament (1 query, konstan). Byte foto dimuat browser
+    lewat request /kiosks/{id}/photo TERPISAH (async, paralel) — bukan bagian render list.
+  * Proxy foto: `$disk->response()` = STREAM (readStream/fpassthru, bukan load full memori);
+    `Cache-Control: public, max-age=31536000, immutable` + URL ber-`?v=` → reload ke-2 disajikan
+    100% dari cache browser (0ms, transferSize 0, tanpa hit server sama sekali). Load pertama
+    558–1270ms/foto (round-trip Railway↔R2, wajar). Catatan teknis: Laravel `response()` tak
+    auto-negosiasi `If-None-Match` (304), tapi TAK relevan — `immutable` sudah cegah request
+    ulang sepenuhnya, jadi tak pernah ada re-stream.
+  * `reorderWithinCluster` (edit angka `sort_order`): per-edit = 1 SELECT COUNT + 1 UPDATE range +
+    1 UPDATE self, semua di-scope `cluster_id` (pakai index `(cluster_id, sort_order)`), BUKAN
+    full-table-scan. Cluster besar (956 kios Aidil): 1 UPDATE range menyentuh maksimal ~(selisih
+    posisi) baris dalam SATU statement ber-index — pindah jauh worst-case ~955 baris/1 query,
+    pindah tipikal beberapa baris. Bukan N+1.
+  * Asset: SW 9.8K, build total 153K (app.css 108K + app.js 42K), Leaflet vendored lokal
+    (public/vendor/leaflet) — tak ada bloat baru signifikan.
+  * Git: working tree clean, HEAD = origin/main (957b8b2), 0 commit belum ter-push, 0 file
+    sensitif ke-track (.env/secret/scratchpad ter-ignore; `.claude/skills/verify-browser/driver.cjs`
+    memang sengaja di-track = skill bersama, bukan secret).
 
 ## ✅ FITUR URUTAN KEDAI PER-AREA (sort_order) — TRACK 1 SELESAI (9 Juli 2026)
 - LATAR: list kios owner (`KioskResource`) & daftar kunjungan operator (`ActiveTrip`) dulu urut
