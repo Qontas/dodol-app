@@ -1,8 +1,11 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 9 Juli 2026*
+*Sesi terakhir: 11 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 290 PASS. Live di Railway. Fitur URUTAN KEDAI PER-AREA (sort_order) — Track 1
+Bg, lanjut dodol-app. 296 PASS. Live di Railway. FITUR UBAH-JATAH / CASH-SEKALI / BLOKIR di form
+Serah Terima operator SELESAI & PUSHED (11 Juli 2026, HEAD 67220ad) — lihat section "REWORK SERAH
+TERIMA: UBAH JATAH DUA-ARAH + CASH SEKALI + BLOKIR" untuk detail. Sebelumnya: Fitur URUTAN KEDAI
+PER-AREA (sort_order) — Track 1
 SELESAI (9 Juli 2026): kolom `sort_order` per-cluster di kiosks, owner atur lewat drag
 (`->reorderable()`) ATAU ketik angka langsung di list (`TextInputColumn`), operator (`ActiveTrip`)
 lihat kios terkelompok per-area dengan urutan yang SAMA — dibuktikan headed browser, owner→operator
@@ -59,7 +62,40 @@ produksi (kios nyata). Operator DIKONFIRMASI tetap jalan, 0 regresi lain ditemuk
 "FIX FOTO KIOS KADANG KOSONG" (terutama RONDE 4). Advisor tulis brief kerja langsung di chat
 (code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
 
+## REWORK SERAH TERIMA: UBAH JATAH DUA-ARAH + CASH SEKALI + BLOKIR (11 Juli 2026) — SELESAI, HEAD 67220ad
+Investigasi + rework alur "kurangi/ubah jatah titipan" di form Serah Terima operator
+(`app/Livewire/Operator/ActiveTrip.php` + `resources/views/livewire/operator/active-trip.blade.php`)
+sesuai ground-truth owner. **296 PASS, 0 regresi. TANPA migration (kolom `default_qty_mika` &
+`changed_default` sudah ada) → deploy biasa, tak perlu auto-migrate khusus.**
+
+DUA jalur nambah/ubah mika yang BEDA arti bisnis, kini DIPISAH BERSIH & mutually-exclusive:
+- **JALUR A — Ubah jatah (permanen, DUA ARAH naik/turun)**: props `ubahJatah` + `jatahBaru`.
+  Ubah `default_qty_mika` kios seterusnya. Centang → titipan hari ini auto-ikut jatah baru
+  (`dropBaru = jatahBaru`; operator boleh override jumlah titip mis. stok kurang, TAPI default
+  tetap jadi jatah baru). Berlaku SAAT ITU JUGA & seterusnya. Menandai `changed_default=true`.
+- **JALUR B — Tambah cash sekali (jatah TETAP)**: props `pakaiCashExtra` + `cashExtra`. Mika
+  ekstra dibayar tunai seketika; `default_qty_mika` TIDAK berubah. Ganti mekanisme AUTO-SPLIT
+  lama (`extraDropMode`: drop>default → auto cash) yang DIBUANG karena bikin A & B ketuker.
+- **BLOKIR**: titip konsinyasi > jatah TANPA centang "Ubah jatah" → tidak tersimpan + pesan
+  actionable (ubah jatah / tambah cash / betulkan ketikan). Guard cuma nyala saat
+  `default_qty_mika > 0` (kios baru first-titip tetap lolos).
+- **Fix input number default-0**: `onfocus="this.select()"` di SEMUA field number (ketik 5 jadi 5,
+  bukan "05") + label "Ubah jatah permanen" + helper "tagihan hari ini tetap dari titipan LAMA".
+
+GUARD DIJAGA (mesin settlement TIDAK disentuh): tagihan hari ini SELALU dari titipan LAMA
+(`pendingDelivery->qty_delivered`) — jatah baru/cash tak mempengaruhinya. `changed_default` hanya
+saat "Ubah jatah" dicentang eksplisit; kunjungan normal tak mengubahnya. Test baru
+`UbahJatahCashTest` (naik/turun/cash/override/normal/blokir/mutual-exclusive) + update
+CashDeliveryTest/CorrectVisitTest/CorrectVisitUiTest/ActiveTripAdvancedScenarioTest ke prop baru.
+⚠️ JEBAKAN BLADE: `@if`/`@endif` yang nempel huruf (`mika@if` / `mika@endif`) TAK dikenali directive
+→ error kompilasi yang `view:cache` LOLOS tapi runtime Livewire tolak; wajib spasi sebelum directive.
+🔎 TODO USER: verifikasi di PRODUKSI (form serah-terima operator) — turun/naik jatah + cash +
+titip>jatah tanpa centang (harus keblokir + pesan) + input angka (ketik 5 jadi 5).
+
 ## STATUS
+- 296 PASS (1134 assertions) — +6 dari 290 (test baru UbahJatahCashTest, sebagian menggantikan
+  jalur lama). Rework Serah Terima ubah-jatah/cash/blokir (11 Juli 2026) SELESAI & PUSHED (HEAD
+  67220ad), tanpa migration.
 - 290 PASS (1101 assertions) — naik dari 249 (20 test baru dari audit isolasi + fix ProductVariant,
   1 test dari migrasi peta owner ke Leaflet, 2 test dari audit session/trip persistence, 7 test
   dari fix foto kios/proxy same-origin, 9 test baru dari fix UX anti-duplikat sort_order). SW v5 &
