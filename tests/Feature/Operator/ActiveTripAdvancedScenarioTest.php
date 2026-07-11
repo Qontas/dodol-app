@@ -63,9 +63,9 @@ class ActiveTripAdvancedScenarioTest extends TestCase
     }
 
     /**
-     * JALUR A (turun): ubah jatah 8→3 saat tagih. Default kios turun ke 3 DAN
-     * titipan hari ini otomatis 3 mika (jatah baru berlaku saat itu juga). Tagihan
-     * tetap dari titipan LAMA (4 mika = 60 biji x 800 = 48.000).
+     * UBAH JATAH satu-angka (turun 8→3) saat tagih. Angka titip = jatah baru. Default
+     * turun ke 3 DAN konsinyasi hari ini 3 mika. Tagihan tetap dari titipan LAMA
+     * (4 mika = 60 biji x 800 = 48.000).
      */
     public function test_ubah_jatah_turun_lowers_default_and_drops_new_qty()
     {
@@ -86,9 +86,9 @@ class ActiveTripAdvancedScenarioTest extends TestCase
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('ubahJatah', true)   // auto-set dropBaru = jatahBaru
-            ->set('jatahBaru', 3)
-            ->assertSet('dropBaru', 3) // titipan hari ini ikut jatah baru
+            ->call('chooseAction', 'tagih_titip')
+            ->set('dropBaru', 3)       // satu angka: titip 3 = jatah baru
+            ->set('ubahJatah', true)
             ->set('uangDiterima', 48000)
             ->call('hitungTagihan')
             ->call('saveVisit')
@@ -110,9 +110,8 @@ class ActiveTripAdvancedScenarioTest extends TestCase
     }
 
     /**
-     * JALUR A (naik): ubah jatah 5→9 (dua arah — kebalikan turun). Default naik ke 9
-     * DAN titipan hari ini otomatis 9 mika. Tidak diblokir walau 9 > jatah lama 5,
-     * karena "Ubah jatah" dicentang eksplisit.
+     * UBAH JATAH satu-angka (naik 5→9, dua arah). Default naik ke 9 DAN konsinyasi hari
+     * ini 9 mika. Tidak diblokir walau 9 > jatah lama 5 karena "Ubah jatah" dicentang.
      */
     public function test_ubah_jatah_naik_raises_default_and_drops_new_qty()
     {
@@ -132,9 +131,9 @@ class ActiveTripAdvancedScenarioTest extends TestCase
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
+            ->call('chooseAction', 'tagih_titip')
+            ->set('dropBaru', 9)       // satu angka: titip 9 = jatah baru
             ->set('ubahJatah', true)
-            ->set('jatahBaru', 9)
-            ->assertSet('dropBaru', 9)
             ->set('uangDiterima', 48000)
             ->call('hitungTagihan')
             ->call('saveVisit')
@@ -181,13 +180,14 @@ class ActiveTripAdvancedScenarioTest extends TestCase
     {
         $kiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id,
-            'default_qty_mika' => 10, // tinggi agar drop 5 tidak ke-split cash/konsinyasi
+            'default_qty_mika' => 5, // titip 5 = jatah → tak kena blokir; BS 3 terpisah
         ]);
 
         $this->actingAs($this->operator);
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
+            ->call('chooseAction', 'titip')
             ->set('dropBaru', 5)
             ->set('adaBsRedistribusi', true)
             ->set('qtyBsMika', 3)

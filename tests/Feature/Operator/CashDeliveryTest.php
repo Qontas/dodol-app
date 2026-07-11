@@ -81,7 +81,7 @@ class CashDeliveryTest extends TestCase
         $this->assertSame(0, Delivery::where('kiosk_id', $kiosk->id)->doesntHave('settlement')->count());
     }
 
-    public function test_drop_extra_cash_splits_into_consignment_and_cash(): void
+    public function test_titip_cash_creates_paid_cash_sale_without_touching_jatah(): void
     {
         $kiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id,
@@ -89,40 +89,33 @@ class CashDeliveryTest extends TestCase
             'default_qty_mika' => 2,
         ]);
 
-        // JALUR B (eksplisit, ganti auto-split lama): titip 2 konsinyasi + cash sekali 3.
+        // AKSI 2 "Titip Cash": naruh 3 mika dibayar tunai. TIDAK ada konsinyasi baru,
+        // jatah TETAP, tidak menagih titipan lama.
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('dropBaru', 2)
-            ->set('pakaiCashExtra', true)
-            ->set('cashExtra', 3)
+            ->call('chooseAction', 'titip_cash')
+            ->set('dropBaru', 3)
             ->call('saveVisit')
             ->assertHasNoErrors();
 
-        // Jalur B TIDAK mengubah jatah kios.
+        // Jatah kios TIDAK berubah.
         $this->assertEquals(2, $kiosk->fresh()->default_qty_mika);
 
+        // Hanya 1 delivery: cash_sale qty 3, langsung lunas.
         $deliveries = Delivery::where('kiosk_id', $kiosk->id)->get();
-        $this->assertCount(2, $deliveries);
-
-        $consignment = $deliveries->firstWhere('delivery_type', 'consignment');
+        $this->assertCount(1, $deliveries);
         $cash = $deliveries->firstWhere('delivery_type', 'cash_sale');
-
-        $this->assertNotNull($consignment);
         $this->assertNotNull($cash);
-        $this->assertEquals(2, $consignment->qty_delivered);
         $this->assertEquals(3, $cash->qty_delivered);
 
-        // Settlement hanya untuk delivery cash (lunas), konsinyasi masih pending
-        $this->assertNull(Settlement::where('delivery_id', $consignment->id)->first());
         $cashSettlement = Settlement::where('delivery_id', $cash->id)->first();
         $this->assertNotNull($cashSettlement);
         $this->assertEquals(36000, $cashSettlement->amount_paid); // 3 * 15 * 800
         $this->assertSame('paid', $cashSettlement->status);
 
-        // KioskVisit menunjuk ke delivery konsinyasi sebagai titipan baru
         $visit = KioskVisit::where('kiosk_id', $kiosk->id)->first();
-        $this->assertSame('drop_only', $visit->visit_action);
-        $this->assertSame($consignment->id, $visit->new_delivery_id);
+        $this->assertSame('cash_sale', $visit->visit_action);
+        $this->assertSame($cash->id, $visit->new_delivery_id);
     }
 
     public function test_drop_within_default_no_split(): void
@@ -198,9 +191,8 @@ class CashDeliveryTest extends TestCase
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('dropBaru', 2)          // 2 konsinyasi
-            ->set('pakaiCashExtra', true) // + cash sekali 3 (jatah tetap)
-            ->set('cashExtra', 3)
+            ->call('chooseAction', 'titip_cash') // AKSI 2: cash sekali 3 mika (jatah tetap)
+            ->set('dropBaru', 3)
             ->call('saveVisit')
             ->assertHasNoErrors();
 

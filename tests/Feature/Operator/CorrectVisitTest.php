@@ -36,9 +36,11 @@ class CorrectVisitTest extends TestCase
             'role' => 'operator', 'is_active' => true, 'owner_id' => $this->owner->id,
         ]);
         $this->cluster = Cluster::create(['name' => 'Cluster Koreksi', 'owner_id' => $this->owner->id]);
+        // Jatah dibiarkan null (kios baru) → titip pertama bebas menetapkan baseline;
+        // fokus test ini KOREKSI angka, bukan aturan blokir titip=jatah.
         $this->kiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id,
-            'default_qty_mika' => 10,
+            'default_qty_mika' => null,
             'first_titip_date' => today(),
             'is_active' => true,
         ]);

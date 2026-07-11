@@ -54,9 +54,10 @@ class ActiveTripActionPickerTest extends TestCase
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
             ->assertSet('chosenAction', null)
-            ->assertSee('Mau ngapain di kios ini?')
+            ->assertSee('Mau ngapain di kedai ini?')
             ->assertSee('Titip Baru')
-            ->assertSee('Cek Saja');
+            ->assertSee('Titip Cash')
+            ->assertSee('Lewati / Belum Habis');
     }
 
     public function test_cash_only_kiosk_skips_action_picker(): void
@@ -85,8 +86,8 @@ class ActiveTripActionPickerTest extends TestCase
 
         $component = Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->assertSee('Tagih + Titip Baru')
-            ->assertSee('Cek Sisa')        // "Tunda Bayar" dilebur ke Cek Sisa (Tahap 2)
+            ->assertSee('Tagih + Titip Ulang')
+            ->assertSee('Lewati / Belum Habis') // AKSI 3 (dulu "Cek Sisa")
             ->assertDontSee('Tunda Bayar');
 
         // 'titip' tidak valid untuk kios bertitipan → diabaikan.
@@ -219,7 +220,7 @@ class ActiveTripActionPickerTest extends TestCase
 
         $component = Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->assertSee('Tagih + Titip Baru')
+            ->assertSee('Tagih + Titip Ulang')
             ->assertDontSee('Tagih Saja');
 
         // 'tagih' tidak lagi di whitelist → diabaikan, tetap di layar pilih aksi.

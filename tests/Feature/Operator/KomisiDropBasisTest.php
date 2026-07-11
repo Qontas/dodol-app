@@ -169,9 +169,9 @@ class KomisiDropBasisTest extends TestCase
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
+            ->call('chooseAction', 'tagih_titip')
+            ->set('dropBaru', 4)         // satu angka: titip 4 = jatah baru (naik 2→4)
             ->set('ubahJatah', true)
-            ->set('jatahBaru', 4)        // titip hari ini auto = 4 (2 base + 2 ekstra)
-            ->assertSet('dropBaru', 4)
             ->set('uangDiterima', 24000) // settle titipan lama 2 mika = 30 biji x 800
             ->call('hitungTagihan')
             ->call('saveVisit')

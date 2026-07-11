@@ -34,8 +34,9 @@ class CorrectVisitUiTest extends TestCase
             'role' => 'operator', 'is_active' => true, 'owner_id' => $this->owner->id,
         ]);
         $this->cluster = Cluster::create(['name' => 'Cluster UI', 'owner_id' => $this->owner->id]);
+        // Jatah null (kios baru) → titip pertama bebas; test ini fokus KOREKSI angka.
         $this->kiosk = Kiosk::factory()->create([
-            'cluster_id' => $this->cluster->id, 'default_qty_mika' => 10, 'is_active' => true,
+            'cluster_id' => $this->cluster->id, 'default_qty_mika' => null, 'is_active' => true,
         ]);
         $productUi = \App\Models\Product::factory()->create(['owner_id' => $this->owner->id]);
         ProductVariant::factory()->create(['product_id' => $productUi->id, 'is_active' => true, 'sale_price_per_pack' => 12000]);

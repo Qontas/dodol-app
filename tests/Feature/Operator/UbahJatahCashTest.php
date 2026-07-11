@@ -16,11 +16,11 @@ use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
- * Serah Terima operator — dua jalur "nambah/ubah" yang BEDA arti bisnis:
- *   A. UBAH JATAH (permanen, dua arah) → default_qty_mika berubah, titip hari ini ikut.
- *   B. TAMBAH CASH SEKALI → dibayar tunai, jatah TETAP.
- * Plus guard: titip konsinyasi melebihi jatah TANPA "Ubah jatah" = diblokir.
- * Aturan tagihan: SELALU dari titipan LAMA, tak terpengaruh jatah baru / cash.
+ * Serah Terima 3-AKSI (owner 11 Juli 2026):
+ *   AKSI 1 "Tagih + Titip Ulang" — titip HARUS = jatah, kecuali centang "Ubah jatah"
+ *     (satu-angka: angka titip = jatah baru). Blokir 2-langkah kalau titip != jatah.
+ *   AKSI 2 "Titip Cash" — naruh ekstra dibayar tunai, TIDAK nagih titipan lama, jatah TETAP.
+ * Aturan tagihan AKSI 1: SELALU dari titipan LAMA.
  */
 class UbahJatahCashTest extends TestCase
 {
@@ -61,11 +61,10 @@ class UbahJatahCashTest extends TestCase
     }
 
     /**
-     * JALUR B: tambah cash sekali menyertai titipan + tagih titipan lama.
-     * Jatah TETAP. Tagihan hari ini = jualan titipan LAMA (4 mika = 48.000);
-     * cash 3 mika = 36.000 lunas seketika (menambah uang masuk, bukan tagihan lama).
+     * AKSI 2 "Titip Cash": naruh 3 mika dibayar tunai. Titipan lama (4 mika) TIDAK
+     * disentuh (tetap pending, tak ada settlement), jatah TETAP 4. Cash 3 mika lunas.
      */
-    public function test_cash_sekali_keeps_jatah_and_bills_old_titipan(): void
+    public function test_titip_cash_keeps_jatah_and_does_not_bill_old_titipan(): void
     {
         $kiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id,
@@ -76,70 +75,90 @@ class UbahJatahCashTest extends TestCase
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('dropBaru', 4)           // titip hari ini = jatah (tak melebihi → tak diblokir)
-            ->set('pakaiCashExtra', true)  // JALUR B
-            ->set('cashExtra', 3)
-            ->set('uangDiterima', 48000)   // tagih titipan lama 4 mika
+            ->call('chooseAction', 'titip_cash')
+            ->set('dropBaru', 3)           // naruh cash 3 mika
             ->call('saveVisit')
             ->assertHasNoErrors();
 
-        // Jatah TIDAK berubah (jalur B).
+        // Jatah TIDAK berubah.
         $this->assertEquals(4, $kiosk->fresh()->default_qty_mika);
 
-        // Tagihan hari ini dari titipan LAMA = 48.000.
-        $this->assertEquals(48000, Settlement::where('delivery_id', $pending->id)->value('amount_due'));
+        // Titipan lama TIDAK di-settle (tetap pending).
+        $this->assertNull(Settlement::where('delivery_id', $pending->id)->first());
+        $this->assertTrue(Delivery::whereKey($pending->id)->doesntHave('settlement')->exists());
 
-        // Cash sekali 3 mika = 36.000, langsung lunas.
+        // Cash 3 mika = 36.000 lunas.
         $cash = Delivery::where('kiosk_id', $kiosk->id)->where('delivery_type', 'cash_sale')->firstOrFail();
         $this->assertEquals(3, $cash->qty_delivered);
         $this->assertEquals(36000, Settlement::where('delivery_id', $cash->id)->value('amount_paid'));
 
-        // Titipan baru hari ini = konsinyasi 4 (belum di-settle).
-        $newTitip = Delivery::where('kiosk_id', $kiosk->id)
-            ->where('delivery_type', 'consignment')
-            ->where('id', '!=', $pending->id)
-            ->firstOrFail();
-        $this->assertEquals(4, $newTitip->qty_delivered);
-        $this->assertNull(Settlement::where('delivery_id', $newTitip->id)->first());
+        // Visit = cash_sale; komisi terhitung (drop cash).
+        $visit = KioskVisit::where('kiosk_id', $kiosk->id)->firstOrFail();
+        $this->assertSame('cash_sale', $visit->visit_action);
+    }
+
+    /** AKSI 2 + ubah jatah: mika cash yang ditaruh menjadi jatah baru permanen. */
+    public function test_titip_cash_with_ubah_jatah_sets_new_default(): void
+    {
+        $kiosk = Kiosk::factory()->create([
+            'cluster_id' => $this->cluster->id,
+            'is_cash_only' => false,
+            'default_qty_mika' => 4,
+        ]);
+
+        Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $kiosk->id)
+            ->call('chooseAction', 'titip_cash')
+            ->set('dropBaru', 6)
+            ->set('ubahJatah', true)
+            ->call('saveVisit')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(6, $kiosk->fresh()->default_qty_mika);
+        $visit = KioskVisit::where('kiosk_id', $kiosk->id)->firstOrFail();
+        $this->assertTrue((bool) $visit->changed_default);
     }
 
     /**
-     * OVERRIDE: ubah jatah naik 2→6, tapi stok kurang → operator override titip hari
-     * ini jadi 4. Yang diserahkan hari ini 4, TAPI default tetap jadi 6 (jatah baru
-     * permanen walau hari ini cuma bisa serah 4). Dua nilai beda, tak boleh ketuker.
+     * AKSI 1 + UBAH JATAH satu-angka (naik 2→6): angka titip = jatah baru. Default jadi 6,
+     * konsinyasi hari ini 6 mika. Tagihan tetap dari titipan LAMA (4 mika = 48.000).
      */
-    public function test_override_titip_less_than_new_jatah_keeps_new_default(): void
+    public function test_ubah_jatah_single_angka_naik(): void
     {
         $kiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id,
             'is_cash_only' => false,
             'default_qty_mika' => 2,
         ]);
+        $pending = $this->pendingTitipan($kiosk, 4);
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('ubahJatah', true)   // auto: jatahBaru=2, dropBaru=2
-            ->set('jatahBaru', 6)      // auto: dropBaru=6
-            ->assertSet('dropBaru', 6)
-            ->set('dropBaru', 4)       // override manual: hari ini cuma serah 4 (stok kurang)
+            ->call('chooseAction', 'tagih_titip')
+            ->set('dropBaru', 6)       // satu angka: titip 6 = jatah baru
+            ->set('ubahJatah', true)
+            ->set('uangDiterima', 48000)
             ->call('saveVisit')
             ->assertHasNoErrors();
 
-        // Jatah baru permanen = 6 (walau hari ini serah 4).
+        // Jatah baru permanen = 6.
         $this->assertEquals(6, $kiosk->fresh()->default_qty_mika);
 
-        // Yang diserahkan hari ini = konsinyasi 4.
+        // Konsinyasi hari ini = 6 mika.
         $this->assertDatabaseHas('deliveries', [
             'kiosk_id' => $kiosk->id,
             'delivery_type' => 'consignment',
-            'qty_delivered' => 4,
+            'qty_delivered' => 6,
         ]);
 
-        $visit = KioskVisit::where('kiosk_id', $kiosk->id)->firstOrFail();
+        // Tagihan dari titipan LAMA 4 mika = 48.000.
+        $this->assertEquals(48000, Settlement::where('delivery_id', $pending->id)->value('amount_due'));
+
+        $visit = KioskVisit::where('kiosk_id', $kiosk->id)->where('settled_delivery_id', $pending->id)->firstOrFail();
         $this->assertTrue((bool) $visit->changed_default);
     }
 
-    /** REGRESI: kunjungan normal (titip biasa, tanpa centang apa pun) TIDAK ubah default. */
+    /** REGRESI: titip = jatah (tanpa centang) TIDAK ubah default. */
     public function test_normal_visit_does_not_change_default(): void
     {
         $kiosk = Kiosk::factory()->create([
@@ -150,21 +169,18 @@ class UbahJatahCashTest extends TestCase
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('dropBaru', 4) // titip sesuai jatah, tanpa ubahJatah / cash
+            ->call('chooseAction', 'titip')
+            ->set('dropBaru', 4) // titip = jatah, tanpa ubahJatah
             ->call('saveVisit')
             ->assertHasNoErrors();
 
         $this->assertEquals(4, $kiosk->fresh()->default_qty_mika);
-
         $visit = KioskVisit::where('kiosk_id', $kiosk->id)->firstOrFail();
         $this->assertFalse((bool) $visit->changed_default);
     }
 
-    /**
-     * BLOKIR: titip konsinyasi melebihi jatah TANPA centang "Ubah jatah" → tidak
-     * tersimpan + pesan actionable. ("Titip konsinyasi > jatah" tak eksis; = salah ketik.)
-     */
-    public function test_block_titip_exceeds_jatah_without_ubah_jatah(): void
+    /** BLOKIR: titip LEBIH dari jatah tanpa "Ubah jatah" → ditolak, tak tersimpan. */
+    public function test_block_titip_more_than_jatah_without_ubah_jatah(): void
     {
         $kiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id,
@@ -174,18 +190,18 @@ class UbahJatahCashTest extends TestCase
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('dropBaru', 5) // 5 > jatah 2, tanpa ubahJatah / cash
+            ->call('chooseAction', 'titip')
+            ->set('dropBaru', 5) // 5 > jatah 2, tanpa ubahJatah
             ->call('saveVisit')
             ->assertHasErrors('general');
 
-        // Tidak ada yang tersimpan (rollback / early return).
         $this->assertSame(0, KioskVisit::where('kiosk_id', $kiosk->id)->count());
         $this->assertSame(0, Delivery::where('kiosk_id', $kiosk->id)->count());
         $this->assertEquals(2, $kiosk->fresh()->default_qty_mika);
     }
 
-    /** BLOKIR tidak menyala saat jatah kios memang besar (drop <= jatah normal). */
-    public function test_no_block_when_titip_within_large_jatah(): void
+    /** BLOKIR: titip KURANG dari jatah tanpa "Ubah jatah" → ditolak (owner: kurang pun ditolak). */
+    public function test_block_titip_less_than_jatah_without_ubah_jatah(): void
     {
         $kiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id,
@@ -195,10 +211,32 @@ class UbahJatahCashTest extends TestCase
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('dropBaru', 15) // <= jatah 20 → tidak diblokir
+            ->call('chooseAction', 'titip')
+            ->set('dropBaru', 15) // 15 < jatah 20 → sekarang DIBLOKIR
+            ->call('saveVisit')
+            ->assertHasErrors('general');
+
+        $this->assertSame(0, Delivery::where('kiosk_id', $kiosk->id)->count());
+    }
+
+    /** VERIFIKASI 2-LANGKAH: centang "Ubah jatah" → titip beda diperbolehkan, jatah berubah. */
+    public function test_ubah_jatah_unblocks_titip_beda(): void
+    {
+        $kiosk = Kiosk::factory()->create([
+            'cluster_id' => $this->cluster->id,
+            'is_cash_only' => false,
+            'default_qty_mika' => 20,
+        ]);
+
+        Livewire::test(ActiveTrip::class)
+            ->call('openVisitModal', $kiosk->id)
+            ->call('chooseAction', 'titip')
+            ->set('dropBaru', 15)
+            ->set('ubahJatah', true) // langkah-2: aksi sadar
             ->call('saveVisit')
             ->assertHasNoErrors();
 
+        $this->assertEquals(15, $kiosk->fresh()->default_qty_mika);
         $this->assertDatabaseHas('deliveries', [
             'kiosk_id' => $kiosk->id,
             'delivery_type' => 'consignment',
@@ -206,30 +244,25 @@ class UbahJatahCashTest extends TestCase
         ]);
     }
 
-    /** MUTUALLY-EXCLUSIVE: mengaktifkan satu jalur otomatis mematikan yang lain. */
-    public function test_ubah_jatah_and_cash_are_mutually_exclusive(): void
+    /** KIOS BARU (jatah null): titip pertama bebas menetapkan baseline, TANPA blokir. */
+    public function test_kios_baru_first_titip_sets_baseline_without_block(): void
     {
         $kiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id,
             'is_cash_only' => false,
-            'default_qty_mika' => 3,
+            'default_qty_mika' => null,
         ]);
 
-        // Aktifkan Jalur A lalu Jalur B → A mati.
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('ubahJatah', true)
-            ->set('jatahBaru', 5)
-            ->set('pakaiCashExtra', true)
-            ->assertSet('ubahJatah', false)   // Jalur A dimatikan otomatis
-            ->assertSet('jatahBaru', 0);
+            ->call('chooseAction', 'titip')
+            ->set('dropBaru', 7)
+            ->call('saveVisit')
+            ->assertHasNoErrors();
 
-        // Sebaliknya: aktifkan Jalur B lalu Jalur A → B mati.
-        Livewire::test(ActiveTrip::class)
-            ->call('openVisitModal', $kiosk->id)
-            ->set('pakaiCashExtra', true)
-            ->set('cashExtra', 3)
-            ->set('ubahJatah', true)
-            ->assertSet('pakaiCashExtra', false); // Jalur B dimatikan otomatis
+        // Baseline ditetapkan = titip pertama; BUKAN "ubah" (masih bisa dikoreksi).
+        $this->assertEquals(7, $kiosk->fresh()->default_qty_mika);
+        $visit = KioskVisit::where('kiosk_id', $kiosk->id)->firstOrFail();
+        $this->assertFalse((bool) $visit->changed_default);
     }
 }

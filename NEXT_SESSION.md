@@ -1,8 +1,32 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 11 Juli 2026*
+*Sesi terakhir: 12 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. Live di Railway. KOMISI RIAN ganti ke BASIS DROP (Opsi Y) SELESAI & PUSHED
+Bg, lanjut dodol-app. Live di Railway. **PENYEDERHANAAN FORM SERAH TERIMA JADI 3-AKSI SELESAI &
+PUSHED (12 Juli 2026)** — form kunjungan operator dirombak jadi 3 aksi tegas: **AKSI 1 "Tagih +
+Titip Ulang"** (siklus normal: BS per biji, tagih yang laku, titip ulang sejumlah jatah), **AKSI 2
+"Titip Cash"** (naruh ekstra dibayar tunai, TIDAK nagih titipan lama, jatah tetap — dulu checkbox
+"Tambah cash sekali" yang nempel, kini aksi mandiri), **AKSI 3 "Lewati / Belum Habis"** (0 transaksi,
+catat sisa+catatan). **BLOKIR 2-LANGKAH** (ganti blokir lama titip>jatah + rencana peringatan-lembut):
+titip konsinyasi HARUS = jatah kios; titip != jatah (kurang ATAU lebih) tanpa centang "Ubah jatah" →
+DITOLAK dua lapis (UI tombol disabled "Betulkan titip = jatah dulu" + kotak merah "Titip harus sama
+dengan jatah (X)", DAN server persistVisitFromState() tetap tolak walau tombol diakali). Verifikasi
+2-langkah: mau titip beda? centang "Ubah jatah permanen" dulu (aksi sadar). **UBAH JATAH SATU-ANGKA**:
+angka yang ditaruh = jatah baru (buang field `jatahBaru` terpisah + auto-peek `updatedUbahJatah/
+updatedJatahBaru` yang jadi biang bingung; AKSI 3 pakai 1 field mandiri karena tak ada yang ditaruh).
+Pengecualian blokir: kios BARU (jatah null) → titip pertama netapkan baseline tanpa blokir; KOREKSI
+angka exempt (correctVisit tak kena blokir). **FLAG KIOS LAMA vs BARU tanpa kolom baru**: "punya
+titipan aktif" murni diturunkan dari data = ada Delivery konsinyasi PENDING (persis `$pendingDelivery`)
+— TIDAK ada kolom flag. Kios LAMA (migrasi, sudah ada titipan berjalan) dibuat lewat helper baru
+`App\Support\OpeningBalance::create()` (1 delivery konsinyasi pending, idempoten) yang di-trigger
+toggle "Kios lama" di Filament create-kiosk (`CreateKiosk::afterCreate`) → kios langsung bisa
+"Tagih + Titip Ulang" di kunjungan pertama; sejalan dgn command `kios:saldo-awal` untuk migrasi massal.
+Operator create-kiosk = selalu kios baru (tak berubah). **MODAL BS = 633/biji** (HPP asli 9.500÷15,
+BUKAN 800 = harga jual) — TERNYATA SUDAH BENAR di `OwnerDashboardController` (kerugian write-off pakai
+`hpp_per_mika`), tak ada perubahan. BS SUDAH per biji (tak ada migrasi). **311 test PASS** (dari
+baseline 296; +15 test 3-aksi baru/rewrite; 0 regresi) + headed browser confirm (3-aksi picker +
+blokir tampil, read-only tanpa save). TIDAK DISENTUH: Hentikan Kedai, walk-in, cash-only, mesin
+omset/komisi inti (getTotalDropReal, SUM amount_paid). Lihat section "SERAH TERIMA 3-AKSI (12 Juli)". KOMISI RIAN ganti ke BASIS DROP (Opsi Y) SELESAI & PUSHED
 (11 Juli 2026) — Rp 1.000 × mika yang Rian BAWA & DILETAKKAN (bukan laku), exclude BS daur-ulang &
 stop-tanpa-drop, bonus kios-baru dilebur ke tarif flat. Ada migration (default tarif 500→1.000 utk
 owner baru; owner lama set sendiri di /owner/settings). Lihat section "KOMISI RIAN → BASIS DROP
@@ -1912,6 +1936,44 @@ Steps:
       AWS_URL=<public bucket URL>, AWS_USE_PATH_STYLE_ENDPOINT=true
     - Set MEDIA_DISK=s3 (mengaktifkan disk media ke R2; default tetap 'public' lokal)
     - Kode sudah R2-ready (config app.media_disk + Kiosk::photo_url); tak ada perubahan kode
+
+## SERAH TERIMA 3-AKSI (12 Juli 2026) — SELESAI & PUSHED
+**File inti:** `app/Livewire/Operator/ActiveTrip.php` + `resources/views/livewire/operator/active-trip.blade.php`
+**Flag kios lama:** `app/Support/OpeningBalance.php` (baru) + `KioskResource` (toggle "Kios lama") + `CreateKiosk::afterCreate()`
+
+### 3 AKSI (operator pilih SATU per kunjungan) — `chosenAction`
+- **AKSI 1** `tagih_titip` (ada titipan) / `titip` (belum ada) → drop_and_settle / drop_only.
+  Input: BS (biji), sisa bagus (biji), titip ulang (mika, default=jatah), uang diterima
+  (default=tagihan, boleh override→piutang). Tagihan = (titipan_biji − sisa_bagus − BS) × 800.
+- **AKSI 2** `titip_cash` → `cash_sale` (cabang khusus di `persistVisitFromState`): X mika lunas,
+  pending lama TAK disentuh (self-settle di delivery cash), jatah tetap. Komisi & omset kehitung.
+- **AKSI 3** `cek` → check_only: sisa biji + catatan bebas (`janjiBayar` dipakai ganda: "belum bisa
+  bayar" → "Janji bayar: X", alasan lain → catatan apa adanya). 0 transaksi.
+
+### BLOKIR 2-LANGKAH (anti angka-nyasar)
+- Rule: AKSI 1, `defaultQty >= 1 && !ubahJatah && drop !== defaultQty` → tolak. Dua lapis: blade
+  (tombol `$saveDisabled` + kotak merah) + server (`persistVisitFromState` return null + addError).
+- Exempt: `$isCorrection` (correctVisit lolos blokir), kios baru `defaultQty < 1` (netapkan baseline).
+- Ubah-jatah SATU-ANGKA: `$applyJatahDrop` (AKSI 1 → default=$drop), `$applyJatahCek` (AKSI 3 →
+  default=$jatahBaru). Field `jatahBaru` HANYA dipakai AKSI 3. Auto-peek lama DIHAPUS.
+
+### FLAG KIOS LAMA vs BARU — TANPA KOLOM BARU (keputusan owner)
+- "Punya titipan aktif" = ada Delivery pending (`doesntHave('settlement')`) = `$pendingDelivery`.
+- Kios lama (migrasi): `OpeningBalance::create($kiosk, $mika)` → 1 delivery konsinyasi pending
+  (idempoten; trip migrasi per-owner `firstOrCreate`; first_titip_date di masa lampau biar bukan
+  kios-baru komisi). Trigger: toggle "Kios lama" + field mika di Filament create (form-only,
+  `dehydrated(false)`). Massal: command `kios:saldo-awal` (sudah ada). **Backfill 9 kios owner
+  existing: jalankan `php artisan kios:saldo-awal <file> --owner=<id>` ATAU re-input via toggle —
+  verifikasi di PRODUKSI (butuh data DB prod; belum dijalankan di sini).**
+
+### MODAL BS = 633/biji — SUDAH BENAR (tak ada perubahan)
+- `OwnerDashboardController` kerugian write-off = mika × `hpp_per_mika` (9.500/mika = 633/biji).
+  800/biji itu harga JUAL, bukan modal (brief owner keliru di titik ini). BS input sudah per biji.
+
+### TEST
+- 311 PASS (baseline 296). Rewrite: UbahJatahCashTest, ActiveTripAdvancedScenarioTest,
+  CashDeliveryTest, KomisiDropBasisTest, ActiveTripActionPickerTest, CorrectVisit{,Ui}Test (setUp
+  jatah→null). Baru: `SerahTerima3AksiTest` (AKSI 3, flag kios lama/idempoten, blokir UI, kios baru).
 
 ## BUSINESS RULES LOCKED
 - 1 mika = 15 biji, Rp 800/biji = Rp 12.000/mika
