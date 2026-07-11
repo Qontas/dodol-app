@@ -106,6 +106,34 @@ class KioskResource extends Resource
                             ->helperText('Optional. Untuk hitung umur kios sebagai customer. Kosongkan untuk auto-set saat delivery pertama.'),
                     ]),
 
+                // KIOS LAMA (migrasi): kios yang di lapangan SUDAH punya titipan berjalan
+                // sebelum masuk sistem. Field ini form-only (dehydrated false) — TIDAK ada
+                // kolom flag; saat create, CreateKiosk::afterCreate() membuat 1 delivery
+                // konsinyasi PENDING (App\Support\OpeningBalance) sehingga kios langsung
+                // bisa "Tagih + Titip Ulang". Kios BARU: biarkan toggle mati.
+                Section::make('Titipan Berjalan (Kios Lama)')
+                    ->description('Isi HANYA kalau kios ini sudah punya titipan berjalan di lapangan sebelum diinput (migrasi). Kios akan langsung bisa ditagih di kunjungan pertama.')
+                    ->visibleOn('create')
+                    ->schema([
+                        Forms\Components\Toggle::make('kios_lama')
+                            ->label('Kios lama (sudah ada titipan berjalan)')
+                            ->helperText('Nyalakan kalau kios ini sudah menitip dodol sebelum masuk sistem. Kios BARU (belum ada titipan) — biarkan mati.')
+                            ->default(false)
+                            ->live()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('opening_balance_mika')
+                            ->label('Titipan berjalan sekarang (mika)')
+                            ->numeric()
+                            ->minValue(1)
+                            ->maxValue(1000)
+                            ->suffix('mika')
+                            ->helperText('Berapa mika yang saat ini masih ada di kios (belum dibayar).')
+                            ->visible(fn (Get $get): bool => (bool) $get('kios_lama'))
+                            ->required(fn (Get $get): bool => (bool) $get('kios_lama'))
+                            ->dehydrated(false),
+                    ]),
+
                 Section::make('Lokasi')
                     ->columns(2)
                     ->collapsible()
