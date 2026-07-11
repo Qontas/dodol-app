@@ -1899,8 +1899,7 @@ class ActiveTrip extends Component
             }
 
             $owner = $this->trip->owner;
-            $komisiPerMika = $owner ? $owner->getKomisiPerMikaValue() : 500;
-            $komisiKiosBaru = $owner ? $owner->getKomisiKiosBaruPerMikaValue() : 1000;
+            $komisiPerMika = $owner ? $owner->getKomisiPerMikaValue() : 1000;
 
             \App\Models\Commission::create([
                 'trip_id' => $this->trip->id,
@@ -1910,7 +1909,7 @@ class ActiveTrip extends Component
                 'commission_rate' => 0.2000,
                 'status' => 'paid',
                 'paid_at' => now(),
-                'notes' => sprintf('Komisi Rian: reguler (mika terjual x %d) + kios baru (mika kios baru x %d)', $komisiPerMika, $komisiKiosBaru),
+                'notes' => sprintf('Komisi Rian (basis DROP): mika diletakkan (exclude BS) x Rp %d', $komisiPerMika),
             ]);
         });
 

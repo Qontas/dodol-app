@@ -130,11 +130,12 @@ class Trip extends Model
     }
 
     /**
-     * Komisi reguler per mika dari owner trip ini, fallback ke Rp 500.
+     * Tarif komisi Rian per mika DROP dari owner trip ini, fallback Rp 1.000.
+     * (Opsi Y — basis DROP. Bonus kios-baru terpisah sudah dilebur ke tarif ini.)
      */
     private function getKomisiPerMika(): float
     {
-        return (float) ($this->owner?->komisi_per_mika ?? 500);
+        return (float) ($this->owner?->komisi_per_mika ?? 1000);
     }
 
     public function getHppEstimasiAttribute(): float
@@ -147,19 +148,42 @@ class Trip extends Model
         return $this->mika_terjual * $this->getUntungPerMika();
     }
 
+    /**
+     * BASIS KOMISI (Opsi Y — DROP): mika yang Rian BAWA & DILETAKKAN di trip ini,
+     * EXCLUDE BS daur-ulang (bukan stok bawaan). Identik getTotalDropReal():
+     * mencakup titip konsinyasi (kedai lama/baru/ekstra jatah) + semua penjualan
+     * cash (walk-in, cash-only, cash-extra); exclude bs_redistribution. Stop+Tagih
+     * tak pernah drop mika baru (dropBaru dipaksa 0) → otomatis 0 komisi.
+     *
+     * SENGAJA TERPISAH dari mika_terjual (basis LAKU, dipakai omset/HPP/untung
+     * yang sudah benar & lulus test) — JANGAN dicampur.
+     */
+    public function getMikaKomisiAttribute(): float
+    {
+        return (float) $this->getTotalDropReal();
+    }
+
+    /**
+     * KOMISI RIAN (Opsi Y — basis DROP): tarif (default Rp 1.000) × mika_komisi.
+     * Bonus kios-baru terpisah DILEBUR ke tarif flat ini (kedai baru = tarif sama).
+     */
+    public function getKomisiRianAttribute(): float
+    {
+        return $this->mika_komisi * $this->getKomisiPerMika();
+    }
+
+    /**
+     * LEGACY alias — dipertahankan agar konsumen lama tak pecah. Komisi kini FLAT,
+     * jadi "reguler" = seluruh komisi Rian, "kios baru" = 0 (sudah dilebur).
+     */
     public function getKomisiRegulerAttribute(): float
     {
-        return $this->mika_terjual * $this->getKomisiPerMika();
+        return $this->komisi_rian;
     }
 
     public function getKomisiKiosBaruAttribute(): float
     {
-        return $this->mika_kios_baru * ($this->owner?->komisi_kios_baru_per_mika ?? 1000);
-    }
-
-    public function getKomisiRianAttribute(): float
-    {
-        return $this->komisi_reguler + $this->komisi_kios_baru;
+        return 0.0;
     }
 
     public function getUntungBersihOwnerAttribute(): float

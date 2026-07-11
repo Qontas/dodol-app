@@ -2,10 +2,13 @@
 *Sesi terakhir: 11 Juli 2026*
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. 296 PASS. Live di Railway. FITUR UBAH-JATAH / CASH-SEKALI / BLOKIR di form
-Serah Terima operator SELESAI & PUSHED (11 Juli 2026, HEAD 67220ad) — lihat section "REWORK SERAH
-TERIMA: UBAH JATAH DUA-ARAH + CASH SEKALI + BLOKIR" untuk detail. Sebelumnya: Fitur URUTAN KEDAI
-PER-AREA (sort_order) — Track 1
+Bg, lanjut dodol-app. Live di Railway. KOMISI RIAN ganti ke BASIS DROP (Opsi Y) SELESAI & PUSHED
+(11 Juli 2026) — Rp 1.000 × mika yang Rian BAWA & DILETAKKAN (bukan laku), exclude BS daur-ulang &
+stop-tanpa-drop, bonus kios-baru dilebur ke tarif flat. Ada migration (default tarif 500→1.000 utk
+owner baru; owner lama set sendiri di /owner/settings). Lihat section "KOMISI RIAN → BASIS DROP
+(OPSI Y)". Sebelumnya (juga 11 Juli): FITUR UBAH-JATAH / CASH-SEKALI / BLOKIR di form Serah Terima
+operator SELESAI & PUSHED (HEAD 67220ad) — lihat section "REWORK SERAH TERIMA: UBAH JATAH DUA-ARAH
++ CASH SEKALI + BLOKIR". Sebelumnya: Fitur URUTAN KEDAI PER-AREA (sort_order) — Track 1
 SELESAI (9 Juli 2026): kolom `sort_order` per-cluster di kiosks, owner atur lewat drag
 (`->reorderable()`) ATAU ketik angka langsung di list (`TextInputColumn`), operator (`ActiveTrip`)
 lihat kios terkelompok per-area dengan urutan yang SAMA — dibuktikan headed browser, owner→operator
@@ -62,6 +65,35 @@ produksi (kios nyata). Operator DIKONFIRMASI tetap jalan, 0 regresi lain ditemuk
 "FIX FOTO KIOS KADANG KOSONG" (terutama RONDE 4). Advisor tulis brief kerja langsung di chat
 (code block), BUKAN file PROMPT.md lagi. Baca NEXT_SESSION.md untuk context lengkap.
 
+## KOMISI RIAN → BASIS DROP (OPSI Y) (11 Juli 2026) — SELESAI & PUSHED
+Owner ganti aturan komisi (keputusan final). Dari basis LAKU (mika terjual × Rp 500 + bonus kios-
+baru terpisah × Rp 1.000) → **basis DROP (Opsi Y): Rp 1.000 × mika yang Rian BAWA & DILETAKKAN**
+(dihitung saat drop, bukan saat laku), **exclude BS daur-ulang & stop-tanpa-drop**, **bonus kios-
+baru DILEBUR** ke tarif flat (kedai baru = tarif sama). Data asal-usul sudah ada (`delivery_type=
+'bs_redistribution'` menandai BS; stop+tagih selalu drop=0 → otomatis 0 komisi), jadi tak perlu
+tracking baru.
+
+Implementasi (Trip.php): tambah accessor `mika_komisi` = `getTotalDropReal()` (drop exclude BS);
+`komisi_rian` = `mika_komisi × komisi_per_mika` (tarif default 1.000); `komisi_reguler` jadi alias
+`komisi_rian`, `komisi_kios_baru` = 0 (legacy alias, biar konsumen lama tak pecah). **SENGAJA TIDAK
+menyentuh `mika_terjual`/`omset_val`/`untung_kotor`** (tetap basis LAKU, sudah benar) — komisi
+metrik TERPISAH. `untung_bersih_owner` berubah HANYA karena = untung_kotor − komisi (by design).
+LiveTripProgress (hitung komisi sendiri utk trip berjalan) diubah ke drop-basis juga. User::
+getKomisiPerMikaValue fallback 500→1.000. Display komisi (dashboard, PDF, Excel, controller) dilebur
+jadi satu "Komisi Rian" + "Mika Komisi (Drop)". confirmEndTrip note diperbarui.
+
+MIGRATION: `2026_07_11_000001_change_komisi_per_mika_default_to_1000` — HANYA ubah DEFAULT kolom
+(owner/tenant BARU dapat 1.000). Baris owner LAMA TIDAK diubah (gaji operator = keputusan owner
+eksplisit) → **owner lama yang masih Rp 500 WAJIB set 1.000 di /owner/settings**. Auto-migrate
+Railway jalan saat deploy. `komisi_kios_baru_per_mika` (setting) kini DORMANT/tak dipakai — bisa
+dihapus di cleanup lanjutan.
+
+Test: KomisiDropBasisTest (7: drop-basis-bukan-laku, BS-exclude, stop-tanpa-drop=0, kedai-baru-sama,
+walk-in, ubah-jatah-naik semua-drop, regresi omset/untung). Update HppPerOwnerTest, LiveTripProgress
+Test ke basis drop. ⚠️ Ambiguitas "ekstra jatah": ubah-jatah 2→4 drop 4 penuh (bukan cuma 2 ekstra)
+→ semua 4 komisi (basis drop konsisten: tiap mika DILETAKKAN dihitung). SELISIH komisi lama-vs-baru
+tergantung trip (tarif 2×) — owner review beberapa trip nyata di dashboard pasca-deploy.
+
 ## REWORK SERAH TERIMA: UBAH JATAH DUA-ARAH + CASH SEKALI + BLOKIR (11 Juli 2026) — SELESAI, HEAD 67220ad
 Investigasi + rework alur "kurangi/ubah jatah titipan" di form Serah Terima operator
 (`app/Livewire/Operator/ActiveTrip.php` + `resources/views/livewire/operator/active-trip.blade.php`)
@@ -93,6 +125,9 @@ CashDeliveryTest/CorrectVisitTest/CorrectVisitUiTest/ActiveTripAdvancedScenarioT
 titip>jatah tanpa centang (harus keblokir + pesan) + input angka (ketik 5 jadi 5).
 
 ## STATUS
+- 303 PASS (1157 assertions) — +7 dari 296 (KomisiDropBasisTest 7 skenario). Komisi Rian ganti ke
+  basis DROP (Opsi Y) SELESAI & PUSHED (11 Juli 2026). ADA migration (default tarif 500→1.000).
+  Omset/untung_kotor TIDAK berubah (komisi metrik terpisah).
 - 296 PASS (1134 assertions) — +6 dari 290 (test baru UbahJatahCashTest, sebagian menggantikan
   jalur lama). Rework Serah Terima ubah-jatah/cash/blokir (11 Juli 2026) SELESAI & PUSHED (HEAD
   67220ad), tanpa migration.

@@ -80,9 +80,11 @@ class HppPerOwnerTest extends TestCase
         $trip = $this->tripWithTenMikaSold($owner, $operator);
 
         $this->assertSame(10.0, $trip->mika_terjual);
-        $this->assertSame(95000.0, $trip->hpp_estimasi);     // 10 * 9500
-        $this->assertSame(25000.0, $trip->untung_kotor);     // 10 * (12000-9500)
-        $this->assertSame(5000.0, $trip->komisi_reguler);    // 10 * (2500*0.2)
+        $this->assertSame(95000.0, $trip->hpp_estimasi);     // 10 * 9500 (basis LAKU, tak berubah)
+        $this->assertSame(25000.0, $trip->untung_kotor);     // 10 * (12000-9500) (tak berubah)
+        // Komisi basis DROP (Opsi Y): 10 mika di-drop x tarif default Rp 1.000.
+        $this->assertSame(10.0, $trip->mika_komisi);
+        $this->assertSame(10000.0, $trip->komisi_rian);      // 10 drop * 1000
     }
 
     public function test_trip_report_uses_owner_custom_hpp(): void
@@ -98,9 +100,9 @@ class HppPerOwnerTest extends TestCase
 
         $trip = $this->tripWithTenMikaSold($owner, $operator);
 
-        $this->assertSame(100000.0, $trip->hpp_estimasi);    // 10 * 10000
-        $this->assertSame(20000.0, $trip->untung_kotor);     // 10 * (12000-10000)
-        $this->assertSame(4000.0, $trip->komisi_reguler);    // 10 * 400
+        $this->assertSame(100000.0, $trip->hpp_estimasi);    // 10 * 10000 (basis LAKU, tak berubah)
+        $this->assertSame(20000.0, $trip->untung_kotor);     // 10 * (12000-10000) (tak berubah)
+        $this->assertSame(4000.0, $trip->komisi_rian);       // 10 drop * tarif custom 400
     }
 
     public function test_owner_can_update_own_hpp_via_settings(): void

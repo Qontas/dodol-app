@@ -109,7 +109,8 @@ class User extends Authenticatable implements FilamentUser
 
     public function getKomisiPerMikaValue(): float
     {
-        return (float) ($this->komisi_per_mika ?? 500);
+        // Tarif komisi Rian per mika DROP (Opsi Y). Default Rp 1.000.
+        return (float) ($this->komisi_per_mika ?? 1000);
     }
 
     public function getKomisiKiosBaruPerMikaValue(): float

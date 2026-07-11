@@ -119,9 +119,12 @@ class LiveTripProgressTest extends TestCase
     {
         $trip = $this->makeActiveTripWithActivity();
 
-        // Sanity: accessor menghitung 105 biji = 7 mika; komisi 7x500 + 5x1000.
+        // Omset basis LAKU tak berubah (105 biji = 7 mika terjual x 800 x 15... = 84.000).
         $this->assertEquals(84000.0, $trip->omset_val);
-        $this->assertEquals(8500.0, $trip->komisi_rian);
+        // Komisi basis DROP (Opsi Y): hanya newDelivery 5 mika di trip ini (settled
+        // delivery 8 mika milik pastTrip → tak dihitung drop trip ini). 5 x Rp 1.000.
+        $this->assertEquals(5.0, $trip->mika_komisi);
+        $this->assertEquals(5000.0, $trip->komisi_rian);
 
         $this->actingAs($this->owner);
 

@@ -56,9 +56,8 @@ class TripSummarySheet implements FromArray, WithHeadings, WithTitle
             ['Omset', $f['omset']],
             ['HPP', $f['hpp']],
             ['Untung Kotor', $f['untung_kotor']],
-            ['Komisi Reguler', $f['komisi_reguler']],
-            ['Komisi Kios Baru', $f['komisi_kios_baru']],
-            ['Total Komisi', $f['total_komisi']],
+            ['Mika Komisi (Drop)', $f['mika_komisi']],
+            ['Komisi Rian', $f['total_komisi']],
             ['Untung Bersih Owner', $f['untung_bersih']],
         ];
     }

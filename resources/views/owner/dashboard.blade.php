@@ -356,17 +356,13 @@
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-amber-50 border border-amber-100 rounded-lg p-4 text-center mt-3 shadow-inner">
+                    <div class="grid grid-cols-3 gap-4 bg-amber-50 border border-amber-100 rounded-lg p-4 text-center mt-3 shadow-inner">
                         <div>
-                            <p class="text-[10px] uppercase text-amber-800 font-medium">Komisi Reguler</p>
-                            <p class="text-base font-bold text-amber-700">Rp {{ number_format($completedTrip->komisi_reguler, 0, ',', '.') }}</p>
+                            <p class="text-[10px] uppercase text-amber-800 font-medium">Mika Komisi (Drop)</p>
+                            <p class="text-base font-bold text-amber-700">{{ number_format($completedTrip->mika_komisi, 2, ',', '.') }} mika</p>
                         </div>
                         <div>
-                            <p class="text-[10px] uppercase text-amber-800 font-medium">Komisi Kios Baru</p>
-                            <p class="text-base font-bold text-amber-700">Rp {{ number_format($completedTrip->komisi_kios_baru, 0, ',', '.') }}</p>
-                        </div>
-                        <div>
-                            <p class="text-[10px] uppercase text-amber-800 font-medium">Total Komisi Rian</p>
+                            <p class="text-[10px] uppercase text-amber-800 font-medium">Komisi Rian</p>
                             <p class="text-base font-bold text-amber-900">Rp {{ number_format($completedTrip->komisi_rian, 0, ',', '.') }}</p>
                         </div>
                         <div>

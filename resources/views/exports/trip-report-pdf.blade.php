@@ -48,9 +48,8 @@
         <tr><td>Omset</td><td class="num">{{ number_format($finansial['omset'], 0, ',', '.') }}</td></tr>
         <tr><td>HPP</td><td class="num">{{ number_format($finansial['hpp'], 0, ',', '.') }}</td></tr>
         <tr><td>Untung Kotor</td><td class="num">{{ number_format($finansial['untung_kotor'], 0, ',', '.') }}</td></tr>
-        <tr><td>Komisi Reguler</td><td class="num">{{ number_format($finansial['komisi_reguler'], 0, ',', '.') }}</td></tr>
-        <tr><td>Komisi Kios Baru</td><td class="num">{{ number_format($finansial['komisi_kios_baru'], 0, ',', '.') }}</td></tr>
-        <tr><td>Total Komisi</td><td class="num">{{ number_format($finansial['total_komisi'], 0, ',', '.') }}</td></tr>
+        <tr><td>Mika Komisi (Drop)</td><td class="num">{{ number_format($finansial['mika_komisi'], 0, ',', '.') }}</td></tr>
+        <tr><td>Komisi Rian (Rp 1.000 &times; mika drop)</td><td class="num">{{ number_format($finansial['total_komisi'], 0, ',', '.') }}</td></tr>
         <tr class="highlight"><td>Untung Bersih Owner</td><td class="num">{{ number_format($finansial['untung_bersih'], 0, ',', '.') }}</td></tr>
     </table>
 
