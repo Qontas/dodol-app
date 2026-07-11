@@ -89,11 +89,17 @@ class CashDeliveryTest extends TestCase
             'default_qty_mika' => 2,
         ]);
 
+        // JALUR B (eksplisit, ganti auto-split lama): titip 2 konsinyasi + cash sekali 3.
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('dropBaru', 5) // 2 konsinyasi + 3 cash
+            ->set('dropBaru', 2)
+            ->set('pakaiCashExtra', true)
+            ->set('cashExtra', 3)
             ->call('saveVisit')
             ->assertHasNoErrors();
+
+        // Jalur B TIDAK mengubah jatah kios.
+        $this->assertEquals(2, $kiosk->fresh()->default_qty_mika);
 
         $deliveries = Delivery::where('kiosk_id', $kiosk->id)->get();
         $this->assertCount(2, $deliveries);
@@ -192,7 +198,9 @@ class CashDeliveryTest extends TestCase
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('dropBaru', 5) // 2 consignment + 3 cash extra
+            ->set('dropBaru', 2)          // 2 konsinyasi
+            ->set('pakaiCashExtra', true) // + cash sekali 3 (jatah tetap)
+            ->set('cashExtra', 3)
             ->call('saveVisit')
             ->assertHasNoErrors();
 

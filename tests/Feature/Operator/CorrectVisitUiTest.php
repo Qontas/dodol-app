@@ -144,8 +144,8 @@ class CorrectVisitUiTest extends TestCase
 
         $component = Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('dropBaru', 5)
-            ->set('extraDropMode', 'konsinyasi')
+            ->set('ubahJatah', true) // JALUR A → changed_default
+            ->set('jatahBaru', 5)
             ->call('saveVisit')
             ->assertHasNoErrors();
 

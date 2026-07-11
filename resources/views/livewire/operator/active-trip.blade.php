@@ -227,7 +227,7 @@
                     <div class="flex items-center justify-center gap-3">
                         <button type="button" x-on:click="$wire.walkInMika = Math.max(0, ($wire.walkInMika || 0) - 1)"
                                 class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">-</button>
-                        <input type="number" min="1" wire:model.live="walkInMika"
+                        <input type="number" onfocus="this.select()" min="1" wire:model.live="walkInMika"
                                class="w-24 text-center text-2xl font-bold rounded-lg border-slate-300 focus:border-amber-500 focus:ring-amber-500">
                         <button type="button" x-on:click="$wire.walkInMika = ($wire.walkInMika || 0) + 1"
                                 class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
@@ -289,7 +289,7 @@
                 @if($correctionHasDrop)
                     <div class="bg-white border border-slate-200 rounded-xl p-4">
                         <label class="block text-sm font-bold text-slate-900 mb-2">Jumlah Mika</label>
-                        <input type="number" min="0" wire:model="dropBaru"
+                        <input type="number" onfocus="this.select()" min="0" wire:model="dropBaru"
                                class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-2xl font-bold">
                     </div>
                 @endif
@@ -301,18 +301,18 @@
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-xs font-medium text-slate-700 mb-1">Sisa Bagus (Biji)</label>
-                                <input type="number" min="0" wire:model="returnFresh"
+                                <input type="number" onfocus="this.select()" min="0" wire:model="returnFresh"
                                        class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold">
                             </div>
                             <div>
                                 <label class="block text-xs font-medium text-slate-700 mb-1">Dodol Sisa/Basi (Biji)</label>
-                                <input type="number" min="0" wire:model="returnExpired"
+                                <input type="number" onfocus="this.select()" min="0" wire:model="returnExpired"
                                        class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold text-red-600">
                             </div>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-700 mb-1">Uang Diterima (Rp)</label>
-                            <input type="number" min="0" wire:model="uangDiterima"
+                            <input type="number" onfocus="this.select()" min="0" wire:model="uangDiterima"
                                    class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-xl font-bold text-green-700 bg-white">
                             @error('uangDiterima')
                                 <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
@@ -507,7 +507,7 @@
                         @endif
                         @if($payingPiutang)
                             <div class="mt-3 flex items-center gap-2">
-                                <input type="number" wire:model="piutangBayar" min="1" max="{{ $piutangLama }}"
+                                <input type="number" onfocus="this.select()" wire:model="piutangBayar" min="1" max="{{ $piutangLama }}"
                                        placeholder="Jumlah diterima (Rp)"
                                        class="flex-1 rounded-lg border-slate-300 text-sm py-2 focus:border-red-500 focus:ring-red-500">
                                 <button type="button" wire:click="terimaPembayaranPiutang" wire:loading.attr="disabled" wire:target="terimaPembayaranPiutang"
@@ -570,11 +570,11 @@
                                 <div class="grid grid-cols-2 gap-4 mb-4">
                                     <div>
                                         <label class="block text-xs font-medium text-slate-700 mb-1">Sisa Bagus (Biji)</label>
-                                        <input type="number" wire:model.live="returnFresh" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold" min="0">
+                                        <input type="number" onfocus="this.select()" wire:model.live="returnFresh" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold" min="0">
                                     </div>
                                     <div>
                                         <label class="block text-xs font-medium text-slate-700 mb-1">Dodol Sisa/Basi (Biji)<br><span class="text-[10px] font-normal text-slate-400">(dodol rusak/basi yang diretur)</span></label>
-                                        <input type="number" wire:model.live="returnExpired" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold text-red-600" min="0">
+                                        <input type="number" onfocus="this.select()" wire:model.live="returnExpired" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold text-red-600" min="0">
                                     </div>
                                 </div>
                                 <div class="border-t border-amber-200 pt-3">
@@ -589,7 +589,7 @@
                                 </div>
                                 <div class="mt-4">
                                     <label class="block text-xs font-bold text-slate-700 mb-1">Uang Diterima (Rp)</label>
-                                    <input type="number" wire:model="uangDiterima" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-xl font-bold text-green-700 bg-white" min="0">
+                                    <input type="number" onfocus="this.select()" wire:model="uangDiterima" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-xl font-bold text-green-700 bg-white" min="0">
                                     @error('uangDiterima')
                                         <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
                                     @enderror
@@ -758,11 +758,11 @@
                             <div class="grid grid-cols-2 gap-4 mb-4">
                                 <div>
                                     <label class="block text-xs font-medium text-slate-700 mb-1">Sisa Bagus (Biji)</label>
-                                    <input type="number" wire:model.live="returnFresh" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold" min="0">
+                                    <input type="number" onfocus="this.select()" wire:model.live="returnFresh" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold" min="0">
                                 </div>
                                 <div>
                                     <label class="block text-xs font-medium text-slate-700 mb-1">Dodol Sisa/Basi (Biji)<br><span class="text-[10px] font-normal text-slate-400">(dodol rusak/basi yang diretur)</span></label>
-                                    <input type="number" wire:model.live="returnExpired" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold text-red-600" min="0">
+                                    <input type="number" onfocus="this.select()" wire:model.live="returnExpired" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold text-red-600" min="0">
                                 </div>
                             </div>
 
@@ -779,7 +779,7 @@
 
                             <div class="mt-4">
                                 <label class="block text-xs font-bold text-slate-700 mb-1">Uang Diterima (Rp)</label>
-                                <input type="number" wire:model.live.debounce.500ms="uangDiterima" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-xl font-bold text-green-700 bg-white" min="0">
+                                <input type="number" onfocus="this.select()" wire:model.live.debounce.500ms="uangDiterima" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-xl font-bold text-green-700 bg-white" min="0">
                                 @error('uangDiterima')
                                     <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
                                 @enderror
@@ -804,18 +804,21 @@
                     @if(in_array($chosenAction, ['tagih_titip', 'titip', 'cash'], true))
                         <div class="bg-white border border-slate-200 rounded-xl p-4">
                             <label class="block text-sm font-bold text-slate-900 mb-2">
-                                {{ $isCashOnly ? 'Jumlah Jual Cash (Mika)' : 'Titip Baru (Mika)' }}
+                                {{ $isCashOnly ? 'Jumlah Jual Cash (Mika)' : 'Titip Hari Ini (Mika)' }}
                             </label>
                             <div class="flex items-center gap-3">
                                 <button type="button" wire:click="decrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">-</button>
 
-                                <input type="number" id="dropBaru" wire:model.live.debounce.500ms="dropBaru" class="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-2xl font-bold" min="0">
+                                <input type="number" onfocus="this.select()" id="dropBaru" wire:model.live.debounce.500ms="dropBaru" class="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-2xl font-bold" min="0">
 
                                 <button type="button" wire:click="incrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
                             </div>
 
                             @if(!empty($selectedKiosk->default_qty_mika) && !$isCashOnly)
-                                <p class="mt-2 text-xs text-slate-400">Biasanya kios ini dititip {{ (int) $selectedKiosk->default_qty_mika }} mika</p>
+                                <p class="mt-2 text-xs text-slate-400">
+                                    Jatah biasa kios ini {{ (int) $selectedKiosk->default_qty_mika }} mika
+                                    @if($ubahJatah)· jatah baru {{ (int) $jatahBaru ?: '?' }} mika @endif
+                                </p>
                             @endif
 
                             @if($isCashOnly)
@@ -823,27 +826,68 @@
                                 @if((int) $dropBaru > 0)
                                     <p class="mt-1 text-sm font-bold text-emerald-700">Total: Rp {{ number_format((int) $dropBaru * 15 * 800, 0, ',', '.') }}</p>
                                 @endif
-                            @elseif(!empty($selectedKiosk->default_qty_mika) && (int) $dropBaru > (int) $selectedKiosk->default_qty_mika)
-                                <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-                                    <p class="text-sm font-bold text-amber-800 mb-3">
-                                        Titip melebihi kebiasaan ({{ (int) $selectedKiosk->default_qty_mika }} mika).
-                                        Kelebihan {{ (int) $dropBaru - (int) $selectedKiosk->default_qty_mika }} mika:
+                            @elseif(!empty($selectedKiosk->default_qty_mika) && (int) $dropBaru > (int) $selectedKiosk->default_qty_mika && ! $ubahJatah)
+                                {{-- GUARD: titip konsinyasi > jatah tanpa "Ubah jatah" → arahkan ke solusi. --}}
+                                <div class="mt-3 rounded-xl border border-red-200 bg-red-50 p-3">
+                                    <p class="text-sm font-bold text-red-800 mb-1">
+                                        Titip {{ (int) $dropBaru }} mika melebihi jatah biasa ({{ (int) $selectedKiosk->default_qty_mika }} mika).
                                     </p>
-                                    <div class="space-y-2">
-                                        <label class="flex items-center gap-3 cursor-pointer p-2 rounded-lg {{ $extraDropMode === 'cash' ? 'bg-white border border-amber-300' : '' }}">
-                                            <input type="radio" wire:model.live="extraDropMode" value="cash" class="text-amber-600">
-                                            <span class="text-sm text-slate-700">💵 Bayar cash sekarang</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 cursor-pointer p-2 rounded-lg {{ $extraDropMode === 'konsinyasi' ? 'bg-white border border-amber-300' : '' }}">
-                                            <input type="radio" wire:model.live="extraDropMode" value="konsinyasi" class="text-amber-600">
-                                            <span class="text-sm text-slate-700">
-                                                📦 Semua jadi titipan + jadikan {{ (int) $dropBaru }} mika kebiasaan baru
-                                            </span>
-                                        </label>
-                                    </div>
+                                    <ul class="text-xs text-red-700 space-y-0.5 list-disc list-inside">
+                                        <li>Mau titip segini <b>seterusnya</b>? Centang <b>Ubah jatah</b> di bawah.</li>
+                                        <li>Beli <b>ekstra tunai</b> hari ini? Turunkan titip ke {{ (int) $selectedKiosk->default_qty_mika }} lalu centang <b>Tambah cash sekali</b>.</li>
+                                        <li>Salah ketik? Betulkan jumlah titipan.</li>
+                                    </ul>
                                 </div>
                             @endif
                         </div>
+
+                        {{-- JALUR A (ubah jatah permanen, dua arah) & JALUR B (cash sekali).
+                             Mutually-exclusive: centang salah satu mematikan yang lain. --}}
+                        @unless($isCashOnly)
+                            <div class="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                                {{-- JALUR A --}}
+                                <div>
+                                    <label class="flex items-start gap-3 cursor-pointer">
+                                        <input type="checkbox" wire:model.live="ubahJatah" @disabled($pakaiCashExtra) class="mt-0.5 rounded text-amber-600 disabled:opacity-40">
+                                        <span class="text-sm font-medium text-slate-700">
+                                            Ubah jatah permanen kios ini
+                                            <br><span class="text-xs font-normal text-slate-400">Naik atau turun. Titipan hari ini ikut jatah baru; berlaku seterusnya.</span>
+                                        </span>
+                                    </label>
+                                    @if($ubahJatah)
+                                        <div class="mt-2 pl-8">
+                                            <label class="text-xs text-slate-500">Jatah baru (mika)</label>
+                                            <input type="number" onfocus="this.select()" wire:model.live="jatahBaru" min="1" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
+                                            <p class="text-xs text-amber-600 mt-1">Titip hari ini otomatis {{ (int) $jatahBaru ?: '?' }} mika (boleh diubah manual kalau stok kurang). Jatah seterusnya: {{ (int) $jatahBaru ?: '?' }} mika.</p>
+                                            <p class="text-xs text-slate-500 mt-1">ℹ️ Tagihan hari ini tetap dari titipan LAMA — tak terpengaruh jatah baru.</p>
+                                        </div>
+                                    @endif
+                                </div>
+
+                                {{-- JALUR B --}}
+                                <div class="border-t border-slate-100 pt-3">
+                                    <label class="flex items-start gap-3 cursor-pointer">
+                                        <input type="checkbox" wire:model.live="pakaiCashExtra" @disabled($ubahJatah) class="mt-0.5 rounded text-emerald-600 disabled:opacity-40">
+                                        <span class="text-sm font-medium text-slate-700">
+                                            Tambah cash sekali (jatah tetap)
+                                            <br><span class="text-xs font-normal text-slate-400">Mika ekstra dibayar tunai sekarang. Jatah kios TIDAK berubah.</span>
+                                        </span>
+                                    </label>
+                                    @if($pakaiCashExtra)
+                                        <div class="mt-2 pl-8">
+                                            <label class="text-xs text-slate-500">Jumlah cash ekstra (mika)</label>
+                                            <input type="number" onfocus="this.select()" wire:model.live="cashExtra" min="1" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
+                                            @if((int) $cashExtra > 0)
+                                                <p class="text-xs text-emerald-700 mt-1 font-semibold">
+                                                    Cash sekarang: {{ (int) $cashExtra }} mika = Rp {{ number_format((int) $cashExtra * 15 * 800, 0, ',', '.') }}.
+                                                    Jatah tetap {{ (int) ($selectedKiosk->default_qty_mika ?: 0) }} mika.
+                                                </p>
+                                            @endif
+                                        </div>
+                                    @endif
+                                </div>
+                            </div>
+                        @endunless
                     @endif
 
                     {{-- CEK SAJA: alasan + sisa biji --}}
@@ -886,13 +930,13 @@
 
                             <div>
                                 <label class="block text-sm font-bold text-slate-700 mb-2">Sisa Dodol di Kios (Biji)</label>
-                                <input type="number" wire:model="sisaBiji" class="w-full rounded-xl border-slate-300 text-center text-xl font-bold py-3" min="0" placeholder="0">
+                                <input type="number" onfocus="this.select()" wire:model="sisaBiji" class="w-full rounded-xl border-slate-300 text-center text-xl font-bold py-3" min="0" placeholder="0">
                                 <p class="text-xs text-slate-400 mt-1">Isi 0 kalau tidak tahu atau kios tutup</p>
                             </div>
                         </div>
                     @endif
 
-                    {{-- OPSI KHUSUS (collapsed): Dodol Sisa redistribusi + turunkan kebiasaan --}}
+                    {{-- OPSI KHUSUS (collapsed): Dodol Sisa redistribusi --}}
                     @if(in_array($chosenAction, ['tagih_titip', 'titip'], true))
                         <div x-data="{ openOpsi: false }" class="border border-slate-200 rounded-xl">
                             <button type="button" @click="openOpsi = !openOpsi"
@@ -913,32 +957,11 @@
                                         @if($adaBsRedistribusi)
                                             <div class="mt-2">
                                                 <label class="text-xs text-slate-500">Jumlah mika Dodol Sisa yang ikut (mika)</label>
-                                                <input type="number" wire:model.live="qtyBsMika" min="1" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
+                                                <input type="number" onfocus="this.select()" wire:model.live="qtyBsMika" min="1" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
                                                 <p class="text-xs text-slate-400 mt-1">
                                                     Total titip ke kios ini: {{ (int) $dropBaru + (int) $qtyBsMika }} mika
                                                     ({{ (int) $dropBaru }} baru + {{ (int) $qtyBsMika }} Dodol Sisa)
                                                 </p>
-                                            </div>
-                                        @endif
-                                    </div>
-                                @endif
-
-                                {{-- SKENARIO 4: turunkan default qty — hanya saat tagih --}}
-                                @if($chosenAction === 'tagih_titip' && (int) $selectedKiosk->default_qty_mika > 1)
-                                    <div>
-                                        <label class="flex items-center gap-3 cursor-pointer p-3 rounded-xl border border-slate-200">
-                                            <input type="checkbox" wire:model.live="turunkanDefault" class="rounded text-amber-600">
-                                            <span class="text-sm font-medium text-slate-700">Kurangi jatah titipan kios ini<br><span class="text-xs font-normal text-slate-400">(jatah = jumlah mika yang biasa dititip ke kios ini ke depannya, bukan tagihan sekarang)</span></span>
-                                        </label>
-                                        @if($turunkanDefault)
-                                            <div class="mt-2">
-                                                <label class="text-xs text-slate-500">Jatah baru (mika)</label>
-                                                <input type="number" wire:model="qtyDefaultBaru" min="1" max="{{ (int) $selectedKiosk->default_qty_mika - 1 }}" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
-                                                <p class="text-xs text-amber-600 mt-1">Titipan berikutnya: {{ $qtyDefaultBaru ?: '?' }} mika</p>
-                                                <p class="text-xs text-slate-500 mt-1">ℹ️ Berlaku untuk titipan BERIKUTNYA, bukan titip sekarang</p>
-                                                @if($dropBaru > 0 && $qtyDefaultBaru > 0 && (int) $dropBaru > (int) $qtyDefaultBaru)
-                                                    <p class="text-xs text-red-600 font-semibold mt-1.5">⚠️ Perhatian: Titip sekarang ({{ $dropBaru }} mika) lebih besar dari jatah baru ({{ $qtyDefaultBaru }} mika).</p>
-                                                @endif
                                             </div>
                                         @endif
                                     </div>

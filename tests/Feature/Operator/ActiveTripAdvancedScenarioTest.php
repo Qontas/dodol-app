@@ -62,16 +62,20 @@ class ActiveTripAdvancedScenarioTest extends TestCase
         $this->assertEquals(30, $visit->sisa_biji);
     }
 
-    /** Skenario 4: settle + turunkanDefault menurunkan default_qty_mika kios. */
-    public function test_settle_with_turunkan_default_lowers_default_qty()
+    /**
+     * JALUR A (turun): ubah jatah 8→3 saat tagih. Default kios turun ke 3 DAN
+     * titipan hari ini otomatis 3 mika (jatah baru berlaku saat itu juga). Tagihan
+     * tetap dari titipan LAMA (4 mika = 60 biji x 800 = 48.000).
+     */
+    public function test_ubah_jatah_turun_lowers_default_and_drops_new_qty()
     {
         $kiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id,
             'default_qty_mika' => 8,
         ]);
 
-        // Pending delivery 4 mika = 60 biji.
-        Delivery::factory()->create([
+        // Titipan lama 4 mika = 60 biji.
+        $pending = Delivery::factory()->create([
             'kiosk_id' => $kiosk->id,
             'trip_id' => $this->trip->id,
             'qty_delivered' => 4,
@@ -82,27 +86,42 @@ class ActiveTripAdvancedScenarioTest extends TestCase
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('returnFresh', 0)
-            ->set('returnExpired', 0)
-            ->set('uangDiterima', 48000) // 60 biji x 800
-            ->set('turunkanDefault', true)
-            ->set('qtyDefaultBaru', 3)
+            ->set('ubahJatah', true)   // auto-set dropBaru = jatahBaru
+            ->set('jatahBaru', 3)
+            ->assertSet('dropBaru', 3) // titipan hari ini ikut jatah baru
+            ->set('uangDiterima', 48000)
             ->call('hitungTagihan')
             ->call('saveVisit')
             ->assertHasNoErrors();
 
+        // Default turun ke 3 (permanen, seterusnya).
         $this->assertEquals(3, $kiosk->fresh()->default_qty_mika);
+
+        // Titipan hari ini = konsinyasi 3 mika (bukan titipan lama qty 4).
+        $this->assertDatabaseHas('deliveries', [
+            'kiosk_id' => $kiosk->id,
+            'delivery_type' => 'consignment',
+            'qty_delivered' => 3,
+        ]);
+
+        // Tagihan hari ini dari titipan LAMA (4 mika) = 48.000, tak terpengaruh jatah baru.
+        $settlement = Settlement::where('delivery_id', $pending->id)->firstOrFail();
+        $this->assertEquals(48000, $settlement->amount_due);
     }
 
-    /** Skenario 4 guard: default baru >= default sekarang tidak menurunkan apa pun. */
-    public function test_turunkan_default_ignored_when_not_smaller()
+    /**
+     * JALUR A (naik): ubah jatah 5→9 (dua arah — kebalikan turun). Default naik ke 9
+     * DAN titipan hari ini otomatis 9 mika. Tidak diblokir walau 9 > jatah lama 5,
+     * karena "Ubah jatah" dicentang eksplisit.
+     */
+    public function test_ubah_jatah_naik_raises_default_and_drops_new_qty()
     {
         $kiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id,
             'default_qty_mika' => 5,
         ]);
 
-        Delivery::factory()->create([
+        $pending = Delivery::factory()->create([
             'kiosk_id' => $kiosk->id,
             'trip_id' => $this->trip->id,
             'qty_delivered' => 4,
@@ -113,14 +132,24 @@ class ActiveTripAdvancedScenarioTest extends TestCase
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
+            ->set('ubahJatah', true)
+            ->set('jatahBaru', 9)
+            ->assertSet('dropBaru', 9)
             ->set('uangDiterima', 48000)
-            ->set('turunkanDefault', true)
-            ->set('qtyDefaultBaru', 9) // >= 5, harus diabaikan
             ->call('hitungTagihan')
             ->call('saveVisit')
             ->assertHasNoErrors();
 
-        $this->assertEquals(5, $kiosk->fresh()->default_qty_mika);
+        $this->assertEquals(9, $kiosk->fresh()->default_qty_mika);
+
+        $this->assertDatabaseHas('deliveries', [
+            'kiosk_id' => $kiosk->id,
+            'delivery_type' => 'consignment',
+            'qty_delivered' => 9,
+        ]);
+
+        // Tagihan tetap dari titipan lama 4 mika = 48.000.
+        $this->assertEquals(48000, Settlement::where('delivery_id', $pending->id)->value('amount_due'));
     }
 
     /** Prediksi habis: tanpa historis cukup (<3 settlement) -> "Data belum cukup". */
