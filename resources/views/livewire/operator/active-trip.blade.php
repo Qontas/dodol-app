@@ -685,20 +685,26 @@
                             </div>
                         @endif
 
-                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Mau ngapain di kios ini?</p>
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Mau ngapain di kedai ini?</p>
                         <div class="space-y-3">
+                            {{-- AKSI 1 — siklus normal --}}
                             <button type="button" wire:click="chooseAction('tagih_titip')"
                                 class="w-full text-left p-4 rounded-xl bg-amber-600 text-white shadow-sm active:bg-amber-700">
-                                <span class="font-bold text-base block">💰 Tagih + Titip Baru</span>
-                                <span class="text-xs text-amber-100 mt-0.5 block">Ambil bayaran titipan lama, lalu titip dodol baru (paling umum)</span>
+                                <span class="font-bold text-base block">💰 Tagih + Titip Ulang</span>
+                                <span class="text-xs text-amber-100 mt-0.5 block">Tagih yang laku (jatah dikurangi BS), lalu titip lagi sejumlah jatah. Paling umum.</span>
                             </button>
-                            {{-- "Tagih Saja" & "Tunda Bayar" DICABUT (Tahap 1 & 2):
-                                 - Bayaran tanpa titip → "Hentikan Kedai".
-                                 - Tunda bayar → "Cek Sisa" pilih alasan "belum bisa bayar". --}}
+                            {{-- AKSI 2 — naruh cash ekstra, tidak nagih --}}
+                            <button type="button" wire:click="chooseAction('titip_cash')"
+                                class="w-full text-left p-4 rounded-xl bg-white border-2 border-emerald-300 active:bg-emerald-50">
+                                <span class="font-bold text-base text-emerald-700 block">💵 Titip Cash</span>
+                                <span class="text-xs text-slate-500 mt-0.5 block">Naruh dodol ekstra dibayar tunai. Titipan lama &amp; sisanya tetap, ditagih nanti pas siklus normal.</span>
+                            </button>
+                            {{-- AKSI 3 — lewati, cuma catat sisa (dulu "Cek Sisa"; "Tagih Saja"/"Tunda
+                                 Bayar" dicabut → Hentikan Kedai / alasan "belum bisa bayar"). --}}
                             <button type="button" wire:click="chooseAction('cek')"
                                 class="w-full text-left p-4 rounded-xl bg-white border-2 border-slate-200 active:bg-slate-50">
-                                <span class="font-bold text-base text-slate-900 block">👀 Cek Sisa (tanpa tagih)</span>
-                                <span class="text-xs text-slate-500 mt-0.5 block">Catat sisa &amp; kondisi kios (termasuk pemilik belum bisa bayar). Titipan TETAP berjalan — tidak ditagih, tidak dilunasi.</span>
+                                <span class="font-bold text-base text-slate-900 block">👀 Lewati / Belum Habis</span>
+                                <span class="text-xs text-slate-500 mt-0.5 block">Kedai belum habis, belum mau ditambah. Cuma catat sisa, lanjut. Titipan TETAP berjalan (termasuk pemilik belum bisa bayar).</span>
                             </button>
                         </div>
 
@@ -708,17 +714,25 @@
                             ⛔ Hentikan Kedai Ini
                         </button>
                     @else
-                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Mau ngapain di kios ini?</p>
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Mau ngapain di kedai ini?</p>
                         <div class="space-y-3">
+                            {{-- AKSI 1 — titip pertama (belum ada titipan) --}}
                             <button type="button" wire:click="chooseAction('titip')"
                                 class="w-full text-left p-4 rounded-xl bg-amber-600 text-white shadow-sm active:bg-amber-700">
                                 <span class="font-bold text-base block">📦 Titip Baru</span>
-                                <span class="text-xs text-amber-100 mt-0.5 block">Titip dodol ke kios ini (tidak ada tunggakan)</span>
+                                <span class="text-xs text-amber-100 mt-0.5 block">Titip dodol ke kedai ini (belum ada titipan berjalan).</span>
                             </button>
+                            {{-- AKSI 2 — naruh cash ekstra dibayar tunai --}}
+                            <button type="button" wire:click="chooseAction('titip_cash')"
+                                class="w-full text-left p-4 rounded-xl bg-white border-2 border-emerald-300 active:bg-emerald-50">
+                                <span class="font-bold text-base text-emerald-700 block">💵 Titip Cash</span>
+                                <span class="text-xs text-slate-500 mt-0.5 block">Naruh dodol ekstra dibayar tunai sekarang. Jatah kedai tidak berubah.</span>
+                            </button>
+                            {{-- AKSI 3 — lewati / cuma catat --}}
                             <button type="button" wire:click="chooseAction('cek')"
                                 class="w-full text-left p-4 rounded-xl bg-white border-2 border-slate-200 active:bg-slate-50">
-                                <span class="font-bold text-base text-slate-900 block">👀 Cek Saja</span>
-                                <span class="text-xs text-slate-500 mt-0.5 block">Catat kunjungan tanpa transaksi (kios tutup, dodol masih ada, dll)</span>
+                                <span class="font-bold text-base text-slate-900 block">👀 Lewati / Belum Habis</span>
+                                <span class="text-xs text-slate-500 mt-0.5 block">Catat kunjungan tanpa transaksi (kedai tutup, dodol masih ada, dll).</span>
                             </button>
                         </div>
 
@@ -729,15 +743,25 @@
                         </button>
                     @endif
                 @else
-                    {{-- ============ LAYAR 2: FORM SESUAI AKSI ============ --}}
+                    {{-- ============ LAYAR 2: FORM SESUAI AKSI (3-AKSI) ============ --}}
+                    @php
+                        // Jatah kios & status blokir 2-langkah (dipakai UI + footer). Blokir
+                        // hanya untuk AKSI 1 (titip konsinyasi) saat jatah sudah ada & titip
+                        // != jatah tanpa centang "Ubah jatah". Kios baru (jatah<1) bebas.
+                        $jatah = (int) ($selectedKiosk->default_qty_mika ?? 0);
+                        $blokirTitip = ! $isCashOnly
+                            && in_array($chosenAction, ['tagih_titip', 'titip'], true)
+                            && $jatah >= 1 && ! $ubahJatah && (int) $dropBaru !== $jatah;
+                    @endphp
 
                     @unless($isCashOnly)
                         <div class="flex items-center justify-between">
                             <span class="text-sm font-bold text-amber-700">
                                 @switch($chosenAction)
-                                    @case('tagih_titip') 💰 Tagih + Titip Baru @break
+                                    @case('tagih_titip') 💰 Tagih + Titip Ulang @break
                                     @case('titip') 📦 Titip Baru @break
-                                    @case('cek') 👀 Cek Saja @break
+                                    @case('titip_cash') 💵 Titip Cash @break
+                                    @case('cek') 👀 Lewati / Belum Habis @break
                                 @endswitch
                             </span>
                             <button type="button" wire:click="backToActionPicker"
@@ -745,9 +769,19 @@
                                 ← Ganti Aksi
                             </button>
                         </div>
+
+                        {{-- Catatan aksi (abu-abu kecil, teks owner) --}}
+                        <p class="text-xs text-slate-400 -mt-3">
+                            @switch($chosenAction)
+                                @case('tagih_titip') Siklus normal. Tagih yang laku (jatah dikurangi BS), titip lagi sejumlah jatah. @break
+                                @case('titip') Titip dodol pertama ke kedai ini. @break
+                                @case('titip_cash') Naruh dodol ekstra dibayar tunai. Titipan lama &amp; sisanya tetap, ditagih nanti pas siklus normal. @break
+                                @case('cek') Kedai belum habis, belum mau ditambah. Cuma catat sisa, lanjut. @break
+                            @endswitch
+                        </p>
                     @endunless
 
-                    {{-- AREA TAGIHAN (tagih / tagih+titip) --}}
+                    {{-- AREA TAGIHAN (AKSI 1: tagih + titip ulang) --}}
                     @if($chosenAction === 'tagih_titip' && $pendingDelivery)
                         <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
                             <div class="flex justify-between items-center mb-4">
@@ -761,14 +795,14 @@
                                     <input type="number" onfocus="this.select()" wire:model.live="returnFresh" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold" min="0">
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-medium text-slate-700 mb-1">Dodol Sisa/Basi (Biji)<br><span class="text-[10px] font-normal text-slate-400">(dodol rusak/basi yang diretur)</span></label>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1">Barang Sisa / BS (Biji)<br><span class="text-[10px] font-normal text-slate-400">(dodol rusak/basi yang diretur)</span></label>
                                     <input type="number" onfocus="this.select()" wire:model.live="returnExpired" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold text-red-600" min="0">
                                 </div>
                             </div>
 
                             <div class="border-t border-amber-200 pt-3">
                                 <div class="flex justify-between items-center text-sm mb-1">
-                                    <span class="text-slate-600">Terjual:</span>
+                                    <span class="text-slate-600">Laku (Terjual):</span>
                                     <span class="font-bold text-slate-900">{{ $terjual }} Biji</span>
                                 </div>
                                 <div class="flex justify-between items-center text-sm">
@@ -800,25 +834,26 @@
                         </div>
                     @endif
 
-                    {{-- AREA TITIP BARU (titip / tagih+titip / cash) --}}
+                    {{-- AREA TITIP ULANG / TITIP BARU (AKSI 1) + penjualan cash-only.
+                         SATU field jumlah — tidak ada lagi field kedua yang saling ngintip. --}}
                     @if(in_array($chosenAction, ['tagih_titip', 'titip', 'cash'], true))
                         <div class="bg-white border border-slate-200 rounded-xl p-4">
                             <label class="block text-sm font-bold text-slate-900 mb-2">
-                                {{ $isCashOnly ? 'Jumlah Jual Cash (Mika)' : 'Titip Hari Ini (Mika)' }}
+                                @if($isCashOnly) Jumlah Jual Cash (Mika)
+                                @elseif($chosenAction === 'tagih_titip') Titip Ulang (Mika)
+                                @else Titip Baru (Mika)
+                                @endif
                             </label>
                             <div class="flex items-center gap-3">
                                 <button type="button" wire:click="decrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">-</button>
 
-                                <input type="number" onfocus="this.select()" id="dropBaru" wire:model.live.debounce.500ms="dropBaru" class="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-2xl font-bold" min="0">
+                                <input type="number" onfocus="this.select()" id="dropBaru" wire:model.live.debounce.500ms="dropBaru" class="flex-1 rounded-lg border shadow-sm text-center text-2xl font-bold {{ $blokirTitip ? 'border-red-400 focus:border-red-500 focus:ring-red-500 text-red-600' : 'border-slate-300 focus:border-amber-500 focus:ring-amber-500' }}" min="0">
 
                                 <button type="button" wire:click="incrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
                             </div>
 
-                            @if(!empty($selectedKiosk->default_qty_mika) && !$isCashOnly)
-                                <p class="mt-2 text-xs text-slate-400">
-                                    Jatah biasa kios ini {{ (int) $selectedKiosk->default_qty_mika }} mika
-                                    @if($ubahJatah)· jatah baru {{ (int) $jatahBaru ?: '?' }} mika @endif
-                                </p>
+                            @if(!$isCashOnly && $jatah >= 1)
+                                <p class="mt-2 text-xs text-slate-400">Jatah biasa kedai ini {{ $jatah }} mika.</p>
                             @endif
 
                             @if($isCashOnly)
@@ -826,71 +861,81 @@
                                 @if((int) $dropBaru > 0)
                                     <p class="mt-1 text-sm font-bold text-emerald-700">Total: Rp {{ number_format((int) $dropBaru * 15 * 800, 0, ',', '.') }}</p>
                                 @endif
-                            @elseif(!empty($selectedKiosk->default_qty_mika) && (int) $dropBaru > (int) $selectedKiosk->default_qty_mika && ! $ubahJatah)
-                                {{-- GUARD: titip konsinyasi > jatah tanpa "Ubah jatah" → arahkan ke solusi. --}}
-                                <div class="mt-3 rounded-xl border border-red-200 bg-red-50 p-3">
+                            @elseif($blokirTitip)
+                                {{-- BLOKIR 2-LANGKAH: titip != jatah tanpa "Ubah jatah" → tolak + arahkan.
+                                     Server tetap menolak walau tombol diakali (persistVisitFromState). --}}
+                                <div class="mt-3 rounded-xl border-2 border-red-300 bg-red-50 p-3">
                                     <p class="text-sm font-bold text-red-800 mb-1">
-                                        Titip {{ (int) $dropBaru }} mika melebihi jatah biasa ({{ (int) $selectedKiosk->default_qty_mika }} mika).
+                                        🚫 Titip harus sama dengan jatah ({{ $jatah }}).
                                     </p>
                                     <ul class="text-xs text-red-700 space-y-0.5 list-disc list-inside">
-                                        <li>Mau titip segini <b>seterusnya</b>? Centang <b>Ubah jatah</b> di bawah.</li>
-                                        <li>Beli <b>ekstra tunai</b> hari ini? Turunkan titip ke {{ (int) $selectedKiosk->default_qty_mika }} lalu centang <b>Tambah cash sekali</b>.</li>
-                                        <li>Salah ketik? Betulkan jumlah titipan.</li>
+                                        <li>Mau ubah jatah kedai ini? Centang <b>Ubah jatah permanen</b> di bawah.</li>
+                                        <li>Mau naruh ekstra dibayar tunai? <b>← Ganti Aksi</b> → pilih <b>Titip Cash</b>.</li>
+                                        <li>Salah ketik? Betulkan jadi {{ $jatah }}.</li>
                                     </ul>
                                 </div>
                             @endif
                         </div>
 
-                        {{-- JALUR A (ubah jatah permanen, dua arah) & JALUR B (cash sekali).
-                             Mutually-exclusive: centang salah satu mematikan yang lain. --}}
+                        {{-- CHECKBOX UBAH JATAH satu-angka (AKSI 1). Angka titip di atas = jatah
+                             baru saat dicentang — TIDAK ada field kedua. --}}
                         @unless($isCashOnly)
-                            <div class="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-                                {{-- JALUR A --}}
-                                <div>
-                                    <label class="flex items-start gap-3 cursor-pointer">
-                                        <input type="checkbox" wire:model.live="ubahJatah" @disabled($pakaiCashExtra) class="mt-0.5 rounded text-amber-600 disabled:opacity-40">
-                                        <span class="text-sm font-medium text-slate-700">
-                                            Ubah jatah permanen kios ini
-                                            <br><span class="text-xs font-normal text-slate-400">Naik atau turun. Titipan hari ini ikut jatah baru; berlaku seterusnya.</span>
-                                        </span>
-                                    </label>
-                                    @if($ubahJatah)
-                                        <div class="mt-2 pl-8">
-                                            <label class="text-xs text-slate-500">Jatah baru (mika)</label>
-                                            <input type="number" onfocus="this.select()" wire:model.live="jatahBaru" min="1" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
-                                            <p class="text-xs text-amber-600 mt-1">Titip hari ini otomatis {{ (int) $jatahBaru ?: '?' }} mika (boleh diubah manual kalau stok kurang). Jatah seterusnya: {{ (int) $jatahBaru ?: '?' }} mika.</p>
-                                            <p class="text-xs text-slate-500 mt-1">ℹ️ Tagihan hari ini tetap dari titipan LAMA — tak terpengaruh jatah baru.</p>
-                                        </div>
-                                    @endif
-                                </div>
-
-                                {{-- JALUR B --}}
-                                <div class="border-t border-slate-100 pt-3">
-                                    <label class="flex items-start gap-3 cursor-pointer">
-                                        <input type="checkbox" wire:model.live="pakaiCashExtra" @disabled($ubahJatah) class="mt-0.5 rounded text-emerald-600 disabled:opacity-40">
-                                        <span class="text-sm font-medium text-slate-700">
-                                            Tambah cash sekali (jatah tetap)
-                                            <br><span class="text-xs font-normal text-slate-400">Mika ekstra dibayar tunai sekarang. Jatah kios TIDAK berubah.</span>
-                                        </span>
-                                    </label>
-                                    @if($pakaiCashExtra)
-                                        <div class="mt-2 pl-8">
-                                            <label class="text-xs text-slate-500">Jumlah cash ekstra (mika)</label>
-                                            <input type="number" onfocus="this.select()" wire:model.live="cashExtra" min="1" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
-                                            @if((int) $cashExtra > 0)
-                                                <p class="text-xs text-emerald-700 mt-1 font-semibold">
-                                                    Cash sekarang: {{ (int) $cashExtra }} mika = Rp {{ number_format((int) $cashExtra * 15 * 800, 0, ',', '.') }}.
-                                                    Jatah tetap {{ (int) ($selectedKiosk->default_qty_mika ?: 0) }} mika.
-                                                </p>
-                                            @endif
-                                        </div>
-                                    @endif
-                                </div>
+                            <div class="bg-white border border-slate-200 rounded-xl p-4">
+                                <label class="flex items-start gap-3 cursor-pointer">
+                                    <input type="checkbox" wire:model.live="ubahJatah" class="mt-0.5 rounded text-amber-600">
+                                    <span class="text-sm font-medium text-slate-700">
+                                        Ubah jatah permanen kedai ini (naik/turun)
+                                        <br><span class="text-xs font-normal text-slate-400">Ganti jatah kedai ini buat seterusnya. Angka titip di atas jadi jatah baru.</span>
+                                    </span>
+                                </label>
+                                @if($ubahJatah)
+                                    <div class="mt-2 pl-8 space-y-1">
+                                        <p class="text-xs text-amber-600">Jatah kedai ini jadi <b>{{ (int) $dropBaru ?: '?' }} mika</b> seterusnya.</p>
+                                        <p class="text-xs text-slate-500">ℹ️ Tagihan hari ini tetap dari titipan LAMA — tak terpengaruh jatah baru.</p>
+                                    </div>
+                                @endif
                             </div>
                         @endunless
                     @endif
 
-                    {{-- CEK SAJA: alasan + sisa biji --}}
+                    {{-- AKSI 2 — TITIP CASH: naruh ekstra dibayar tunai, TIDAK nagih, TIDAK urus BS. --}}
+                    @if($chosenAction === 'titip_cash')
+                        @if($pendingDelivery)
+                            <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                                ℹ️ Titipan lama <b>{{ $pendingDelivery->qty_delivered }} mika</b> &amp; sisanya <b>TIDAK disentuh</b> — ditagih nanti pas siklus normal.
+                            </div>
+                        @endif
+                        <div class="bg-white border border-slate-200 rounded-xl p-4">
+                            <label class="block text-sm font-bold text-slate-900 mb-2">Naruh Cash (Mika)</label>
+                            <div class="flex items-center gap-3">
+                                <button type="button" wire:click="decrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">-</button>
+                                <input type="number" onfocus="this.select()" wire:model.live.debounce.500ms="dropBaru" class="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-center text-2xl font-bold" min="0">
+                                <button type="button" wire:click="incrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
+                            </div>
+                            @if((int) $dropBaru > 0)
+                                <div class="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm">
+                                    <p class="font-bold text-emerald-800">Bayar tunai: {{ (int) $dropBaru }} mika = Rp {{ number_format((int) $dropBaru * 15 * 800, 0, ',', '.') }}</p>
+                                    <p class="text-xs text-emerald-700 mt-0.5">Jatah kedai TETAP {{ $jatah }} mika @unless($ubahJatah)(kecuali dicentang di bawah)@endunless.</p>
+                                </div>
+                            @endif
+                        </div>
+
+                        {{-- Ubah jatah opsional (satu-angka): mika cash di atas = jatah baru. --}}
+                        <div class="bg-white border border-slate-200 rounded-xl p-4">
+                            <label class="flex items-start gap-3 cursor-pointer">
+                                <input type="checkbox" wire:model.live="ubahJatah" class="mt-0.5 rounded text-amber-600">
+                                <span class="text-sm font-medium text-slate-700">
+                                    Ubah jatah permanen kedai ini (naik/turun)
+                                    <br><span class="text-xs font-normal text-slate-400">Ganti jatah kedai ini buat seterusnya. Mika cash di atas jadi jatah baru.</span>
+                                </span>
+                            </label>
+                            @if($ubahJatah)
+                                <p class="mt-2 pl-8 text-xs text-amber-600">Jatah kedai ini jadi <b>{{ (int) $dropBaru ?: '?' }} mika</b> seterusnya.</p>
+                            @endif
+                        </div>
+                    @endif
+
+                    {{-- AKSI 3 — LEWATI / BELUM HABIS: alasan + sisa biji + catatan. --}}
                     @if($chosenAction === 'cek')
                         <div class="space-y-4">
                             <div>
@@ -929,9 +974,39 @@
                             @endif
 
                             <div>
-                                <label class="block text-sm font-bold text-slate-700 mb-2">Sisa Dodol di Kios (Biji)</label>
+                                <label class="block text-sm font-bold text-slate-700 mb-2">Sisa Dodol di Kedai (Biji)</label>
                                 <input type="number" onfocus="this.select()" wire:model="sisaBiji" class="w-full rounded-xl border-slate-300 text-center text-xl font-bold py-3" min="0" placeholder="0">
-                                <p class="text-xs text-slate-400 mt-1">Isi 0 kalau tidak tahu atau kios tutup</p>
+                                <p class="text-xs text-slate-400 mt-1">Isi 0 kalau tidak tahu atau kedai tutup. Data ini dipakai buat perbaikan sistem ke depan.</p>
+                            </div>
+
+                            {{-- Catatan bebas (opsional) — disimpan ke KioskVisit.notes.
+                                 Disembunyikan saat "belum bisa bayar" (di atas sudah ada field
+                                 Janji Bayar yang pakai properti sama). --}}
+                            @unless($alasanCheck === 'belum_bisa_bayar')
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-2">Catatan (opsional)</label>
+                                    <input type="text" wire:model="janjiBayar" maxlength="120"
+                                           placeholder="cth: pemilik lagi sepi, minggu depan mampir lagi"
+                                           class="w-full rounded-xl border-slate-300 text-sm py-3 px-3 focus:border-amber-500 focus:ring-amber-500">
+                                </div>
+                            @endunless
+
+                            {{-- UBAH JATAH tanpa transaksi (AKSI 3) — SATU field mandiri
+                                 ($jatahBaru), karena tak ada angka "yang ditaruh" hari ini. --}}
+                            <div class="bg-white border border-slate-200 rounded-xl p-4">
+                                <label class="flex items-start gap-3 cursor-pointer">
+                                    <input type="checkbox" wire:model.live="ubahJatah" class="mt-0.5 rounded text-amber-600">
+                                    <span class="text-sm font-medium text-slate-700">
+                                        Ubah jatah permanen kedai ini (naik/turun)
+                                        <br><span class="text-xs font-normal text-slate-400">Ganti jatah kedai ini buat seterusnya. Tanpa transaksi hari ini.</span>
+                                    </span>
+                                </label>
+                                @if($ubahJatah)
+                                    <div class="mt-2 pl-8">
+                                        <label class="text-xs text-slate-500">Jatah baru (mika)</label>
+                                        <input type="number" onfocus="this.select()" wire:model.live="jatahBaru" min="1" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
+                                    </div>
+                                @endif
                             </div>
                         </div>
                     @endif
@@ -974,13 +1049,25 @@
 
             @if(!is_null($chosenAction))
             @php
-                // Aksi yang WAJIB ada titipan baru (drop > 0) sebelum bisa disimpan.
+                // Jatah + blokir 2-langkah (dihitung ulang di footer — variabel scope PHP
+                // @php di atas tidak bocor ke sini).
+                $jatahFooter = (int) ($selectedKiosk->default_qty_mika ?? 0);
+                $blokirFooter = ! $isCashOnly
+                    && in_array($chosenAction, ['tagih_titip', 'titip'], true)
+                    && $jatahFooter >= 1 && ! $ubahJatah && (int) $dropBaru !== $jatahFooter;
+
+                // Aksi yang WAJIB ada mika (drop/cash > 0) sebelum bisa disimpan.
                 // tagih_titip ikut: "ambil bayaran TANPA titip" = pintu belakang yang
-                // ditutup → arahkan ke "Hentikan Kedai". Tunda/Cek (drop=0) TIDAK kena.
-                $needDrop = in_array($chosenAction, ['titip', 'cash', 'tagih_titip'], true) && (int) $dropBaru < 1;
-                $saveLabel = ($chosenAction === 'tagih_titip' && (int) $dropBaru < 1)
-                    ? 'Isi jumlah titipan dulu'
-                    : ($needDrop ? 'Isi jumlah mika dulu' : 'Simpan Kunjungan');
+                // ditutup → arahkan ke "Hentikan Kedai". AKSI 3 (cek, drop=0) TIDAK kena.
+                $needDrop = in_array($chosenAction, ['titip', 'cash', 'tagih_titip', 'titip_cash'], true) && (int) $dropBaru < 1;
+                $saveDisabled = $needDrop || $blokirFooter;
+                $saveLabel = $blokirFooter
+                    ? 'Betulkan titip = jatah dulu'
+                    : (($chosenAction === 'tagih_titip' && (int) $dropBaru < 1)
+                        ? 'Isi jumlah titipan dulu'
+                        : ($needDrop
+                            ? ($chosenAction === 'titip_cash' ? 'Isi jumlah cash dulu' : 'Isi jumlah mika dulu')
+                            : 'Simpan Kunjungan'));
             @endphp
             <div class="sticky bottom-0 bg-white border-t border-slate-100 p-4 z-10">
                 @if($chosenAction === 'tagih_titip' && (int) $dropBaru < 1)
@@ -989,7 +1076,7 @@
                     </p>
                 @endif
                 <button type="button" wire:click="saveVisit" wire:loading.attr="disabled" wire:target="saveVisit"
-                    @disabled($needDrop)
+                    @disabled($saveDisabled)
                     class="w-full bg-slate-900 text-white font-bold text-lg py-3 rounded-xl shadow-sm active:bg-slate-800 disabled:opacity-60">
                     <span wire:loading.remove wire:target="saveVisit">{{ $saveLabel }}</span>
                     <span wire:loading wire:target="saveVisit">Menyimpan...</span>
