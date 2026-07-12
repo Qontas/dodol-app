@@ -54,6 +54,50 @@ class AuthenticationTest extends TestCase
         $this->assertGuest();
     }
 
+    /**
+     * Login gagal SELALU menampilkan pesan jelas (bukan blank / bukan key mentah
+     * "auth.failed"). Kredensial salah = password salah ATAU email tak terdaftar
+     * (termasuk email yang sudah diganti lalu dipakai email lama).
+     */
+    public function test_failed_login_shows_clear_indonesian_message(): void
+    {
+        $user = User::factory()->create();
+
+        // Password salah pada email yang ada.
+        $wrongPw = Volt::test('pages.auth.login')
+            ->set('form.email', $user->email)
+            ->set('form.password', 'salah-banget');
+        $wrongPw->call('login');
+        $this->assertStringContainsString('Email atau password salah', $wrongPw->errors()->first('form.email'));
+
+        // Email tak terdaftar (simulasi email lama setelah diganti).
+        $noEmail = Volt::test('pages.auth.login')
+            ->set('form.email', 'email-lama-sudah-diganti@example.com')
+            ->set('form.password', 'password');
+        $noEmail->call('login');
+        $this->assertStringContainsString('Email atau password salah', $noEmail->errors()->first('form.email'));
+
+        $this->assertGuest();
+    }
+
+    /**
+     * Akun nonaktif dengan kredensial BENAR: ditolak dengan pesan jelas,
+     * tidak dibiarkan masuk (cegah blank/redirect gagal di halaman ter-proteksi).
+     */
+    public function test_inactive_account_is_rejected_with_clear_message(): void
+    {
+        $user = User::factory()->create(['is_active' => false]);
+
+        $component = Volt::test('pages.auth.login')
+            ->set('form.email', $user->email)
+            ->set('form.password', 'password');
+
+        $component->call('login')->assertNoRedirect();
+
+        $this->assertStringContainsString('dinonaktifkan', $component->errors()->first('form.email'));
+        $this->assertGuest();
+    }
+
     public function test_users_can_logout(): void
     {
         $user = User::factory()->create();

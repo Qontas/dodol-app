@@ -32,11 +32,24 @@ class LoginForm extends Form
     {
         $this->ensureIsNotRateLimited();
 
+        // Kredensial salah = email TAK TERDAFTAR (termasuk email yang sudah diganti,
+        // mis. operator@ → madan@ lalu login pakai email lama) ATAU password salah.
+        // Sengaja satu pesan untuk keduanya (tak membocorkan email mana yang ada).
         if (! Auth::attempt($this->only(['email', 'password']), $this->remember)) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
-                'form.email' => trans('auth.failed'),
+                'form.email' => 'Email atau password salah.',
+            ]);
+        }
+
+        // Kredensial benar tapi akun dinonaktifkan → tolak dengan pesan jelas
+        // (jangan biarkan masuk lalu blank/redirect gagal di halaman ter-proteksi).
+        if (! Auth::user()->is_active) {
+            Auth::logout();
+
+            throw ValidationException::withMessages([
+                'form.email' => 'Akun Anda dinonaktifkan. Hubungi admin.',
             ]);
         }
 
@@ -57,10 +70,7 @@ class LoginForm extends Form
         $seconds = RateLimiter::availableIn($this->throttleKey());
 
         throw ValidationException::withMessages([
-            'form.email' => trans('auth.throttle', [
-                'seconds' => $seconds,
-                'minutes' => ceil($seconds / 60),
-            ]),
+            'form.email' => 'Terlalu banyak percobaan login. Coba lagi dalam '.$seconds.' detik.',
         ]);
     }
 
