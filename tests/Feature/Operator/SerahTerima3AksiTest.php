@@ -86,21 +86,31 @@ class SerahTerima3AksiTest extends TestCase
         $this->assertEquals(4, $kiosk->fresh()->default_qty_mika);
     }
 
-    /** AKSI 3 + ubah jatah (tanpa transaksi): jatah baru dari field mandiri jatahBaru. */
-    public function test_aksi_lewati_with_ubah_jatah_changes_default_only(): void
+    /**
+     * AKSI 3 (Lewati) TIDAK menawarkan ubah-jatah lagi (owner 12 Juli 2026) — hanya AKSI 1.
+     * UI: form Lewati tak menampilkan checkbox "Ubah jatah permanen". Logika: meski flag
+     * ubahJatah dipaksa true dari klien, jatah kedai TIDAK berubah (tak ada transaksi).
+     */
+    public function test_aksi_lewati_has_no_ubah_jatah(): void
     {
         $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'default_qty_mika' => 4]);
 
-        Livewire::test(ActiveTrip::class)
+        $component = Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->call('chooseAction', 'cek')
-            ->set('alasanCheck', 'dodol_masih_banyak')
+            ->call('chooseAction', 'cek');
+
+        // UI: tak ada checkbox ubah-jatah di layar Lewati.
+        $component->assertDontSee('Ubah jatah permanen');
+
+        // Logika: flag diakali → tetap tak mengubah jatah.
+        $component->set('alasanCheck', 'dodol_masih_banyak')
             ->set('ubahJatah', true)
-            ->set('jatahBaru', 6)
             ->call('saveVisit')
             ->assertHasNoErrors();
 
-        $this->assertEquals(6, $kiosk->fresh()->default_qty_mika);
+        $this->assertEquals(4, $kiosk->fresh()->default_qty_mika); // jatah TETAP
+        $visit = KioskVisit::where('kiosk_id', $kiosk->id)->firstOrFail();
+        $this->assertFalse((bool) $visit->changed_default);
         $this->assertSame(0, Delivery::where('kiosk_id', $kiosk->id)->count()); // tetap 0 transaksi
     }
 

@@ -898,7 +898,9 @@
                         @endunless
                     @endif
 
-                    {{-- AKSI 2 — TITIP CASH: naruh ekstra dibayar tunai, TIDAK nagih, TIDAK urus BS. --}}
+                    {{-- AKSI 2 — TITIP CASH: naruh ekstra dibayar tunai, BEBAS berapa saja
+                         (tak terikat jatah). TIDAK nagih titipan lama. Jatah TIDAK berubah
+                         (ubah-jatah tak relevan → tak ada). --}}
                     @if($chosenAction === 'titip_cash')
                         @if($pendingDelivery)
                             <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
@@ -912,25 +914,11 @@
                                 <input type="number" onfocus="this.select()" wire:model.live.debounce.500ms="dropBaru" class="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-center text-2xl font-bold" min="0">
                                 <button type="button" wire:click="incrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
                             </div>
+                            <p class="mt-2 text-xs text-slate-400">Bebas naruh berapa saja (tak terikat jatah). Jatah kedai TETAP {{ $jatah }} mika.</p>
                             @if((int) $dropBaru > 0)
                                 <div class="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm">
                                     <p class="font-bold text-emerald-800">Bayar tunai: {{ (int) $dropBaru }} mika = Rp {{ number_format((int) $dropBaru * 15 * 800, 0, ',', '.') }}</p>
-                                    <p class="text-xs text-emerald-700 mt-0.5">Jatah kedai TETAP {{ $jatah }} mika @unless($ubahJatah)(kecuali dicentang di bawah)@endunless.</p>
                                 </div>
-                            @endif
-                        </div>
-
-                        {{-- Ubah jatah opsional (satu-angka): mika cash di atas = jatah baru. --}}
-                        <div class="bg-white border border-slate-200 rounded-xl p-4">
-                            <label class="flex items-start gap-3 cursor-pointer">
-                                <input type="checkbox" wire:model.live="ubahJatah" class="mt-0.5 rounded text-amber-600">
-                                <span class="text-sm font-medium text-slate-700">
-                                    Ubah jatah permanen kedai ini (naik/turun)
-                                    <br><span class="text-xs font-normal text-slate-400">Ganti jatah kedai ini buat seterusnya. Mika cash di atas jadi jatah baru.</span>
-                                </span>
-                            </label>
-                            @if($ubahJatah)
-                                <p class="mt-2 pl-8 text-xs text-amber-600">Jatah kedai ini jadi <b>{{ (int) $dropBaru ?: '?' }} mika</b> seterusnya.</p>
                             @endif
                         </div>
                     @endif
@@ -991,23 +979,9 @@
                                 </div>
                             @endunless
 
-                            {{-- UBAH JATAH tanpa transaksi (AKSI 3) — SATU field mandiri
-                                 ($jatahBaru), karena tak ada angka "yang ditaruh" hari ini. --}}
-                            <div class="bg-white border border-slate-200 rounded-xl p-4">
-                                <label class="flex items-start gap-3 cursor-pointer">
-                                    <input type="checkbox" wire:model.live="ubahJatah" class="mt-0.5 rounded text-amber-600">
-                                    <span class="text-sm font-medium text-slate-700">
-                                        Ubah jatah permanen kedai ini (naik/turun)
-                                        <br><span class="text-xs font-normal text-slate-400">Ganti jatah kedai ini buat seterusnya. Tanpa transaksi hari ini.</span>
-                                    </span>
-                                </label>
-                                @if($ubahJatah)
-                                    <div class="mt-2 pl-8">
-                                        <label class="text-xs text-slate-500">Jatah baru (mika)</label>
-                                        <input type="number" onfocus="this.select()" wire:model.live="jatahBaru" min="1" class="w-full rounded-xl border-slate-300 text-center font-bold py-2 mt-1">
-                                    </div>
-                                @endif
-                            </div>
+                            {{-- AKSI 3 (Lewati) TIDAK punya ubah-jatah lagi (owner 12 Juli 2026):
+                                 lewati = tak menaruh apa pun → ubah-jatah tak relevan. Ubah jatah
+                                 kini HANYA di AKSI 1 (Tagih + Titip Ulang). --}}
                         </div>
                     @endif
 

@@ -228,8 +228,9 @@ class CorrectVisitTest extends TestCase
 
         $component = Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->set('ubahJatah', true) // JALUR A: ubah jatah permanen → tandai changed_default
-            ->set('jatahBaru', 5)
+            ->call('chooseAction', 'titip')
+            ->set('dropBaru', 5)
+            ->set('ubahJatah', true) // AKSI 1: ubah jatah permanen → tandai changed_default
             ->call('saveVisit')
             ->assertHasNoErrors();
 

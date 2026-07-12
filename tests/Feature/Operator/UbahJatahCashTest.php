@@ -97,8 +97,12 @@ class UbahJatahCashTest extends TestCase
         $this->assertSame('cash_sale', $visit->visit_action);
     }
 
-    /** AKSI 2 + ubah jatah: mika cash yang ditaruh menjadi jatah baru permanen. */
-    public function test_titip_cash_with_ubah_jatah_sets_new_default(): void
+    /**
+     * AKSI 2 TIDAK punya ubah-jatah lagi (owner 12 Juli 2026): Titip Cash bebas naruh
+     * berapa saja & jatah kedai TETAP — meski flag ubahJatah dipaksa true dari klien,
+     * jatah tidak berubah dan visit tidak menandai changed_default.
+     */
+    public function test_titip_cash_never_changes_jatah_even_if_flag_forced(): void
     {
         $kiosk = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id,
@@ -110,13 +114,13 @@ class UbahJatahCashTest extends TestCase
             ->call('openVisitModal', $kiosk->id)
             ->call('chooseAction', 'titip_cash')
             ->set('dropBaru', 6)
-            ->set('ubahJatah', true)
+            ->set('ubahJatah', true) // diakali dari klien → HARUS diabaikan di AKSI 2
             ->call('saveVisit')
             ->assertHasNoErrors();
 
-        $this->assertEquals(6, $kiosk->fresh()->default_qty_mika);
+        $this->assertEquals(4, $kiosk->fresh()->default_qty_mika); // jatah TETAP
         $visit = KioskVisit::where('kiosk_id', $kiosk->id)->firstOrFail();
-        $this->assertTrue((bool) $visit->changed_default);
+        $this->assertFalse((bool) $visit->changed_default);
     }
 
     /**
