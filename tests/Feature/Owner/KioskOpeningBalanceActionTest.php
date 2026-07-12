@@ -59,6 +59,38 @@ class KioskOpeningBalanceActionTest extends TestCase
         $this->assertSame(4, (int) $pending->qty_delivered);
     }
 
+    /**
+     * REGRESI 500: dulu trip migrasi memakai tanggal KEMARIN + number 1 → bentrok
+     * dengan trip operasional owner #1 kemarin (unique owner_id,trip_date,number) →
+     * UniqueConstraintViolation → 500 di produksi tiap owner sudah jalan trip kemarin.
+     * Sekarang trip migrasi pakai tanggal sentinel masa lampau, tak pernah bentrok.
+     */
+    public function test_set_saldo_awal_does_not_500_when_owner_has_real_trip_yesterday(): void
+    {
+        $operator = User::factory()->create([
+            'role' => 'operator', 'owner_id' => $this->owner->id, 'is_active' => true,
+        ]);
+
+        // Trip operasional NYATA kemarin, nomor 1 — kondisi produksi.
+        \App\Models\Trip::create([
+            'owner_id' => $this->owner->id,
+            'operator_id' => $operator->id,
+            'trip_date' => today()->subDay()->toDateString(),
+            'trip_number_of_day' => 1,
+            'started_at' => today()->subDay(),
+            'ended_at' => today()->subDay(),
+            'qty_carried_total' => 10,
+        ]);
+
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'default_qty_mika' => 4]);
+
+        Livewire::test(ListKiosks::class)
+            ->callTableAction('set_opening_balance', $kiosk, data: ['opening_balance_mika' => 4])
+            ->assertHasNoTableActionErrors();
+
+        $this->assertNotNull(Delivery::where('kiosk_id', $kiosk->id)->doesntHave('settlement')->first());
+    }
+
     public function test_action_hidden_when_kiosk_already_has_pending_titipan(): void
     {
         $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);

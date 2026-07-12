@@ -78,6 +78,17 @@ class OpeningBalance
     }
 
     /**
+     * Tanggal SENTINEL trip migrasi — sengaja di masa lampau jauh (tahun 2000) supaya
+     * TIDAK PERNAH bentrok dengan trip operasional owner. Trip operasional dikunci unik
+     * per (owner_id, trip_date, trip_number_of_day); dulu trip migrasi memakai
+     * today()->subDay() + number 1 → bentrok dengan trip #1 owner kemarin →
+     * UniqueConstraintViolation → 500 "Set Saldo Awal" tiap kali owner sudah jalan trip
+     * kemarin (hampir selalu di produksi). Tanggal sentinel ini bukan trip nyata, jadi
+     * aman dari bentrok dan tak mengotori laporan trip harian.
+     */
+    private const MIGRATION_TRIP_DATE = '2000-01-01';
+
+    /**
      * Trip migrasi (langsung ended) per owner — bukan trip operasional, tidak lewat
      * flow end-trip sehingga tidak menghasilkan komisi. Dipakai bersama semua saldo
      * awal owner ini (firstOrCreate → satu trip migrasi per owner).
@@ -102,10 +113,10 @@ class OpeningBalance
                 'ended_reason' => 'Migrasi saldo awal (kios lama)',
             ],
             [
-                'trip_date' => today()->subDay()->toDateString(),
+                'trip_date' => self::MIGRATION_TRIP_DATE,
                 'trip_number_of_day' => 1,
-                'started_at' => today()->subDay(),
-                'ended_at' => today()->subDay(),
+                'started_at' => self::MIGRATION_TRIP_DATE.' 00:00:00',
+                'ended_at' => self::MIGRATION_TRIP_DATE.' 00:00:00',
                 'qty_carried_total' => 0,
                 'notes' => 'Trip migrasi saldo awal — bukan trip operasional.',
             ],
