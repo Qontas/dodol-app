@@ -900,8 +900,16 @@
 
                     {{-- AKSI 2 — TITIP CASH: naruh ekstra dibayar tunai, BEBAS berapa saja
                          (tak terikat jatah). TIDAK nagih titipan lama. Jatah TIDAK berubah
-                         (ubah-jatah tak relevan → tak ada). --}}
+                         (ubah-jatah tak relevan → tak ada). BS (biji tak layak jual) dicatat:
+                         kedai bayar (biji ditaruh − BS), BS jadi kerugian owner. --}}
                     @if($chosenAction === 'titip_cash')
+                        @php
+                            $bijiDitaruhCash = (int) $dropBaru * 15;
+                            $bsCash = max(0, (int) $qtyBsCash);
+                            $bsLebihCash = $bsCash > $bijiDitaruhCash;
+                            $bijiBayarCash = max(0, $bijiDitaruhCash - $bsCash);
+                            $cashDiterima = $bijiBayarCash * 800;
+                        @endphp
                         @if($pendingDelivery)
                             <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
                                 ℹ️ Titipan lama <b>{{ $pendingDelivery->qty_delivered }} mika</b> &amp; sisanya <b>TIDAK disentuh</b> — ditagih nanti pas siklus normal.
@@ -915,12 +923,49 @@
                                 <button type="button" wire:click="incrementDrop" class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
                             </div>
                             <p class="mt-2 text-xs text-slate-400">Bebas naruh berapa saja (tak terikat jatah). Jatah kedai TETAP {{ $jatah }} mika.</p>
-                            @if((int) $dropBaru > 0)
-                                <div class="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm">
-                                    <p class="font-bold text-emerald-800">Bayar tunai: {{ (int) $dropBaru }} mika = Rp {{ number_format((int) $dropBaru * 15 * 800, 0, ',', '.') }}</p>
-                                </div>
+                        </div>
+
+                        {{-- BS (biji tak layak jual) — SAMA seperti AKSI 1 (satuan BIJI). Kedai
+                             TIDAK bayar BS; BS jadi kerugian owner (laporan kerugian yang sama). --}}
+                        <div class="bg-white border border-slate-200 rounded-xl p-4">
+                            <label class="block text-sm font-bold text-slate-900 mb-2">
+                                Barang Sisa / BS (Biji)
+                                <br><span class="text-[10px] font-normal text-slate-400">(biji rusak/tak layak jual — kedai tidak bayar, jadi kerugian owner)</span>
+                            </label>
+                            <input type="number" onfocus="this.select()" wire:model.live.debounce.500ms="qtyBsCash" min="0"
+                                   class="w-full rounded-lg border-slate-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-center text-lg font-bold text-red-600">
+                            @if($bsLebihCash)
+                                <p class="mt-2 text-xs font-semibold text-red-700">BS tidak boleh melebihi biji yang ditaruh ({{ $bijiDitaruhCash }}).</p>
                             @endif
                         </div>
+
+                        {{-- Ringkasan cash yang diterima (read-only) — operator tahu ambil uang
+                             berapa sebelum simpan. --}}
+                        @if((int) $dropBaru > 0)
+                            <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm space-y-1">
+                                <div class="flex justify-between">
+                                    <span class="text-slate-600">Biji ditaruh</span>
+                                    <span class="font-bold text-slate-900">{{ $bijiDitaruhCash }} biji</span>
+                                </div>
+                                @if($bsCash > 0)
+                                    <div class="flex justify-between">
+                                        <span class="text-slate-600">BS (kerugian owner)</span>
+                                        <span class="font-bold text-red-600">− {{ min($bsCash, $bijiDitaruhCash) }} biji</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-slate-600">Dibayar kedai</span>
+                                        <span class="font-bold text-slate-900">{{ $bijiBayarCash }} biji</span>
+                                    </div>
+                                @endif
+                                <div class="border-t border-emerald-200 pt-1 flex justify-between items-center">
+                                    <span class="font-semibold text-emerald-800">Cash Diterima</span>
+                                    <span class="text-lg font-bold text-emerald-800">Rp {{ number_format($cashDiterima, 0, ',', '.') }}</span>
+                                </div>
+                                <p class="text-[11px] text-emerald-700">
+                                    ({{ $bijiDitaruhCash }}@if($bsCash > 0) − {{ min($bsCash, $bijiDitaruhCash) }}@endif) biji × Rp 800. Jatah kedai TETAP {{ $jatah }} mika.
+                                </p>
+                            </div>
+                        @endif
                     @endif
 
                     {{-- AKSI 3 — LEWATI / BELUM HABIS: alasan + sisa biji + catatan. --}}
@@ -1034,14 +1079,18 @@
                 // tagih_titip ikut: "ambil bayaran TANPA titip" = pintu belakang yang
                 // ditutup → arahkan ke "Hentikan Kedai". AKSI 3 (cek, drop=0) TIDAK kena.
                 $needDrop = in_array($chosenAction, ['titip', 'cash', 'tagih_titip', 'titip_cash'], true) && (int) $dropBaru < 1;
-                $saveDisabled = $needDrop || $blokirFooter;
+                // AKSI 2: BS (biji) tak boleh melebihi biji yang ditaruh (dropBaru × 15).
+                $bsOverCash = $chosenAction === 'titip_cash' && (int) $qtyBsCash > (int) $dropBaru * 15;
+                $saveDisabled = $needDrop || $blokirFooter || $bsOverCash;
                 $saveLabel = $blokirFooter
                     ? 'Betulkan titip = jatah dulu'
-                    : (($chosenAction === 'tagih_titip' && (int) $dropBaru < 1)
-                        ? 'Isi jumlah titipan dulu'
-                        : ($needDrop
-                            ? ($chosenAction === 'titip_cash' ? 'Isi jumlah cash dulu' : 'Isi jumlah mika dulu')
-                            : 'Simpan Kunjungan'));
+                    : ($bsOverCash
+                        ? 'Betulkan BS dulu'
+                        : (($chosenAction === 'tagih_titip' && (int) $dropBaru < 1)
+                            ? 'Isi jumlah titipan dulu'
+                            : ($needDrop
+                                ? ($chosenAction === 'titip_cash' ? 'Isi jumlah cash dulu' : 'Isi jumlah mika dulu')
+                                : 'Simpan Kunjungan')));
             @endphp
             <div class="sticky bottom-0 bg-white border-t border-slate-100 p-4 z-10">
                 @if($chosenAction === 'tagih_titip' && (int) $dropBaru < 1)

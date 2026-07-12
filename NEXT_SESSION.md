@@ -1,6 +1,39 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 12 Juli 2026*
 
+## TIGA PERBAIKAN (12 Juli 2026, sesi terbaru) — SELESAI & PUSHED
+**320 PASS** (dari baseline 313; +7 test baru, 0 regresi). Tiga commit atomik terpisah.
+
+1. **BUG LOGIN GAGAL → HALAMAN PUTIH (FIXED, akar dikonfirmasi browser).** Login gagal
+   (password salah ATAU email tak terdaftar — termasuk email yang sudah diganti, mis.
+   operator@ → madan@ lalu login pakai email lama) me-render **BLANK PAGE PUTIH** tanpa
+   pesan. AKAR (direproduksi Playwright, bukan tebakan): halaman login adalah komponen
+   Livewire/Volt full-page yang view-nya me-render **seluruh dokumen `<!DOCTYPE html>`**
+   di bawah `layouts.blank` (cuma `{{ $slot }}`) → root komponen = `<html>`. Saat login
+   gagal, morph error-validasi Livewire mengosongkan `<body>` (JS error persis: *"Could
+   not find Livewire component in DOM tree"*, `body innerHTML len: 0`). KENA **SEMUA**
+   login gagal (bukan cuma email-diganti — itu cuma cara owner menemukannya). FIX: layout
+   baru `layouts/auth.blade.php` memegang doctype/head/body; view login jadi **satu root
+   `<div>`** → error tampil inline, tak pernah blank. Plus pesan Indonesia jelas
+   (`LoginForm`): kredensial salah → "Email atau password salah." (dulu `trans('auth.failed')`
+   = key mentah "auth.failed" karena tak ada lang file); akun nonaktif kredensial-benar →
+   logout + "Akun Anda dinonaktifkan. Hubungi admin." (dulu dibiarkan masuk). Bukti: 3/3
+   role login+redirect OK (driver.cjs), 2 kasus gagal → pesan tampil (repro-login-blank.cjs).
+2. **UBAH JATAH PERMANEN → HANYA AKSI 1.** Checkbox ubah-jatah DIHAPUS dari AKSI 2 (Titip
+   Cash) & AKSI 3 (Lewati) — UI + logika + state (`jatahBaru`, `applyJatahCek`,
+   `updatedUbahJatah` dibuang total; `changed_default=false` di Aksi 2/3). Alasan owner:
+   Titip Cash BEBAS naruh berapa saja (tak terikat jatah) & Lewati tak menaruh apa pun →
+   ubah-jatah tak relevan. AKSI 1 TETAP: ubah-jatah satu-angka + blokir 2-langkah jalan.
+3. **BS DI AKSI 2 (TITIP CASH).** Field "Barang Sisa / BS (Biji)" ditambah di Titip Cash
+   (satuan BIJI, seperti Aksi 1). RUMUS: `cash = (biji_ditaruh − biji_BS) × 800`. BS =
+   **kerugian owner** lewat mekanisme yang SAMA dgn Stop Tanpa Tagih (settlement
+   `is_writeoff=true` + `qty_returned_expired` → satu laporan kerugian owner, dihitung
+   `× HPP/mika`). qty_delivered cash_sale = mika DITARUH **penuh** → komisi (basis DROP,
+   `getTotalDropReal`) TIDAK terpengaruh BS. Titipan lama TIDAK di-settle; jatah TETAP.
+   CONTOH owner jadi test: jatah 4, naruh 3 mika (45 biji), BS 3 biji → cash Rp 33.600,
+   BS 3 biji kerugian (dashboard: 3 biji = 0,2 mika × 9.500 = Rp 1.900), jatah tetap 4,
+   titipan lama utuh, komisi = 3 mika. `TitipCashBsTest` (5 test) + guard BS > biji ditaruh.
+
 ## TRIGGER SENTENCE
 Bg, lanjut dodol-app. Live di Railway. **PENYEDERHANAAN FORM SERAH TERIMA JADI 3-AKSI SELESAI &
 PUSHED (12 Juli 2026)** — form kunjungan operator dirombak jadi 3 aksi tegas: **AKSI 1 "Tagih +

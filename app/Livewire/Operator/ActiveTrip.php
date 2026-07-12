@@ -92,6 +92,14 @@ class ActiveTrip extends Component
     // untuk AKSI 3 — DIBUANG total, tak ada sisa nyangkut.)
     public bool $ubahJatah = false;
 
+    // === AKSI 2 (Titip Cash) — BS per BIJI (owner 12 Juli 2026) ===
+    // Biji tak layak jual yang ditemukan saat cek. Kedai TIDAK bayar BS
+    // (cash = (biji_ditaruh − BS) × harga/biji); BS jadi KERUGIAN owner lewat
+    // mekanisme yang SAMA dgn Stop Tanpa Tagih (settlement is_writeoff +
+    // qty_returned_expired → 1 laporan kerugian). Komisi TIDAK terpengaruh BS
+    // (mika ditaruh dihitung penuh). Satuan BIJI, seperti field BS di AKSI 1.
+    public int $qtyBsCash = 0;
+
     // --- SKENARIO 5: check_only + alasan + sisa biji ---
     public string $alasanCheck = '';
     public int $sisaBiji = 0;
@@ -605,6 +613,7 @@ class ActiveTrip extends Component
         $this->tagihan = 0;
         $this->uangDiterima = 0;
         $this->ubahJatah = false;
+        $this->qtyBsCash = 0;
         $this->alasanCheck = '';
         $this->sisaBiji = 0;
         $this->janjiBayar = '';
@@ -1314,6 +1323,7 @@ class ActiveTrip extends Component
         $this->chosenAction = null;
         $this->extensionGranted = false;
         $this->ubahJatah = false;
+        $this->qtyBsCash = 0;
         $this->adaBsRedistribusi = false;
         $this->qtyBsMika = 0;
         $this->alasanCheck = '';
@@ -1468,12 +1478,29 @@ class ActiveTrip extends Component
         // ditagih nanti pas siklus normal). Jatah kios TIDAK berubah (ubah-jatah tak
         // relevan di sini — dihapus 12 Juli 2026). cash_sale langsung lunas → masuk
         // omset & komisi (getTotalDropReal).
+        //
+        // BS (biji tak layak jual) yang ditemukan saat cek, DICATAT per biji:
+        //   cash_dibayar = (biji_ditaruh − biji_BS) × HARGA_PER_BIJI  (kedai TAK bayar BS)
+        //   biji_BS      = KERUGIAN owner → settlement is_writeoff=true + qty_returned_expired
+        //                  (mekanisme SAMA dgn Stop Tanpa Tagih → satu laporan kerugian owner)
+        //   komisi       = mika DITARUH penuh: qty_delivered = $cashMika (TIDAK dikurangi BS),
+        //                  jadi getTotalDropReal tak terpengaruh BS.
         if ($this->chosenAction === 'titip_cash') {
             $cashMika = $drop;
             if ($cashMika <= 0) {
                 $this->addError('general', 'Jumlah mika cash harus lebih dari 0.');
                 return null;
             }
+
+            $totalBiji = $cashMika * self::BIJI_PER_MIKA;
+            $bsBiji = max(0, (int) $this->qtyBsCash);
+            if ($bsBiji > $totalBiji) {
+                $this->addError('general', 'BS (biji) tidak boleh melebihi biji yang ditaruh ('.$totalBiji.').');
+                return null;
+            }
+
+            $bijiBayar = $totalBiji - $bsBiji;              // biji yang dibayar kedai
+            $amountDue = $bijiBayar * self::HARGA_PER_BIJI; // cash yang diterima
 
             try {
                 $variant = $this->resolveActiveVariant();
@@ -1483,7 +1510,7 @@ class ActiveTrip extends Component
             }
 
             try {
-                DB::transaction(function () use ($cashMika, $variant, $correctionOfVisitId) {
+                DB::transaction(function () use ($cashMika, $bsBiji, $bijiBayar, $amountDue, $variant, $correctionOfVisitId) {
                     $delivery = Delivery::create([
                         'kiosk_id' => $this->selectedKiosk->id,
                         'trip_id' => $this->trip->id,
@@ -1491,22 +1518,20 @@ class ActiveTrip extends Component
                         'procurement_batch_id' => null,
                         'source_type' => 'new_procurement',
                         'delivery_type' => 'cash_sale',
-                        'qty_delivered' => $cashMika,
+                        'qty_delivered' => $cashMika, // PENUH — komisi tidak dikurangi BS
                         'unit_price' => $variant->sale_price_per_pack,
                         'cost_snapshot' => null,
                     ]);
 
-                    $totalBiji = $cashMika * self::BIJI_PER_MIKA;
-                    $amountDue = $totalBiji * self::HARGA_PER_BIJI;
-
                     Settlement::create([
                         'delivery_id' => $delivery->id,
                         'visit_date' => today(),
-                        'qty_sold' => $totalBiji,
+                        'qty_sold' => $bijiBayar,            // biji yang menghasilkan uang
                         'qty_returned_fresh' => 0,
-                        'qty_returned_expired' => 0,
+                        'qty_returned_expired' => $bsBiji,   // BS → basis laporan kerugian
                         'amount_due' => $amountDue,
-                        'amount_paid' => $amountDue, // langsung lunas
+                        'amount_paid' => $amountDue,         // langsung lunas (cash)
+                        'is_writeoff' => $bsBiji > 0,        // reuse mekanisme kerugian owner
                     ]);
 
                     // Jatah kios TIDAK berubah di AKSI 2 (changed_default=false).
@@ -1529,7 +1554,9 @@ class ActiveTrip extends Component
                 return null;
             }
 
-            return 'Titip cash berhasil disimpan.';
+            return $bsBiji > 0
+                ? 'Titip cash disimpan. Cash Rp '.number_format($amountDue, 0, ',', '.').' ('.$bsBiji.' biji BS jadi kerugian owner).'
+                : 'Titip cash berhasil disimpan.';
         }
 
         // === AKSI 1 (tagih_titip / titip) + AKSI 3 (cek) — UBAH JATAH satu-angka (AKSI 1) ===
