@@ -16,21 +16,33 @@ class CreateKiosk extends CreateRecord
     protected static string $resource = KioskResource::class;
 
     /**
-     * KIOS LAMA (migrasi): kalau toggle "kios lama" dinyalakan, buat titipan berjalan
-     * (1 delivery konsinyasi PENDING) via OpeningBalance — TANPA kolom flag. Field
-     * kios_lama & opening_balance_mika form-only (dehydrated false), jadi dibaca dari
-     * $this->data, bukan dari record. Kegagalan tak menggagalkan pembuatan kios.
+     * JENIS KEDAI saat create (radio "Jenis Kedai", form-only/dehydrated false):
+     *  - cash_only  → set is_cash_only=true (tak ada titipan/jatah).
+     *  - konsinyasi → kalau "titipan berjalan sekarang" >=1, buat titipan berjalan
+     *    (1 delivery konsinyasi PENDING) via OpeningBalance — TANPA kolom flag —
+     *    sehingga kios langsung bisa "Tagih + Titip Ulang" di kunjungan pertama.
+     * Kegagalan titipan tak menggagalkan pembuatan kios.
      */
     protected function afterCreate(): void
     {
         $data = $this->data;
 
-        if (empty($data['kios_lama']) || (int) ($data['opening_balance_mika'] ?? 0) < 1) {
+        $kiosk = $this->record;
+        if (! $kiosk instanceof Kiosk) {
             return;
         }
 
-        $kiosk = $this->record;
-        if (! $kiosk instanceof Kiosk) {
+        $jenis = $data['jenis_kedai'] ?? 'konsinyasi';
+
+        if ($jenis === 'cash_only') {
+            // Cash-only: tak ada titipan/jatah.
+            $kiosk->update(['is_cash_only' => true, 'default_qty_mika' => null]);
+
+            return;
+        }
+
+        // Konsinyasi: bikin titipan berjalan bila diisi.
+        if ((int) ($data['opening_balance_mika'] ?? 0) < 1) {
             return;
         }
 

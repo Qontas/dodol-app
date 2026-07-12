@@ -89,6 +89,14 @@ class KioskResource extends Resource
                             ->maxLength(255)
                             ->placeholder('Contoh: Pak Rizki, Bu Sri'),
 
+                        Forms\Components\Textarea::make('store_note')
+                            ->label('Catatan Kedai')
+                            ->rows(2)
+                            ->maxLength(500)
+                            ->placeholder('cth: Cash-only, biasa minta 5 mika / Suka-suka, kadang banyak kadang dikit')
+                            ->helperText('Karakteristik/kebiasaan kedai. Tampil MENONJOL ke operator saat buka kedai.')
+                            ->columnSpanFull(),
+
                         Forms\Components\TextInput::make('sort_order')
                             ->label('Urutan Rute (dalam Area)')
                             ->numeric()
@@ -108,31 +116,35 @@ class KioskResource extends Resource
                             ->helperText('Optional. Untuk hitung umur kios sebagai customer. Kosongkan untuk auto-set saat delivery pertama.'),
                     ]),
 
-                // KIOS LAMA (migrasi): kios yang di lapangan SUDAH punya titipan berjalan
-                // sebelum masuk sistem. Field ini form-only (dehydrated false) — TIDAK ada
-                // kolom flag; saat create, CreateKiosk::afterCreate() membuat 1 delivery
-                // konsinyasi PENDING (App\Support\OpeningBalance) sehingga kios langsung
-                // bisa "Tagih + Titip Ulang". Kios BARU: biarkan toggle mati.
-                Section::make('Titipan Berjalan (Kios Lama)')
-                    ->description('Isi HANYA kalau kios ini sudah punya titipan berjalan di lapangan sebelum diinput (migrasi). Kios akan langsung bisa ditagih di kunjungan pertama.')
+                // JENIS KEDAI saat input (owner input kedai KARENA sudah titip di sana).
+                // Konsinyasi → isi titipan berjalan sekarang → CreateKiosk::afterCreate()
+                // membuat 1 delivery konsinyasi PENDING (App\Support\OpeningBalance) supaya
+                // kios langsung bisa "Tagih + Titip Ulang" di kunjungan pertama (tanpa kolom
+                // flag; "kios lama" lebur ke sini). Cash-only → set is_cash_only, tak ada
+                // titipan/jatah. Field radio & opening balance form-only (dehydrated false).
+                Section::make('Jenis Kedai & Titipan Awal')
+                    ->description('Konsinyasi: dodol dititip, dibayar pas laku. Cash-only: beli putus tiap kali (tak ada titipan/jatah).')
                     ->visibleOn('create')
                     ->schema([
-                        Forms\Components\Toggle::make('kios_lama')
-                            ->label('Kios lama (sudah ada titipan berjalan)')
-                            ->helperText('Nyalakan kalau kios ini sudah menitip dodol sebelum masuk sistem. Kios BARU (belum ada titipan) — biarkan mati.')
-                            ->default(false)
+                        Forms\Components\Radio::make('jenis_kedai')
+                            ->label('Jenis Kedai')
+                            ->options([
+                                'konsinyasi' => '🏪 Kedai Konsinyasi (titipan)',
+                                'cash_only' => '💵 Kedai Cash-Only (beli putus)',
+                            ])
+                            ->default('konsinyasi')
+                            ->required()
                             ->live()
                             ->dehydrated(false),
 
                         Forms\Components\TextInput::make('opening_balance_mika')
                             ->label('Titipan berjalan sekarang (mika)')
                             ->numeric()
-                            ->minValue(1)
+                            ->minValue(0)
                             ->maxValue(1000)
                             ->suffix('mika')
-                            ->helperText('Berapa mika yang saat ini masih ada di kios (belum dibayar).')
-                            ->visible(fn (Get $get): bool => (bool) $get('kios_lama'))
-                            ->required(fn (Get $get): bool => (bool) $get('kios_lama'))
+                            ->helperText('Berapa mika yang SAAT INI ada di kios (belum dibayar). Isi kalau kios sudah punya titipan berjalan → langsung bisa ditagih kunjungan pertama. Isi 0 kalau belum ada.')
+                            ->visible(fn (Get $get): bool => ($get('jenis_kedai') ?? 'konsinyasi') === 'konsinyasi')
                             ->dehydrated(false),
                     ]),
 
@@ -334,9 +346,12 @@ class KioskResource extends Resource
                             ->default(true)
                             ->helperText('Nonaktifkan kalau kios ini stop/tutup'),
 
+                        // Saat CREATE, jenis kedai dipilih lewat radio "Jenis Kedai" di atas
+                        // (yang mengeset is_cash_only). Di EDIT, owner bisa ubah manual di sini.
                         Forms\Components\Toggle::make('is_cash_only')
-                            ->label('Kios Bayar Tunai Langsung')
+                            ->label('Kios Bayar Tunai Langsung (Cash-Only)')
                             ->default(false)
+                            ->visibleOn('edit')
                             ->helperText('Aktifkan kalau kios ini selalu bayar tunai saat itu juga, tidak menitip dulu.'),
                     ]),
 

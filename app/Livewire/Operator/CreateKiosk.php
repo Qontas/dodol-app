@@ -27,6 +27,19 @@ class CreateKiosk extends Component
     public ?string $mapsInput = null;
     public $foto = null;
 
+    // JENIS KEDAI saat input (owner input kedai KARENA sudah titip di sana; operator
+    // nemu kedai baru sambil naruh dodol). 'konsinyasi' = ada titipan berjalan + jatah;
+    // 'cash_only' = beli putus, tak ada titipan/jatah.
+    public string $jenisKedai = 'konsinyasi';
+
+    // KONSINYASI: berapa mika titipan berjalan SAAT INI (belum dibayar). >=1 → otomatis
+    // bikin titipan berjalan (OpeningBalance) supaya kedai LANGSUNG bisa "Tagih + Titip
+    // Ulang" di kunjungan pertama.
+    public int $titipanBerjalan = 0;
+
+    // CATATAN KEDAI (teks bebas) — karakteristik kedai, tampil menonjol ke operator.
+    public string $storeNote = '';
+
     // Tier 1 (koordinat/link panjang) = murni parsing, instan. Tier 2 (link
     // pendek maps.app.goo.gl/goo.gl) = best-effort via redirect resolve —
     // lihat GoogleMapsShortLinkResolver utk safeguard SSRF-nya.
@@ -87,6 +100,8 @@ class CreateKiosk extends Component
     {
         $ownerId = auth()->user()->owner_id;
 
+        $isKonsinyasi = $this->jenisKedai === 'konsinyasi';
+
         $validated = $this->validate([
             'namaKios' => 'required|string|max:255',
             'namaPemilik' => 'required|string|max:255',
@@ -99,7 +114,12 @@ class CreateKiosk extends Component
                     $q->where('owner_id', $ownerId);
                 }
             })],
-            'defaultQtyMika' => 'required|integer|min:1',
+            'jenisKedai' => 'required|in:konsinyasi,cash_only',
+            // Jatah hanya wajib untuk kedai KONSINYASI. Cash-only tak punya jatah.
+            'defaultQtyMika' => $isKonsinyasi ? 'required|integer|min:1' : 'nullable|integer|min:1',
+            // Titipan berjalan saat ini (konsinyasi) — 0 kalau kebetulan belum ada.
+            'titipanBerjalan' => 'nullable|integer|min:0|max:1000',
+            'storeNote' => 'nullable|string|max:500',
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
             'telepon' => 'nullable|string|max:20',
@@ -109,24 +129,35 @@ class CreateKiosk extends Component
             'namaPemilik.required' => 'Nama pemilik wajib diisi',
             'clusterId.required' => 'Pilih area dulu',
             'clusterId.exists' => 'Area tidak valid',
-            'defaultQtyMika.required' => 'Isi default jumlah mika',
+            'defaultQtyMika.required' => 'Isi jatah (mika biasa dititip)',
             'defaultQtyMika.min' => 'Minimal 1 mika',
         ]);
 
-        $kiosk = DB::transaction(function () {
-            return Kiosk::create([
+        $kiosk = DB::transaction(function () use ($isKonsinyasi) {
+            $kiosk = Kiosk::create([
                 'name' => $this->namaKios,
                 'owner_name' => $this->namaPemilik,
                 'phone' => $this->telepon ?: null,
                 'cluster_id' => $this->clusterId, // wajib & tervalidasi milik owner.
-                'default_qty_mika' => $this->defaultQtyMika,
+                // Jatah hanya untuk konsinyasi; cash-only tak punya jatah.
+                'default_qty_mika' => $isKonsinyasi ? $this->defaultQtyMika : null,
+                'is_cash_only' => ! $isKonsinyasi,
                 'latitude' => $this->latitude,
                 'longitude' => $this->longitude,
                 'is_active' => true,
                 // Kios dibuat operator di lapangan = titip pertama hari ini → kios baru.
                 'first_titip_date' => today(),
+                'store_note' => trim($this->storeNote) ?: null,
                 'notes' => 'Input lapangan oleh operator: '.auth()->user()->name.' (id='.auth()->id().')',
             ]);
+
+            // KONSINYASI + titipan berjalan → bikin titipan (OpeningBalance) supaya kedai
+            // LANGSUNG bisa "Tagih + Titip Ulang" di kunjungan pertama. Idempoten.
+            if ($isKonsinyasi && (int) $this->titipanBerjalan >= 1) {
+                \App\Support\OpeningBalance::create($kiosk, (int) $this->titipanBerjalan);
+            }
+
+            return $kiosk;
         });
 
         // Foto opsional dari lapangan: disimpan ke disk media (configurable via

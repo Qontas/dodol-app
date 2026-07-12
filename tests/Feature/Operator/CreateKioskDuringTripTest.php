@@ -143,6 +143,62 @@ class CreateKioskDuringTripTest extends TestCase
         $this->assertDatabaseMissing('kiosks', ['name' => 'Kios Curang']);
     }
 
+    public function test_konsinyasi_with_running_deposit_creates_pending_titipan(): void
+    {
+        // Kedai konsinyasi + titipan berjalan → OTOMATIS bikin titipan berjalan →
+        // LANGSUNG bisa "Tagih + Titip Ulang" di kunjungan pertama.
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
+        $cluster = Cluster::create(['name' => 'Area Konsinyasi', 'owner_id' => $owner->id]);
+        $product = \App\Models\Product::factory()->create(['owner_id' => $owner->id]);
+        \App\Models\ProductVariant::factory()->create(['product_id' => $product->id, 'is_active' => true, 'sale_price_per_pack' => 12000]);
+
+        $this->actingAs($operator);
+        Livewire::actingAs($operator);
+        Livewire::test(CreateKiosk::class)
+            ->set('namaKios', 'Kedai Konsinyasi')
+            ->set('namaPemilik', 'Bu Titip')
+            ->set('clusterId', $cluster->id)
+            ->set('jenisKedai', 'konsinyasi')
+            ->set('defaultQtyMika', 4)
+            ->set('titipanBerjalan', 4)
+            ->set('storeNote', 'Biasa titip 4 mika')
+            ->call('saveKiosk');
+
+        $kiosk = Kiosk::where('name', 'Kedai Konsinyasi')->firstOrFail();
+        $this->assertFalse((bool) $kiosk->is_cash_only);
+        $this->assertSame(4, (int) $kiosk->default_qty_mika);
+        $this->assertSame('Biasa titip 4 mika', $kiosk->store_note);
+
+        $pending = \App\Models\Delivery::where('kiosk_id', $kiosk->id)->doesntHave('settlement')->first();
+        $this->assertNotNull($pending, 'Kedai konsinyasi harus punya titipan berjalan langsung.');
+        $this->assertSame(4, (int) $pending->qty_delivered);
+    }
+
+    public function test_cash_only_kiosk_has_no_titipan_and_no_jatah(): void
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
+        $cluster = Cluster::create(['name' => 'Area Cash', 'owner_id' => $owner->id]);
+
+        $this->actingAs($operator);
+        Livewire::actingAs($operator);
+        Livewire::test(CreateKiosk::class)
+            ->set('namaKios', 'Kedai Cash')
+            ->set('namaPemilik', 'Pak Tunai')
+            ->set('clusterId', $cluster->id)
+            ->set('jenisKedai', 'cash_only')
+            ->set('storeNote', 'Cash-only, minta 5 konsisten')
+            ->call('saveKiosk')
+            ->assertHasNoErrors();
+
+        $kiosk = Kiosk::where('name', 'Kedai Cash')->firstOrFail();
+        $this->assertTrue((bool) $kiosk->is_cash_only);
+        $this->assertNull($kiosk->default_qty_mika);
+        $this->assertSame('Cash-only, minta 5 konsisten', $kiosk->store_note);
+        $this->assertSame(0, \App\Models\Delivery::where('kiosk_id', $kiosk->id)->count());
+    }
+
     public function test_create_kiosk_stores_and_resizes_uploaded_photo(): void
     {
         Storage::fake('public');

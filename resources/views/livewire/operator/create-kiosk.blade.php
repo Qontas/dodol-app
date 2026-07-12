@@ -103,19 +103,86 @@
             @enderror
         </div>
 
-        {{-- Default Qty Mika --}}
+        {{-- JENIS KEDAI: konsinyasi (titipan) vs cash-only (beli putus) --}}
         <div>
-            <label for="defaultQtyMika" class="block text-sm font-bold text-slate-900 mb-2">
-                Jumlah Mika Biasanya <span class="text-red-500">*</span>
+            <label class="block text-sm font-bold text-slate-900 mb-2">
+                Jenis Kedai <span class="text-red-500">*</span>
             </label>
-            <input
-                type="number"
-                id="defaultQtyMika"
-                wire:model="defaultQtyMika"
-                min="1"
-                inputmode="numeric"
-                class="w-full rounded-xl border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-3">
-            @error('defaultQtyMika')
+            <div class="space-y-2">
+                <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer {{ $jenisKedai === 'konsinyasi' ? 'border-amber-400 bg-amber-50' : 'border-slate-200' }}">
+                    <input type="radio" wire:model.live="jenisKedai" value="konsinyasi" class="mt-1 text-amber-600">
+                    <span class="text-sm">
+                        <span class="font-bold text-slate-900 block">🏪 Kedai Konsinyasi (titipan)</span>
+                        <span class="text-xs text-slate-500">Dodol dititip dulu, dibayar pas laku. Punya jatah &amp; titipan berjalan.</span>
+                    </span>
+                </label>
+                <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer {{ $jenisKedai === 'cash_only' ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200' }}">
+                    <input type="radio" wire:model.live="jenisKedai" value="cash_only" class="mt-1 text-emerald-600">
+                    <span class="text-sm">
+                        <span class="font-bold text-slate-900 block">💵 Kedai Cash-Only (beli putus)</span>
+                        <span class="text-xs text-slate-500">Beli tunai tiap kali, jumlah suka-suka. Tak ada titipan &amp; tak ada jatah.</span>
+                    </span>
+                </label>
+            </div>
+            @error('jenisKedai')
+                <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+            @enderror
+        </div>
+
+        {{-- KONSINYASI: jatah + titipan berjalan sekarang. Titipan berjalan >= 1 →
+             otomatis bikin titipan → kedai LANGSUNG bisa "Tagih + Titip Ulang". --}}
+        @if($jenisKedai === 'konsinyasi')
+            <div class="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-4">
+                <div>
+                    <label for="defaultQtyMika" class="block text-sm font-bold text-slate-900 mb-2">
+                        Jatah (mika biasa dititip) <span class="text-red-500">*</span>
+                    </label>
+                    <input
+                        type="number"
+                        id="defaultQtyMika"
+                        wire:model="defaultQtyMika"
+                        min="1"
+                        inputmode="numeric"
+                        onfocus="this.select()"
+                        class="w-full rounded-xl border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-3">
+                    @error('defaultQtyMika')
+                        <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                    @enderror
+                </div>
+                <div>
+                    <label for="titipanBerjalan" class="block text-sm font-bold text-slate-900 mb-2">
+                        Titipan Berjalan Sekarang (mika)
+                    </label>
+                    <input
+                        type="number"
+                        id="titipanBerjalan"
+                        wire:model="titipanBerjalan"
+                        min="0"
+                        inputmode="numeric"
+                        onfocus="this.select()"
+                        class="w-full rounded-xl border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-3">
+                    <p class="text-xs text-slate-500 mt-1">Berapa mika yang SAAT INI sudah ada di kedai (belum dibayar). Isi kalau kamu memang lagi/baru naruh di sini — kedai langsung bisa ditagih kunjungan berikutnya. Isi 0 kalau belum ada.</p>
+                    @error('titipanBerjalan')
+                        <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                    @enderror
+                </div>
+            </div>
+        @endif
+
+        {{-- CATATAN KEDAI (teks bebas) — karakteristik kedai, tampil menonjol ke operator. --}}
+        <div>
+            <label for="storeNote" class="block text-sm font-bold text-slate-900 mb-2">
+                Catatan Kedai <span class="text-slate-400 font-normal">(opsional)</span>
+            </label>
+            <textarea
+                id="storeNote"
+                wire:model="storeNote"
+                rows="2"
+                maxlength="500"
+                placeholder="cth: Cash-only, biasa minta 5 mika / Suka-suka, kadang banyak kadang dikit"
+                class="w-full rounded-xl border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-3"></textarea>
+            <p class="text-xs text-slate-500 mt-1">Kebiasaan kedai ini. Tampil menonjol biar operator berikutnya tahu.</p>
+            @error('storeNote')
                 <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
             @enderror
         </div>

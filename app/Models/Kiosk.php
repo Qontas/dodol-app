@@ -56,6 +56,7 @@ class Kiosk extends Model
         'stop_reason',
         'stopped_by',
         'notes',
+        'store_note',
     ];
 
     protected $casts = [
