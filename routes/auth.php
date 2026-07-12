@@ -5,9 +5,12 @@ use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
 Route::middleware('guest')->group(function () {
-    Volt::route('register', 'pages.auth.register')
-        ->name('register');
-
+    // ⛔ SELF-REGISTER DITUTUP (keamanan). Sistem ini multi-tenant TERTUTUP: akun HANYA
+    // dibuat oleh owner (untuk operator) atau super admin (untuk owner) lewat panel.
+    // Dulu /register PUBLIK + kolom role DEFAULT 'owner' → siapa pun di internet bisa
+    // mendaftar & langsung jadi OWNER penuh. Route register (GET & POST) DIHAPUS total;
+    // view-nya juga dihapus. Pertahanan berlapis: default kolom role kini 'operator'
+    // (migration), jadi jalur pembuatan user yang lupa set role tak pernah jadi owner.
     Volt::route('login', 'pages.auth.login')
         ->name('login');
 
