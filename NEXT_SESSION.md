@@ -1,5 +1,53 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 12 Juli 2026*
+*Sesi terakhir: 13 Juli 2026*
+
+## EMPAT PERBAIKAN (13 Juli 2026) — SELESAI & PUSHED
+**330 PASS** (dari baseline 320; +12 test bersih, 0 regresi). Empat commit atomik.
+
+1. **🔴 KEAMANAN — /register PUBLIK bikin akun OWNER (DITUTUP).** Lubang: route `/register`
+   aktif+publik (middleware guest) + `register.blade.php` cuma set name/email/password → role
+   ambil DEFAULT DB (`role` DEFAULT `'owner'`) → SIAPAPUN di internet daftar → OWNER penuh.
+   FIX: hapus route register (GET & POST) dari `routes/auth.php` + hapus view register (sistem
+   multi-tenant TERTUTUP, akun hanya dibuat owner/superadmin). Pertahanan berlapis: migration
+   `2026_07_13_000001` ubah DEFAULT kolom `role` `'owner'`→`'operator'` (jalur bikin user yang
+   lupa set role → operator, bukan owner). Test `RegisterDisabledTest` (route 404, default role
+   operator). Snippet audit produksi READ-ONLY di bawah (section "AUDIT USER PRODUKSI").
+2. **BUG 500 "Set Saldo Awal" (FIXED, akar dikonfirmasi test).** Akar (repro test, bukan tebakan):
+   `UniqueConstraintViolation "Duplicate entry '1-<kemarin>-1' for idx_trip_owner_date_number"`.
+   `OpeningBalance::migrationTripFor()` bikin trip migrasi bertanggal KEMARIN + `trip_number_of_day=1`
+   → bentrok dgn trip operasional owner #1 kemarin (unique `owner_id,trip_date,number`). Owner
+   produksi jalan trip tiap hari → bentrok TIAP kali → 500 "sama sekali tak jalan". FIX: trip
+   migrasi pakai tanggal SENTINEL masa lampau (`2000-01-01`) yang tak pernah jadi trip nyata →
+   tak pernah bentrok + tak mengotori laporan harian. Regression test ditambah.
+3. **JENIS KEDAI saat input (owner & operator) + CATATAN KEDAI.** Saat buat kedai baru pilih
+   jenis: 🏪 KONSINYASI (isi "titipan berjalan sekarang" + jatah → OTOMATIS bikin titipan
+   berjalan via `OpeningBalance` → LANGSUNG bisa "Tagih + Titip Ulang" kunjungan pertama; toggle
+   "kios lama" lama DILEBUR ke sini) vs 💵 CASH-ONLY (set `is_cash_only`, tak ada titipan/jatah).
+   Kolom BARU `store_note` (migration `2026_07_13_000002`) = "Catatan Kedai" teks bebas (owner
+   ATAU operator), TAMPIL MENONJOL di form serah-terima operator. Owner: radio "Jenis Kedai" di
+   Filament create (dehydrated, `afterCreate` handle), field `store_note` di Informasi Dasar,
+   toggle `is_cash_only` jadi `visibleOn('edit')`. Operator: radio jenis + titipan berjalan +
+   catatan di `create-kiosk`.
+4. **AKSI ADAPTIF di form serah-terima (ikut KONDISI kedai).** Aksi yang muncul ikut kedai punya
+   titipan berjalan atau tidak (operator tak pernah lihat aksi mustahil). ADA titipan → 4 aksi:
+   Tagih+Titip Ulang / Titip Cash / Lewati / **🔄 Ganti ke Cash (baru)**. TANPA titipan (cash-only/
+   baru) → 3 aksi: Titip Cash / Lewati / **🔄 Mulai Titipan** ("Tagih+Titip Ulang" TIDAK muncul).
+   **GANTI KE CASH** (aksi mandiri, BUKAN akal-akalan Aksi 1): settle titipan TERAKHIR (BS+uang)
+   tanpa titip lagi → `is_cash_only=true`, kedai TETAP AKTIF & dikunjungi (mode cash). Nama sengaja
+   "Ganti" (lanjut) ≠ "Hentikan" (berhenti). **MULAI TITIPAN**: isi mika dititip + jatah seterusnya
+   → consignment drop + `default_qty_mika=jatah` + `is_cash_only=false` → kunjungan berikutnya
+   otomatis "Tagih + Titip Ulang". Kedua aksi DIKECUALIKAN dari blokir 2-langkah (blokir TETAP
+   UTUH di AKSI 1 — diuji ulang). Kedai cash-only kini lewat picker adaptif (bukan lagi paksa form
+   cash). Status kedai + Catatan Kedai tampil menonjol di puncak modal.
+
+### AUDIT USER PRODUKSI (READ-ONLY — owner jalankan sendiri di Railway console, JANGAN hapus)
+```bash
+# Railway → service → "Console"/"Shell", jalankan:
+php artisan tinker --execute="foreach (\App\Models\User::withoutGlobalScopes()->orderBy('created_at')->get() as \$u) { echo \$u->id.' | '.\$u->name.' | '.\$u->email.' | '.\$u->role.' | owner_id='.(\$u->owner_id ?? '-').' | aktif='.(\$u->is_active?'ya':'tidak').' | '.\$u->created_at.PHP_EOL; }"
+```
+CURIGAI baris `role=owner` yang BUKAN Ismi/Aidil, terutama `created_at` baru → itu kemungkinan
+akun hasil /register publik dulu. Owner review manual (nonaktifkan/hapus lewat panel, bukan dari sini).
+
 
 ## TIGA PERBAIKAN (12 Juli 2026, sesi terbaru) — SELESAI & PUSHED
 **320 PASS** (dari baseline 313; +7 test baru, 0 regresi). Tiga commit atomik terpisah.

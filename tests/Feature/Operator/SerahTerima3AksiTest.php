@@ -162,26 +162,31 @@ class SerahTerima3AksiTest extends TestCase
         $this->assertSame(1, Delivery::where('kiosk_id', $kiosk->id)->count());
     }
 
-    /** KIOS BARU (tanpa saldo awal): tak ada pending → menu "Titip Baru", bukan tagih. */
-    public function test_kios_baru_has_no_pending_and_shows_titip_baru(): void
+    /** KEDAI TANPA TITIPAN: tak ada pending → aksi adaptif "Mulai Titipan", bukan tagih. */
+    public function test_kios_baru_has_no_pending_and_shows_mulai_titipan(): void
     {
         $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'default_qty_mika' => null]);
 
         Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
             ->assertSet('pendingDelivery', null)
-            ->assertSee('Titip Baru')
+            ->assertSee('Mulai Titipan')
             ->assertDontSee('Tagih + Titip Ulang');
     }
 
-    /** BLOKIR UI: titip != jatah tanpa "Ubah jatah" → tombol simpan berlabel arahan. */
+    /** BLOKIR UI (2-langkah, AKSI 1): titip != jatah tanpa "Ubah jatah" → tombol arahan. */
     public function test_blokir_ui_disables_save_when_titip_not_equal_jatah(): void
     {
         $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'default_qty_mika' => 4]);
+        // Kedai punya titipan berjalan → aksi "Tagih + Titip Ulang" tersedia (blokir di sini).
+        Delivery::factory()->create([
+            'kiosk_id' => $kiosk->id, 'trip_id' => $this->trip->id,
+            'qty_delivered' => 4, 'product_variant_id' => $this->variant->id,
+        ]);
 
         $component = Livewire::test(ActiveTrip::class)
             ->call('openVisitModal', $kiosk->id)
-            ->call('chooseAction', 'titip')
+            ->call('chooseAction', 'tagih_titip')
             ->set('dropBaru', 6); // 6 != jatah 4
 
         $component->assertSee('Betulkan titip = jatah dulu')

@@ -79,6 +79,11 @@ class ActiveTrip extends Component
     public $dropBaru = 0;
     public $uangDiterima = 0;
 
+    // === AKSI "MULAI TITIPAN" (kedai tanpa titipan → mulai konsinyasi) ===
+    // Jatah seterusnya saat operator mengubah kedai cash-only/baru jadi konsinyasi.
+    // $dropBaru = mika yang dititip sekarang; $jatahMulai = jatah tetap ke depan.
+    public int $jatahMulai = 0;
+
     // === UBAH JATAH PERMANEN — HANYA AKSI 1 (Tagih + Titip Ulang / Titip Baru) ===
     // Operator mengubah default_qty_mika kios (naik ATAU turun) jadi kebiasaan baru
     // SETERUSNYA. ATURAN SATU-ANGKA (owner): angka yang DITARUH hari ini ($dropBaru) =
@@ -509,8 +514,10 @@ class ActiveTrip extends Component
         $this->stopReason = '';
         $this->stopConfirming = false;
 
-        // Kios cash only tidak punya pilihan aksi — langsung ke form jual cash.
-        $this->chosenAction = $this->isCashOnly ? 'cash' : null;
+        // AKSI ADAPTIF: aksi yang muncul mengikuti KONDISI kedai (ada titipan berjalan
+        // atau tidak), BUKAN label kaku. Selalu mulai di layar pilih aksi — termasuk
+        // kedai cash-only (yang kini melihat Titip Cash / Lewati / Mulai Titipan).
+        $this->chosenAction = null;
 
         $this->resetErrorBag();
         $this->isVisitModalOpen = true;
@@ -609,6 +616,7 @@ class ActiveTrip extends Component
         $this->returnFresh = 0;
         $this->returnExpired = 0;
         $this->dropBaru = 0;
+        $this->jatahMulai = 0;
         $this->terjual = 0;
         $this->tagihan = 0;
         $this->uangDiterima = 0;
@@ -630,10 +638,13 @@ class ActiveTrip extends Component
      */
     public function chooseAction(string $action): void
     {
-        // 3-AKSI: AKSI 1 (tagih_titip/titip) + AKSI 2 (titip_cash) + AKSI 3 (cek).
+        // AKSI ADAPTIF ikut kondisi kedai (cegah operator lihat aksi mustahil):
+        //  - ADA titipan berjalan  → Tagih+Titip / Titip Cash / Lewati / Ganti ke Cash.
+        //  - TANPA titipan berjalan → Titip Cash / Lewati / Mulai Titipan.
+        // "Tagih + Titip Ulang" TIDAK muncul tanpa titipan (tak ada yang ditagih).
         $valid = $this->pendingDelivery
-            ? ['tagih_titip', 'titip_cash', 'cek']
-            : ['titip', 'titip_cash', 'cek'];
+            ? ['tagih_titip', 'titip_cash', 'cek', 'ganti_cash']
+            : ['titip_cash', 'cek', 'mulai_titipan'];
 
         if (! in_array($action, $valid, true)) {
             return;
@@ -645,7 +656,7 @@ class ActiveTrip extends Component
         // AKSI 1 (siklus normal): pra-isi titip ulang = jatah kios (satu angka).
         // Operator tinggal simpan bila sesuai; kalau mau beda WAJIB centang "Ubah jatah"
         // (blokir 2-langkah di persistVisitFromState()).
-        if (in_array($action, ['tagih_titip', 'titip'], true)) {
+        if ($action === 'tagih_titip') {
             $this->dropBaru = $defaultQty; // 0 kalau kios belum punya jatah (kios baru).
         }
 
@@ -659,8 +670,24 @@ class ActiveTrip extends Component
             $this->dropBaru = 0;
         }
 
-        // Tagih+Titip: hitung tagihan langsung (uangDiterima default = tagihan penuh)
-        // supaya "Total Tagihan" + deteksi bayar-kurang (janji bayar) tampil sejak awal.
+        // GANTI KE CASH: tagih titipan TERAKHIR (settle) tapi TIDAK titip lagi (drop=0).
+        // Kedai tetap aktif & tetap dikunjungi, tapi mulai sekarang mode cash. Form
+        // memakai kolom settle yang sama dgn AKSI 1 (BS/uang), tanpa field titip ulang.
+        if ($action === 'ganti_cash') {
+            $this->dropBaru = 0;
+            $this->hitungTagihan();
+        }
+
+        // MULAI TITIPAN: kedai cash-only/baru mulai dititip. Operator isi berapa mika
+        // dititip ($dropBaru) + jatah seterusnya ($jatahMulai). Pra-isi jatah dari
+        // default lama kalau ada, drop dari jatah itu sebagai titik awal.
+        if ($action === 'mulai_titipan') {
+            $this->jatahMulai = $defaultQty >= 1 ? $defaultQty : 0;
+            $this->dropBaru = $defaultQty >= 1 ? $defaultQty : 0;
+        }
+
+        // AKSI 1 (Tagih+Titip): hitung tagihan langsung (uangDiterima default = tagihan
+        // penuh) supaya "Total Tagihan" + deteksi bayar-kurang (janji bayar) tampil awal.
         if ($action === 'tagih_titip') {
             $this->hitungTagihan();
         }
@@ -1010,15 +1037,12 @@ class ActiveTrip extends Component
 
     private function resolveVisitAction(): string
     {
-        // Kios cash only selalu penjualan cash langsung.
-        if ($this->isCashOnly) {
-            return 'cash_sale';
-        }
-
         // Niat eksplisit "Cek Sisa" → SELALU check_only, walau kios masih punya
         // titipan. Tanpa guard ini, kios bertitipan + drop=0 akan auto-detect ke
         // settle_only dan menutup titipan tak sengaja. correctVisit() menetralkan
         // chosenAction=null, jadi guard ini tak pernah keliru menyala saat koreksi.
+        // Aksi eksplisit DIDAHULUKAN dari isCashOnly agar kedai cash-only pun bisa
+        // Titip Cash (BS support) / Lewati / Mulai Titipan lewat picker adaptif.
         if ($this->chosenAction === 'cek') {
             return 'check_only';
         }
@@ -1027,6 +1051,23 @@ class ActiveTrip extends Component
         // titipan lama, TIDAK urus BS. Ter-persist lewat cabang khusus di
         // persistVisitFromState(); di sini cukup labeli cash_sale.
         if ($this->chosenAction === 'titip_cash') {
+            return 'cash_sale';
+        }
+
+        // GANTI KE CASH: settle titipan terakhir tanpa titip lagi (drop=0). Kedai
+        // dijadikan cash-only di persistVisitFromState(). Di sini = settle_only.
+        if ($this->chosenAction === 'ganti_cash') {
+            return 'settle_only';
+        }
+
+        // MULAI TITIPAN: kedai cash-only/baru mulai konsinyasi. Drop konsinyasi baru
+        // (drop_only) + set jatah + is_cash_only=false di persistVisitFromState().
+        if ($this->chosenAction === 'mulai_titipan') {
+            return 'drop_only';
+        }
+
+        // Kios cash only (tanpa aksi eksplisit di atas — mis. jalur koreksi) = cash.
+        if ($this->isCashOnly) {
             return 'cash_sale';
         }
 
@@ -1077,6 +1118,7 @@ class ActiveTrip extends Component
             'returnExpired' => 'nullable|integer|min:0',
             'dropBaru' => 'nullable|integer|min:0',
             'uangDiterima' => 'nullable|integer|min:0',
+            'jatahMulai' => 'nullable|integer|min:0',
         ]);
 
         $this->resetErrorBag('general');
@@ -1334,6 +1376,7 @@ class ActiveTrip extends Component
             'returnExpired' => 'nullable|integer|min:0',
             'dropBaru' => 'nullable|integer|min:0',
             'uangDiterima' => 'nullable|integer|min:0',
+            'jatahMulai' => 'nullable|integer|min:0',
         ]);
 
         try {
@@ -1409,9 +1452,13 @@ class ActiveTrip extends Component
         // tak ikut berubah). Sinyal: $correctionOfVisitId terisi.
         $isCorrection = $correctionOfVisitId !== null;
 
-        // === SKENARIO KIOS CASH ONLY ===
-        // Setiap kunjungan = penjualan cash langsung lunas, tanpa konsinyasi.
-        if ($this->isCashOnly) {
+        // === SKENARIO KIOS CASH ONLY (jalur legacy/koreksi) ===
+        // Setiap kunjungan = penjualan cash langsung lunas, tanpa konsinyasi. Kini kedai
+        // cash-only lewat picker adaptif (Titip Cash/Lewati/Mulai Titipan), jadi cabang
+        // ini HANYA menyala saat tak ada aksi eksplisit (mis. correctVisit → chosenAction
+        // null). Aksi eksplisit (titip_cash/cek/ganti_cash/mulai_titipan) ditangani cabang
+        // masing-masing di bawah — jangan diserobot jadi cash_sale polos di sini.
+        if ($this->isCashOnly && ($this->chosenAction === null || $this->chosenAction === 'cash')) {
             if ($drop <= 0) {
                 $this->addError('general', 'Jumlah mika harus lebih dari 0 untuk penjualan cash.');
                 return null;
@@ -1559,18 +1606,36 @@ class ActiveTrip extends Component
                 : 'Titip cash berhasil disimpan.';
         }
 
-        // === AKSI 1 (tagih_titip / titip) + AKSI 3 (cek) — UBAH JATAH satu-angka (AKSI 1) ===
+        // === AKSI 1 (tagih_titip) + AKSI 3 (cek) + GANTI KE CASH + MULAI TITIPAN ===
         $defaultQty = (int) ($this->selectedKiosk->default_qty_mika ?? 0);
         $ubahJatah = $this->ubahJatah; // hanya berpengaruh di AKSI 1 (isDrop) — lihat di bawah.
+
+        // GANTI KE CASH (settle_only, kedai → cash-only) & MULAI TITIPAN (drop_only,
+        // kedai → konsinyasi): aksi mandiri, TIDAK ikut blokir 2-langkah AKSI 1.
+        $isGantiCash = $this->chosenAction === 'ganti_cash';
+        $isMulaiTitipan = $this->chosenAction === 'mulai_titipan';
+
+        // MULAI TITIPAN wajib punya jatah seterusnya (>=1) + mika dititip (>=1).
+        if ($isMulaiTitipan) {
+            if ($drop < 1) {
+                $this->addError('general', 'Isi berapa mika yang dititip (minimal 1).');
+                return null;
+            }
+            if ((int) $this->jatahMulai < 1) {
+                $this->addError('general', 'Isi jatah seterusnya (minimal 1 mika).');
+                return null;
+            }
+        }
 
         // BLOKIR 2-LANGKAH (owner 11 Juli 2026): titip konsinyasi HARUS = jatah kios.
         // Titip beda (KURANG atau LEBIH) TANPA centang "Ubah jatah" → TOLAK, arahkan.
         // Cegah angka "nyasar tanpa tujuan" yang diam-diam menggeser jatah / kacaukan
         // tagihan. Verifikasi 2-langkah: mau beda? centang "Ubah jatah" dulu (aksi sadar).
         // PENGECUALIAN: kios belum punya jatah (defaultQty < 1 → kios benar-baru) →
-        // titip pertama MENETAPKAN jatah baseline, tanpa blokir. Lapis server (anti-bypass
-        // UI): guard ini tetap menolak walau tombol di klien diakali.
-        if (! $isCorrection && $isDrop && $defaultQty >= 1 && ! $ubahJatah && $drop !== $defaultQty) {
+        // titip pertama MENETAPKAN jatah baseline, tanpa blokir. MULAI TITIPAN juga
+        // dikecualikan (jatah di-set eksplisit dari field jatah, bukan dari angka titip).
+        // Lapis server (anti-bypass UI): guard ini tetap menolak walau tombol diakali.
+        if (! $isCorrection && ! $isMulaiTitipan && $isDrop && $defaultQty >= 1 && ! $ubahJatah && $drop !== $defaultQty) {
             $this->addError('general', sprintf(
                 'Titip harus sama dengan jatah (%1$d). '
                 .'Mau ubah jatah kedai ini? Centang "Ubah jatah permanen" dulu. '
@@ -1609,7 +1674,7 @@ class ActiveTrip extends Component
         // KIOS BARU (belum punya jatah) menetapkan baseline dari titip pertama — BUKAN
         // "ubah" (changed_default tetap false → kunjungan masih bisa dikoreksi). Tidak
         // berlaku saat koreksi (jatah kios tak boleh berubah gara-gara mengoreksi angka).
-        $establishBaseline = ! $isCorrection && $isDrop && ! $ubahJatah && $defaultQty < 1 && $drop >= 1;
+        $establishBaseline = ! $isCorrection && ! $isMulaiTitipan && $isDrop && ! $ubahJatah && $defaultQty < 1 && $drop >= 1;
 
         // --- Hitung ulang terjual & tagihan dari server (jangan percaya client),
         //     TANPA menimpa uangDiterima yang diinput operator ---
@@ -1639,7 +1704,7 @@ class ActiveTrip extends Component
         }
 
         try {
-            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $bsMika, $applyJatahDrop, $establishBaseline, $changedDefault, $correctionOfVisitId) {
+            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $bsMika, $applyJatahDrop, $establishBaseline, $changedDefault, $correctionOfVisitId, $isGantiCash, $isMulaiTitipan) {
                 $newDeliveryId = null;
                 $settledDeliveryId = null;
                 $createdDeliveryIds = [];
@@ -1668,6 +1733,22 @@ class ActiveTrip extends Component
                         // Kerugian (Stop Tanpa Tagih) ditandai untuk laporan owner.
                         'is_writeoff' => $this->stopWriteOff,
                         // status & paid_at di-set otomatis oleh SettlementObserver
+                    ]);
+                }
+
+                // GANTI KE CASH: titipan terakhir sudah di-settle di atas → kedai jadi
+                // cash-only mulai sekarang (tetap aktif & tetap dikunjungi, mode beli tunai).
+                if ($isGantiCash) {
+                    $this->selectedKiosk->update(['is_cash_only' => true]);
+                }
+
+                // MULAI TITIPAN: kedai cash-only/baru jadi konsinyasi. Jatah seterusnya
+                // = $jatahMulai (field terpisah, BUKAN angka titip hari ini). Delivery
+                // konsinyasi $drop dibuat di blok drop di bawah.
+                if ($isMulaiTitipan) {
+                    $this->selectedKiosk->update([
+                        'default_qty_mika' => max(1, (int) $this->jatahMulai),
+                        'is_cash_only' => false,
                     ]);
                 }
 
@@ -1757,6 +1838,13 @@ class ActiveTrip extends Component
             return null;
         }
 
+        if ($isGantiCash) {
+            return 'Titipan terakhir ditagih. Kedai tetap aktif, mulai sekarang mode cash (beli tunai).';
+        }
+        if ($isMulaiTitipan) {
+            $jatahBaru = max(1, (int) $this->jatahMulai);
+            return "Titipan dimulai: {$drop} mika dititip, jatah seterusnya {$jatahBaru} mika. Kunjungan berikutnya bisa Tagih + Titip Ulang.";
+        }
         if ($applyJatahDrop) {
             return "Kunjungan disimpan. Jatah kios diperbarui ke {$drop} mika.";
         }
