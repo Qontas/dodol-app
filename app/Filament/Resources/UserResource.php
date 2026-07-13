@@ -77,6 +77,9 @@ class UserResource extends Resource
                             ->default('operator')
                             ->required()
                             ->live()
+                            // Guard lockout: user tak boleh menurunkan role dirinya sendiri
+                            // (mis. super_admin → operator, langsung kehilangan akses panel).
+                            ->disabled(fn (?User $record): bool => $record !== null && $record->id === auth()->id())
                             ->helperText('Owner = akses penuh bisnis sendiri. Operator = akses operasional lapangan'),
 
                         // Owner dari operator. Owner viewer: auto-set ke dirinya (lihat CreateUser).
@@ -139,7 +142,12 @@ class UserResource extends Resource
                         Forms\Components\Toggle::make('is_active')
                             ->label('Status Aktif')
                             ->default(true)
-                            ->helperText('Nonaktifkan untuk disable login user ini'),
+                            // Guard lockout: user tak boleh menonaktifkan akunnya sendiri
+                            // (langsung ter-logout & tak bisa login lagi).
+                            ->disabled(fn (?User $record): bool => $record !== null && $record->id === auth()->id())
+                            ->helperText(fn (?User $record): string => $record !== null && $record->id === auth()->id()
+                                ? 'Tidak bisa menonaktifkan akun sendiri.'
+                                : 'Nonaktifkan untuk disable login user ini'),
                     ]),
             ]);
     }

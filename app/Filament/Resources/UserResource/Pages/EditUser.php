@@ -29,6 +29,14 @@ class EditUser extends EditRecord
             $data['owner_id'] = auth()->id();
         }
 
+        // Guard lockout (server-side, bukan cuma UI disabled): user tak boleh
+        // mengunci dirinya sendiri keluar lewat form Edit — paksa is_active tetap
+        // aktif & role tak berubah walau payload di-tamper.
+        if (isset($this->record) && (int) $this->record->id === (int) auth()->id()) {
+            $data['is_active'] = true;
+            $data['role'] = $this->record->role;
+        }
+
         return $data;
     }
 }
