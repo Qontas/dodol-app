@@ -1,6 +1,41 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 13 Juli 2026*
 
+## HARDENING PANEL SUPERADMIN — Manajemen User (13 Juli 2026) — SELESAI & PUSHED
+**351 PASS** (dari 340; +11 test guard, 0 regresi). 4 commit atomik. Komisi TIDAK berubah.
+
+Investigasi panel Superadmin menemukan celah lockout + kolom menyesatkan. Fix per-poin:
+
+1. **Guard lockout (commit `feat(admin): guard lockout`)** — Toggle is_active & Select
+   role di-disable saat edit akun sendiri + guard server-side di
+   `EditUser::mutateFormDataBeforeSave` (paksa is_active=true & role tetap). Cegah
+   superadmin mengunci dirinya sendiri via form Edit.
+2. **Guard delete + akun sistem (commit `feat(admin): guard delete user`)** —
+   `User::deletionBlockReason()` (pesan ramah, BUKAN QueryException 500): super admin
+   tak bisa dihapus siapa pun (tutup celah bulk-delete-self = lockout permanen);
+   owner/operator berdata (kios/trip/komisi) → "Nonaktifkan saja". Di-wire ke
+   DeleteAction + DeleteBulkAction (UserResource + OperatorResource). Akun sistem
+   `operator.migrasi.*` → `isSystemAccount()` + `scopeExcludeSystem()`; `getEloquentQuery`
+   kedua resource menyembunyikannya (tak bisa dilihat/edit/aktifkan/hapus dari UI).
+3. **Owner nonaktif → operator terkunci (commit `feat(auth): owner nonaktif`)** —
+   LoginForm + `EnsureUserHasRole` cek `owner->is_active` untuk role operator. Owner
+   nonaktif → operatornya ditolak login. REVERSIBLE (tak ubah is_active operator).
+4. **Buang kolom menyesatkan (commit `refactor(admin): buang kolom`)** — kolom/field
+   `commission_rate` (persen "20%", LEGACY tak dipakai bayar) DIBUANG dari UserResource
+   & OperatorResource → ganti "Komisi/Mika" (Rp dari komisi_per_mika owner). Kolom
+   `email_verified_at` ("Verifikasi") dibuang (User tak MustVerifyEmail → tak berfungsi).
+   ⚠️ Konstanta 0.2000 di ActiveTrip (~:2047) & kolom DB `commissions.commission_rate`
+   (generated STORED) SENGAJA TIDAK disentuh — komisi_rian tetap = mika × Rp1.000.
+
+Test baru: `tests/Feature/MultiTenant/SuperAdminUserGuardTest.php` (11 test) — deletion
+block reason, bulk/single delete self & superadmin lain, owner/operator berdata, clean
+operator boleh hapus, self-deactivate ditolak, owner-nonaktif kunci operator +
+reversible, akun sistem tersembunyi. Komisi tak berubah: ActiveTripTest & MonthlyReportTest tetap hijau.
+
+CATATAN OPS: MariaDB XAMPP bisa crash kalau banyak `php artisan test` jalan PARALEL di
+satu test DB (connection refused). Jalankan test SATU run saja. Restart:
+`"/c/xampp/mysql/bin/mysqld.exe" --defaults-file="/c/xampp/mysql/bin/my.ini" --standalone`.
+
 ## sort_order OTOMATIS = urutan TERAKHIR kalau kosong (13 Juli 2026) — SELESAI & PUSHED
 **340 PASS** (dari 333; +7 test, 0 regresi). Satu commit atomik.
 
