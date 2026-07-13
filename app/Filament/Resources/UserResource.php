@@ -5,10 +5,12 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Filament\Forms;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
@@ -253,26 +255,50 @@ class UserResource extends Resource
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
                     ->requiresConfirmation()
-                    ->before(function ($record) {
-                        if ($record->id === auth()->id()) {
-                            throw new \Exception('Tidak bisa hapus akun sendiri');
+                    ->before(function (User $record, Tables\Actions\DeleteAction $action) {
+                        if ($reason = static::deleteBlockReason($record)) {
+                            Notification::make()->danger()->title('Tidak bisa dihapus')->body($reason)->persistent()->send();
+                            $action->halt();
                         }
                     }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->requiresConfirmation(),
+                        ->requiresConfirmation()
+                        ->before(function (Collection $records, Tables\Actions\DeleteBulkAction $action) {
+                            foreach ($records as $record) {
+                                if ($reason = static::deleteBlockReason($record)) {
+                                    Notification::make()->danger()->title('Batal menghapus')->body("{$record->name}: {$reason}")->persistent()->send();
+                                    $action->halt();
+                                }
+                            }
+                        }),
                 ]),
             ]);
     }
 
+    /**
+     * Alasan ramah kenapa $record tak boleh dihapus, atau null kalau boleh.
+     * Gabungkan guard lockout (akun sendiri) + guard berdata/role (model).
+     */
+    protected static function deleteBlockReason(User $record): ?string
+    {
+        if ((int) $record->id === (int) auth()->id()) {
+            return 'Tidak bisa menghapus akun sendiri.';
+        }
+
+        return $record->deletionBlockReason();
+    }
+
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery();
+        // Akun sistem (operator.migrasi.*) selalu disembunyikan dari panel — tak bisa
+        // dilihat/diedit/diaktifkan/dihapus dari UI (route edit/delete-nya jadi 404).
+        $query = parent::getEloquentQuery()->excludeSystem();
 
         if (auth()->user()?->isSuperAdmin()) {
-            return $query; // super admin lihat semua user
+            return $query; // super admin lihat semua user (kecuali akun sistem)
         }
 
         // Owner: hanya operator yang terikat ke dirinya

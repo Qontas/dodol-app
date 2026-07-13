@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -78,6 +79,68 @@ class User extends Authenticatable implements FilamentUser
     public function isOperator(): bool
     {
         return $this->role === 'operator';
+    }
+
+    /**
+     * Akun sistem (dibuat command kios:saldo-awal, password acak, nonaktif) —
+     * bukan akun manusia. Tak boleh diedit/diaktifkan/dihapus dari UI & disembunyikan
+     * dari daftar user. Penanda: pola email operator.migrasi.owner{N}@...
+     */
+    public function isSystemAccount(): bool
+    {
+        return str_starts_with((string) $this->email, 'operator.migrasi.');
+    }
+
+    /**
+     * Sembunyikan akun sistem dari listing/panel. Dipakai getEloquentQuery
+     * UserResource (super admin) & OperatorResource (owner).
+     */
+    public function scopeExcludeSystem(Builder $query): Builder
+    {
+        return $query->where('email', 'not like', 'operator.migrasi.%');
+    }
+
+    /**
+     * Alasan ramah kenapa user ini TIDAK BOLEH dihapus (null = boleh hapus).
+     * Dipakai guard delete di UserResource (super admin) & OperatorResource (owner)
+     * agar muncul pesan jelas — BUKAN QueryException FK 500 mentah, dan bukan cascade
+     * parsial yang menghapus data owner/operator diam-diam.
+     *
+     * - Super admin: tak boleh dihapus siapa pun (cegah lockout / hapus admin lain).
+     * - Owner berdata (punya kios/trip/operator): nonaktifkan saja, jangan hapus.
+     * - Operator berdata (punya trip/komisi): nonaktifkan saja, jangan hapus.
+     */
+    public function deletionBlockReason(): ?string
+    {
+        if ($this->isSuperAdmin()) {
+            return 'Akun Super Admin tidak bisa dihapus.';
+        }
+
+        if ($this->isSystemAccount()) {
+            return 'Akun sistem tidak bisa dihapus.';
+        }
+
+        if ($this->isOwner()) {
+            $kios = \App\Models\Kiosk::whereHas('cluster', fn ($q) => $q->where('owner_id', $this->id))->count();
+            $trip = \App\Models\Trip::where('owner_id', $this->id)->count();
+            $operator = static::where('owner_id', $this->id)->count();
+
+            if ($kios || $trip || $operator) {
+                return "Owner ini punya {$kios} kios, {$trip} trip, {$operator} operator. Nonaktifkan saja, jangan hapus.";
+            }
+
+            return null;
+        }
+
+        // operator
+        $trip = $this->operatedTrips()->count();
+        $komisi = $this->commissions()->count();
+
+        if ($trip || $komisi) {
+            return "Operator ini punya {$trip} trip, {$komisi} komisi. Nonaktifkan saja, jangan hapus.";
+        }
+
+        return null;
     }
 
     /**

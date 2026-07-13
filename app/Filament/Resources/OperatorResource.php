@@ -7,10 +7,12 @@ use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 class OperatorResource extends Resource
 {
@@ -134,22 +136,34 @@ class OperatorResource extends Resource
                     }),
                 Tables\Actions\DeleteAction::make()
                     ->requiresConfirmation()
-                    ->before(function ($record) {
-                        if ($record->id === auth()->id()) {
-                            throw new \Exception('Tidak bisa hapus akun sendiri');
+                    ->before(function (User $record, Tables\Actions\DeleteAction $action) {
+                        if ($reason = $record->deletionBlockReason()) {
+                            Notification::make()->danger()->title('Tidak bisa dihapus')->body($reason)->persistent()->send();
+                            $action->halt();
                         }
                     }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->requiresConfirmation()
+                        ->before(function (Collection $records, Tables\Actions\DeleteBulkAction $action) {
+                            foreach ($records as $record) {
+                                if ($reason = $record->deletionBlockReason()) {
+                                    Notification::make()->danger()->title('Batal menghapus')->body("{$record->name}: {$reason}")->persistent()->send();
+                                    $action->halt();
+                                }
+                            }
+                        }),
                 ]),
             ]);
     }
 
     public static function getEloquentQuery(): Builder
     {
+        // Sembunyikan akun sistem (operator.migrasi.*) dari daftar operator owner.
         return parent::getEloquentQuery()
+            ->excludeSystem()
             ->where('role', 'operator')
             ->where('owner_id', auth()->id());
     }
