@@ -32,6 +32,18 @@ class CreateKiosk extends CreateRecord
             return;
         }
 
+        // URUTAN RUTE: kosong = otomatis TERAKHIR di cluster (bukan NULL yang mengacaukan
+        // urutan). Kalau owner mengisi angka eksplisit → hormati + auto-reflow
+        // (reorderWithinCluster geser yang lain, tak ada duplikat). Reset ke null dulu
+        // supaya reorderWithinCluster memakai jalur "sisip baru".
+        $desiredSort = $data['sort_order'] ?? null;
+        $kiosk->update(['sort_order' => null]);
+        if ($desiredSort !== null && $desiredSort !== '') {
+            Kiosk::reorderWithinCluster($kiosk, (int) $desiredSort);
+        } else {
+            Kiosk::appendToClusterOrder($kiosk);
+        }
+
         $jenis = $data['jenis_kedai'] ?? 'konsinyasi';
 
         if ($jenis === 'cash_only') {

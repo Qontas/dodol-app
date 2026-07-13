@@ -105,6 +105,36 @@ class Kiosk extends Model
      *
      * @return int|null Posisi akhir kios ini setelah di-clamp (null = dilepas dari urutan).
      */
+    /**
+     * Tempatkan kios di URUTAN TERAKHIR cluster-nya (MAX(sort_order)+1, atau 1 kalau
+     * cluster kosong). Dipakai saat CREATE tanpa mengisi urutan (owner Filament &
+     * operator create-kiosk) supaya kios BARU tidak jatuh ke bawah tanpa nomor (NULL)
+     * yang mengacaukan urutan rute — kosong = otomatis jadi terakhir. Juga dipakai saat
+     * kios DIPINDAH ke cluster lain (urutan lama tak relevan → terakhir di cluster baru).
+     *
+     * Race condition: MAX dihitung dalam transaction + lockForUpdate (serialisasi dua
+     * create bersamaan). Kalau di bawah beban ekstrem tetap ada tabrakan, sisi tulis
+     * angka (reorderWithinCluster / TextInputColumn) yang membereskan (auto-reflow).
+     * Scope per-CLUSTER (satu cluster = satu owner) → tenant lain 0 tersentuh.
+     *
+     * @return int Posisi terakhir yang diberikan ke kios ini.
+     */
+    public static function appendToClusterOrder(self $kiosk): int
+    {
+        return DB::transaction(function () use ($kiosk) {
+            $max = static::query()
+                ->where('cluster_id', $kiosk->cluster_id)
+                ->where('id', '!=', $kiosk->id)
+                ->lockForUpdate()
+                ->max('sort_order');
+
+            $next = ((int) $max) + 1;
+            $kiosk->update(['sort_order' => $next]);
+
+            return $next;
+        });
+    }
+
     public static function reorderWithinCluster(self $kiosk, ?int $desired): ?int
     {
         return DB::transaction(function () use ($kiosk, $desired) {

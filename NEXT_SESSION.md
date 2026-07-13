@@ -1,6 +1,28 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 13 Juli 2026*
 
+## sort_order OTOMATIS = urutan TERAKHIR kalau kosong (13 Juli 2026) — SELESAI & PUSHED
+**340 PASS** (dari 333; +7 test, 0 regresi). Satu commit atomik.
+
+MASALAH: buat kedai baru tanpa isi `sort_order` → NULL → kedai jatuh ke bawah tanpa nomor,
+urutan rute berantakan. FIX: kosong = otomatis jadi urutan TERAKHIR di cluster.
+
+- Helper baru `Kiosk::appendToClusterOrder()` = `MAX(sort_order)+1` di cluster (atau 1 kalau
+  cluster kosong), dalam transaction + `lockForUpdate` (anti-race dua create bersamaan; kalau
+  toh bentrok, sisi-tulis angka existing `reorderWithinCluster` yang beresin). Scope per-CLUSTER.
+- CREATE tanpa isi urutan → `appendToClusterOrder` (operator create-kiosk SELALU; owner Filament
+  kalau field kosong). Owner isi angka EKSPLISIT → dihormati + `reorderWithinCluster` (auto-reflow,
+  tak ada duplikat) di `CreateKiosk::afterCreate` (reset null dulu → jalur "sisip baru").
+- EDIT pindah cluster (`EditKiosk::afterSave`, `wasChanged('cluster_id')`) → sort_order lama tak
+  relevan → jadi terakhir di cluster baru.
+- Tak pakai model event global (biar factory test yang set sort_order manual tak keganggu).
+- Cek NULL existing (READ-ONLY, owner jalankan di Railway console):
+  `php artisan tinker --execute="echo \App\Models\Kiosk::withoutGlobalScopes()->excludeWalkInSentinel()->whereNull('sort_order')->count();"`
+  Kalau > 0, BACKFILL aman (WRITE, per-cluster, isi NULL jadi terakhir):
+  ```bash
+  php artisan tinker --execute="\DB::transaction(function(){ foreach(\App\Models\Kiosk::withoutGlobalScopes()->whereNull('sort_order')->distinct()->pluck('cluster_id') as \$cid){ \$next=((int)\App\Models\Kiosk::withoutGlobalScopes()->where('cluster_id',\$cid)->max('sort_order'))+1; foreach(\App\Models\Kiosk::withoutGlobalScopes()->where('cluster_id',\$cid)->whereNull('sort_order')->orderBy('name')->get() as \$k){ \$k->sort_order=\$next++; \$k->save(); } } echo 'Backfill selesai'.PHP_EOL; });"
+  ```
+
 ## DUA PERUBAHAN OWNER PANEL / KioskResource (13 Juli 2026, sesi lanjutan) — SELESAI & PUSHED
 **333 PASS** (dari 330; −3 test action lama, +6 test baru, 0 regresi). Dua commit atomik.
 

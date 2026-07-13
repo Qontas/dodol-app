@@ -151,6 +151,10 @@ class CreateKiosk extends Component
                 'notes' => 'Input lapangan oleh operator: '.auth()->user()->name.' (id='.auth()->id().')',
             ]);
 
+            // URUTAN RUTE: operator tak mengisi urutan → otomatis TERAKHIR di cluster
+            // (bukan NULL yang jatuh ke bawah tanpa nomor & mengacaukan urutan rute).
+            Kiosk::appendToClusterOrder($kiosk);
+
             // KONSINYASI + titipan berjalan → bikin titipan (OpeningBalance) supaya kedai
             // LANGSUNG bisa "Tagih + Titip Ulang" di kunjungan pertama. Idempoten.
             if ($isKonsinyasi && (int) $this->titipanBerjalan >= 1) {
