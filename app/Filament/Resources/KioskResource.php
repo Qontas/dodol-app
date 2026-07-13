@@ -437,12 +437,41 @@ class KioskResource extends Resource
                     ->badge()
                     ->color('primary'),
 
-                Tables\Columns\TextColumn::make('phone')
-                    ->label('Telepon')
-                    ->searchable()
-                    ->copyable()
-                    ->placeholder('—')
-                    ->toggleable(),
+                // TITIPAN / MODAL yang ada di kedai (jauh lebih berguna dari telepon).
+                // 3 kondisi: cash-only → "Cash Only" (kuning); konsinyasi bertitipan →
+                // "X mika" (hijau); konsinyasi TANPA titipan (anomali) → merah. Nilai
+                // pending_titipan_mika di-agregasi via withSum di getEloquentQuery (1
+                // subquery, BUKAN N+1) — telepon tetap ada di form create/edit, cuma
+                // tak ditampilkan di tabel.
+                Tables\Columns\TextColumn::make('pending_titipan_mika')
+                    ->label('Titipan')
+                    ->badge()
+                    ->sortable()
+                    ->getStateUsing(function (Kiosk $record): string {
+                        if ($record->is_cash_only) {
+                            return 'Cash Only';
+                        }
+
+                        $mika = (int) ($record->pending_titipan_mika ?? 0);
+
+                        return $mika > 0 ? $mika.' mika' : 'Belum ada titipan';
+                    })
+                    ->color(function (Kiosk $record): string {
+                        if ($record->is_cash_only) {
+                            return 'warning';
+                        }
+
+                        return ((int) ($record->pending_titipan_mika ?? 0)) > 0 ? 'success' : 'danger';
+                    })
+                    ->icon(function (Kiosk $record): ?string {
+                        if ($record->is_cash_only) {
+                            return 'heroicon-m-banknotes';
+                        }
+
+                        return ((int) ($record->pending_titipan_mika ?? 0)) > 0
+                            ? 'heroicon-m-inbox-arrow-down'
+                            : 'heroicon-m-exclamation-triangle';
+                    }),
 
                 Tables\Columns\TextColumn::make('location_description')
                     ->label('Alamat')
@@ -621,6 +650,14 @@ class KioskResource extends Resource
 
         // Kios sentinel walk-in tidak pernah ditampilkan/diedit di panel — bahkan untuk super admin.
         $query->excludeWalkInSentinel();
+
+        // Total mika titipan BERJALAN (delivery tanpa settlement) per kios, untuk kolom
+        // "Titipan". withSum = SATU subquery scalar berkorelasi di query utama (BUKAN
+        // N+1) — aman untuk list ratusan/ribuan kios.
+        $query->withSum(
+            ['deliveries as pending_titipan_mika' => fn ($q) => $q->doesntHave('settlement')],
+            'qty_delivered',
+        );
 
         if (auth()->user()?->isSuperAdmin()) {
             return $query;

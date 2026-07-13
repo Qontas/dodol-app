@@ -1,6 +1,28 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 13 Juli 2026*
 
+## DUA PERUBAHAN OWNER PANEL / KioskResource (13 Juli 2026, sesi lanjutan) — SELESAI & PUSHED
+**333 PASS** (dari 330; −3 test action lama, +6 test baru, 0 regresi). Dua commit atomik.
+
+1. **HAPUS "Set Saldo Awal" (redundan).** Titipan berjalan kini di-set langsung saat BUAT KEDAI
+   (owner: radio Jenis Kedai → Konsinyasi + "titipan berjalan sekarang"; operator: create-kiosk di
+   trip) + owner sudah selesai backfill semua kedai lama. PENGAMAN sebelum hapus (read-only,
+   dijalankan): 0 kios konsinyasi aktif TANPA titipan berjalan. DIHAPUS: TableAction
+   `set_opening_balance` di KioskResource. DIPERTAHANKAN: helper `App\Support\OpeningBalance`
+   (jantung penetapan titipan awal, dipakai create owner & operator — test regresi bug 500
+   sentinel-date dipindah ke `Tests\Feature\Support\OpeningBalanceTest`), filter "Titipan Berjalan"
+   (kini untuk MONITORING anomali, bukan backfill), command CLI `kios:saldo-awal` (alat darurat
+   impor spreadsheet — CATATAN: masih pakai trip-date `$earliest` + number 1, secara teori bisa
+   bentrok kalau tanggal spreadsheet kebetulan = tanggal trip nyata; risiko kecil krn one-shot &
+   tanggal biasanya lampau, dibiarkan sesuai permintaan owner). Test TableAction lama
+   (`KioskOpeningBalanceActionTest`) dihapus.
+2. **Kolom "Telepon" → "Titipan" di list Kios.** Kolom Telepon (jarang dipakai) diganti kolom
+   "Titipan" — badge 3 kondisi: cash-only → "Cash Only" (kuning), konsinyasi bertitipan → "X mika"
+   (hijau), konsinyasi TANPA titipan → "Belum ada titipan" (merah, anomali). Telepon TETAP ada di
+   form create/edit, cuma tak di tabel. Agregat `pending_titipan_mika` via `withSum` di
+   `getEloquentQuery` = 1 subquery berkorelasi, **BUKAN N+1** (dibuktikan test: list kios = 1 query
+   walau 12+ baris; penting utk 956 kios Aidil). Sortable by jumlah mika. Tenant isolation utuh.
+
 ## EMPAT PERBAIKAN (13 Juli 2026) — SELESAI & PUSHED
 **330 PASS** (dari baseline 320; +12 test bersih, 0 regresi). Empat commit atomik.
 
