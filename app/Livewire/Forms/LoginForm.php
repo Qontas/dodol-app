@@ -53,6 +53,18 @@ class LoginForm extends Form
             ]);
         }
 
+        // Operator dengan owner nonaktif → ikut terkunci. Owner nonaktif berarti
+        // seluruh tenant beku; operatornya tak boleh tetap operasional. Reversible:
+        // begitu owner diaktifkan lagi, operator bisa login normal (tak ubah data operator).
+        $user = Auth::user();
+        if ($user->isOperator() && $user->owner && ! $user->owner->is_active) {
+            Auth::logout();
+
+            throw ValidationException::withMessages([
+                'form.email' => 'Akun owner Anda dinonaktifkan. Hubungi admin.',
+            ]);
+        }
+
         RateLimiter::clear($this->throttleKey());
     }
 
