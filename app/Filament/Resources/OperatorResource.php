@@ -128,6 +128,10 @@ class OperatorResource extends Resource
                     }),
                 Tables\Actions\DeleteAction::make()
                     ->requiresConfirmation()
+                    // Operator berdata (punya trip/komisi) → tombol DISABLED + tooltip alasan;
+                    // operator bersih → tombol normal. Lapisan UI di atas guard server-side.
+                    ->disabled(fn (User $record): bool => $record->deletionBlockReason() !== null)
+                    ->tooltip(fn (User $record): ?string => $record->deletionBlockReason())
                     ->before(function (User $record, Tables\Actions\DeleteAction $action) {
                         if ($reason = $record->deletionBlockReason()) {
                             Notification::make()->danger()->title('Tidak bisa dihapus')->body($reason)->persistent()->send();
@@ -140,11 +144,18 @@ class OperatorResource extends Resource
                     Tables\Actions\DeleteBulkAction::make()
                         ->requiresConfirmation()
                         ->before(function (Collection $records, Tables\Actions\DeleteBulkAction $action) {
+                            $blocked = [];
                             foreach ($records as $record) {
                                 if ($reason = $record->deletionBlockReason()) {
-                                    Notification::make()->danger()->title('Batal menghapus')->body("{$record->name}: {$reason}")->persistent()->send();
-                                    $action->halt();
+                                    $blocked[] = "{$record->name}: {$reason}";
                                 }
+                            }
+                            if ($blocked) {
+                                Notification::make()->danger()
+                                    ->title('Batal menghapus — ada baris terkunci')
+                                    ->body(implode("\n", $blocked))
+                                    ->persistent()->send();
+                                $action->halt();
                             }
                         }),
                 ]),

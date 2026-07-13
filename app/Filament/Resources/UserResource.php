@@ -257,6 +257,13 @@ class UserResource extends Resource
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
                     ->requiresConfirmation()
+                    // Lapisan UI di atas guard server-side (defense in depth tetap utuh):
+                    // Super Admin & akun sendiri → tombol Delete DISEMBUNYIKAN total.
+                    ->hidden(fn (User $record): bool => $record->isSuperAdmin() || (int) $record->id === (int) auth()->id())
+                    // Owner/operator berdata → tombol tampil tapi DISABLED + tooltip alasan
+                    // (owner perlu tahu KENAPA tak bisa dihapus).
+                    ->disabled(fn (User $record): bool => static::deleteBlockReason($record) !== null)
+                    ->tooltip(fn (User $record): ?string => static::deleteBlockReason($record))
                     ->before(function (User $record, Tables\Actions\DeleteAction $action) {
                         if ($reason = static::deleteBlockReason($record)) {
                             Notification::make()->danger()->title('Tidak bisa dihapus')->body($reason)->persistent()->send();
@@ -268,12 +275,21 @@ class UserResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
                         ->requiresConfirmation()
+                        // Bulk tak bisa disembunyikan per-baris → guard server-side dgn
+                        // pesan yang menyebut SEMUA baris terblokir + alasannya.
                         ->before(function (Collection $records, Tables\Actions\DeleteBulkAction $action) {
+                            $blocked = [];
                             foreach ($records as $record) {
                                 if ($reason = static::deleteBlockReason($record)) {
-                                    Notification::make()->danger()->title('Batal menghapus')->body("{$record->name}: {$reason}")->persistent()->send();
-                                    $action->halt();
+                                    $blocked[] = "{$record->name}: {$reason}";
                                 }
+                            }
+                            if ($blocked) {
+                                Notification::make()->danger()
+                                    ->title('Batal menghapus — ada baris terkunci')
+                                    ->body(implode("\n", $blocked))
+                                    ->persistent()->send();
+                                $action->halt();
                             }
                         }),
                 ]),

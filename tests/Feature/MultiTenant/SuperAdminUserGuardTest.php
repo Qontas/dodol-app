@@ -84,49 +84,45 @@ class SuperAdminUserGuardTest extends TestCase
         $this->assertDatabaseHas('users', ['id' => $otherSuper->id]);
     }
 
-    // ===================== Guard delete (server-side) =====================
+    // ===================== Tombol Delete disembunyikan/disabled di UI =====================
 
-    public function test_super_admin_cannot_single_delete_self(): void
+    public function test_delete_button_hidden_for_self_and_super_admin(): void
     {
         $super = $this->actingSuper();
+        $otherSuper = User::factory()->create(['role' => 'super_admin', 'is_active' => true]);
 
         Livewire::test(ListUsers::class)
-            ->callTableAction('delete', $super->getKey());
-
-        $this->assertDatabaseHas('users', ['id' => $super->id]);
+            ->assertTableActionHidden('delete', $super)       // akun sendiri → tombol hilang
+            ->assertTableActionHidden('delete', $otherSuper); // super lain → tombol hilang
     }
 
-    public function test_cannot_delete_owner_with_data_friendly(): void
+    public function test_delete_button_disabled_for_owner_and_operator_with_data(): void
     {
         $this->actingSuper();
         $owner = $this->ownerWithData();
-
-        Livewire::test(ListUsers::class)
-            ->callTableAction('delete', $owner->getKey());
-
-        $this->assertDatabaseHas('users', ['id' => $owner->id]);
-    }
-
-    public function test_cannot_delete_operator_with_trips_friendly(): void
-    {
-        $this->actingSuper();
-        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
         $operator = User::factory()->create(['role' => 'operator', 'owner_id' => $owner->id]);
         Trip::factory()->create(['owner_id' => $owner->id, 'operator_id' => $operator->id]);
 
         Livewire::test(ListUsers::class)
-            ->callTableAction('delete', $operator->getKey());
+            ->assertTableActionVisible('delete', $owner)
+            ->assertTableActionDisabled('delete', $owner)
+            ->assertTableActionVisible('delete', $operator)
+            ->assertTableActionDisabled('delete', $operator);
 
-        $this->assertDatabaseHas('users', ['id' => $operator->id]);
+        // Guard server-side tetap menahan andai UI di-bypass (bulk).
+        Livewire::test(ListUsers::class)->callTableBulkAction('delete', [$owner->getKey()]);
+        $this->assertDatabaseHas('users', ['id' => $owner->id]);
     }
 
-    public function test_can_delete_clean_operator(): void
+    public function test_delete_button_enabled_and_works_for_clean_operator(): void
     {
         $this->actingSuper();
         $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
         $operator = User::factory()->create(['role' => 'operator', 'owner_id' => $owner->id]);
 
         Livewire::test(ListUsers::class)
+            ->assertTableActionVisible('delete', $operator)
+            ->assertTableActionEnabled('delete', $operator)
             ->callTableAction('delete', $operator->getKey());
 
         $this->assertDatabaseMissing('users', ['id' => $operator->id]);
