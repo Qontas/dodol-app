@@ -4,11 +4,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\KioskResource\Pages;
 use App\Models\Cluster;
-use App\Models\Delivery;
 use App\Models\Kiosk;
 use App\Support\GoogleMapsShortLinkResolver;
 use App\Support\KioskLocationParser;
-use App\Support\OpeningBalance;
 use Illuminate\Database\Eloquent\Builder;
 use App\Filament\Forms\Components\LeafletMapPicker;
 use Filament\Forms;
@@ -545,8 +543,9 @@ class KioskResource extends Resource
                     ),
 
                 // "Titipan berjalan" = ada Delivery konsinyasi PENDING (belum di-settle).
-                // Filter ke "Belum ada titipan" untuk menemukan kios lama yang perlu
-                // di-backfill saldo awal (lihat action "Set Saldo Awal").
+                // DIPERTAHANKAN untuk MONITORING (bukan lagi backfill): filter "Belum ada
+                // titipan" cepat menemukan kedai konsinyasi yang kehilangan titipan (anomali)
+                // — dipadu kolom "Titipan" merah. Bukan sekadar alat backfill.
                 TernaryFilter::make('has_pending_titipan')
                     ->label('Titipan Berjalan')
                     ->placeholder('Semua')
@@ -558,48 +557,11 @@ class KioskResource extends Resource
                     ),
             ])
             ->actions([
-                // BACKFILL KIOS LAMA: set saldo awal (titipan berjalan) untuk kios yang
-                // SUDAH ada tapi belum punya titipan pending. TAMPIL HANYA kalau kios
-                // aktif & belum punya titipan (jadi tombol muncul persis di kios yang
-                // perlu di-backfill). Idempoten lewat OpeningBalance (tak menggandakan).
-                Tables\Actions\Action::make('set_opening_balance')
-                    ->label('Set Saldo Awal')
-                    ->icon('heroicon-o-inbox-arrow-down')
-                    ->color('warning')
-                    ->visible(fn (Kiosk $record): bool => $record->is_active
-                        && ! Delivery::where('kiosk_id', $record->id)->doesntHave('settlement')->exists())
-                    ->modalHeading('Set Saldo Awal (Kios Lama)')
-                    ->modalDescription('Untuk kios yang SUDAH punya titipan berjalan di lapangan sebelum masuk sistem. Membuat 1 titipan berjalan supaya kios langsung bisa "Tagih + Titip Ulang". Jangan pakai untuk kios baru (belum ada titipan).')
-                    ->form([
-                        Forms\Components\TextInput::make('opening_balance_mika')
-                            ->label('Titipan berjalan sekarang (mika)')
-                            ->numeric()
-                            ->minValue(1)
-                            ->maxValue(1000)
-                            ->required()
-                            ->suffix('mika')
-                            ->helperText('Berapa mika yang saat ini masih ada di kios (belum dibayar).'),
-                    ])
-                    ->action(function (Kiosk $record, array $data): void {
-                        $delivery = OpeningBalance::create($record, (int) $data['opening_balance_mika']);
-
-                        if ($delivery === null) {
-                            Notification::make()
-                                ->title('Saldo awal tidak dibuat')
-                                ->body('Kios sudah punya titipan berjalan, atau belum ada varian produk aktif. Cek Master Data → Produk.')
-                                ->warning()
-                                ->send();
-
-                            return;
-                        }
-
-                        Notification::make()
-                            ->title('Saldo awal tercatat')
-                            ->body("Titipan berjalan {$data['opening_balance_mika']} mika dibuat. Kios kini bisa ditagih di kunjungan berikutnya.")
-                            ->success()
-                            ->send();
-                    }),
-
+                // CATATAN: action "Set Saldo Awal" DIHAPUS (13 Juli 2026) — sudah redundan.
+                // Titipan berjalan kini di-set langsung saat BUAT KEDAI (owner: radio Jenis
+                // Kedai → Konsinyasi + "titipan berjalan sekarang"; operator: create-kiosk di
+                // trip), dan owner sudah selesai backfill semua kedai lama. Helper
+                // App\Support\OpeningBalance TETAP dipakai jalur create tsb.
                 Tables\Actions\Action::make('stop')
                     ->label('Stop Titipan')
                     ->icon('heroicon-o-no-symbol')
