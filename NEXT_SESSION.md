@@ -1,6 +1,32 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 13 Juli 2026*
 
+## HARDENING PANEL SUPERADMIN LANJUTAN (13 Juli 2026) — SELESAI & PUSHED
+**353 PASS** (dari 351; +2 test, 0 regresi). 2 commit atomik. Tiga perubahan:
+
+1. **Tombol Delete disembunyikan/disabled (commit `feat(admin): sembunyikan/disable tombol Delete`)** —
+   guard server-side sudah benar tapi tombol tetap muncul & baru ditolak setelah klik Confirm.
+   Kini lapisan UI: Super Admin & akun sendiri → tombol HIDDEN; owner/operator berdata → tombol
+   DISABLED + tooltip alasan; operator bersih → normal. Bulk delete (tak bisa hidden per-baris) →
+   pesan sebut SEMUA baris terkunci. UserResource + OperatorResource. Guard server-side TAK diubah.
+2. **Kunci satu Super Admin (commit `feat(admin): kunci sistem hanya boleh punya satu Super Admin`)** —
+   `User::anotherSuperAdminExists()`; form role Select sembunyikan opsi super_admin kalau sudah ada
+   super lain; server-side guard di CreateUser & EditUser tolak pembuatan/promosi super kedua
+   ("Sistem hanya boleh punya satu Super Admin." + halt). Guard existing (super tak bisa
+   dihapus/dinonaktifkan/diturunkan) tetap. UserSeeder updateOrCreate by-email = idempoten (aman).
+3. **Konsistensi** — kolom "Komisi/Mika" (Rp) & akun sistem tersembunyi tetap utuh (tak regresi).
+
+Test baru di `SuperAdminUserGuardTest.php`: delete button hidden (self/super) / disabled (berdata) /
+enabled (operator bersih); anotherSuperAdminExists helper; tak bisa create super kedua & tak bisa
+promosi owner→super. Guard file 11→13 test.
+
+⚠️ **CEK PRODUKSI (READ-ONLY, owner jalankan di Railway console)** — jumlah super_admin HARUS = 1:
+```bash
+php artisan tinker --execute="echo \App\Models\User::where('role','super_admin')->count();"
+```
+Kalau > 1 → ANOMALI, lapor (ada super_admin ekstra dari sebelum guard ini dipasang). Lihat juga
+siapa: `\App\Models\User::where('role','super_admin')->pluck('email');`
+
 ## HARDENING PANEL SUPERADMIN — Manajemen User (13 Juli 2026) — SELESAI & PUSHED
 **351 PASS** (dari 340; +11 test guard, 0 regresi). 4 commit atomik. Komisi TIDAK berubah.
 
