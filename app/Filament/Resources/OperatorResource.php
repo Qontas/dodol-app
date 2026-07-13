@@ -64,20 +64,10 @@ class OperatorResource extends Resource
                                 : 'Kosongkan kalau tidak ingin mengubah password'),
                     ]),
 
-                Section::make('Komisi & Status')
+                Section::make('Status')
                     ->schema([
-                        Forms\Components\TextInput::make('commission_rate')
-                            ->label('Tarif Komisi')
-                            ->numeric()
-                            ->step(0.01)
-                            ->minValue(0)
-                            ->maxValue(1)
-                            ->default(0.20)
-                            ->suffix('(0.20 = 20%)')
-                            ->placeholder('0.20')
-                            ->helperText('Format desimal: 0.20 = 20%')
-                            ->required(),
-
+                        // Field 'Tarif Komisi' persen DIBUANG: legacy, tak dipakai bayar.
+                        // Komisi operator = Rp/mika drop dari setting owner (owner/settings).
                         Forms\Components\Toggle::make('is_active')
                             ->label('Status Aktif')
                             ->default(true)
@@ -102,11 +92,13 @@ class OperatorResource extends Resource
                     ->copyable()
                     ->placeholder('—'),
 
-                Tables\Columns\TextColumn::make('commission_rate')
-                    ->label('Komisi')
-                    ->formatStateUsing(fn ($state) => $state ? number_format($state * 100, 0).'%' : '—')
-                    ->alignCenter()
-                    ->sortable(),
+                // Komisi/Mika = tarif Rp per mika drop dari setting owner (angka yang
+                // SUNGGUH dipakai bayar). Kolom persen lama menyesatkan → dibuang.
+                Tables\Columns\TextColumn::make('komisi_per_mika')
+                    ->label('Komisi/Mika')
+                    ->state(fn (): float => (float) (auth()->user()?->getKomisiPerMikaValue() ?? 1000))
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format((float) $state, 0, ',', '.'))
+                    ->alignCenter(),
 
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Aktif')

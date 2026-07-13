@@ -94,17 +94,6 @@ class UserResource extends Resource
                             ->required(fn (Get $get): bool => (bool) auth()->user()?->isSuperAdmin() && $get('role') === 'operator')
                             ->helperText('Operator ini bekerja untuk owner yang dipilih'),
 
-                        Forms\Components\TextInput::make('commission_rate')
-                            ->label('Tarif Komisi')
-                            ->numeric()
-                            ->step(0.01)
-                            ->minValue(0)
-                            ->maxValue(1)
-                            ->suffix('(0.20 = 20%)')
-                            ->placeholder('0.20')
-                            ->helperText('Format desimal: 0.20 = 20%. Hanya untuk operator. Kosongkan untuk owner.')
-                            ->visible(fn (Get $get) => $get('role') === 'operator'),
-
                         Forms\Components\TextInput::make('hpp_per_mika')
                             ->label('HPP per Mika (Rp)')
                             ->numeric()
@@ -187,11 +176,18 @@ class UserResource extends Resource
                     })
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('commission_rate')
-                    ->label('Komisi')
-                    ->formatStateUsing(fn ($state) => $state ? number_format($state * 100, 0).'%' : '—')
-                    ->alignCenter()
-                    ->sortable(),
+                // Komisi/Mika = angka yang SUNGGUH dipakai membayar operator
+                // (Rp per mika drop). Untuk operator → tarif owner-nya. Kolom persen
+                // 'commission_rate' lama SENGAJA dibuang: legacy & menyesatkan.
+                Tables\Columns\TextColumn::make('komisi_efektif_per_mika')
+                    ->label('Komisi/Mika')
+                    ->state(fn (User $record): ?float => match ($record->role) {
+                        'operator' => $record->owner?->getKomisiPerMikaValue(),
+                        'owner' => $record->getKomisiPerMikaValue(),
+                        default => null,
+                    })
+                    ->formatStateUsing(fn ($state) => $state !== null ? 'Rp '.number_format((float) $state, 0, ',', '.') : '—')
+                    ->alignCenter(),
 
                 Tables\Columns\TextColumn::make('hpp_per_mika')
                     ->label('HPP/Mika')
@@ -222,12 +218,9 @@ class UserResource extends Resource
                     ->boolean()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('email_verified_at')
-                    ->label('Verifikasi')
-                    ->dateTime('d M Y')
-                    ->placeholder('Belum')
-                    ->sortable()
-                    ->toggleable(),
+                // Kolom 'Verifikasi' (email_verified_at) DIBUANG: User tak implement
+                // MustVerifyEmail → verifikasi email tak pernah dijalankan & tak memblokir
+                // login. Sistem tertutup (akun dibuat manual) — kolom itu menyesatkan.
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Dibuat')

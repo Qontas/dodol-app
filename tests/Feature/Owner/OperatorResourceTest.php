@@ -64,7 +64,6 @@ class OperatorResourceTest extends TestCase
                 'name' => 'Operator Baru',
                 'email' => 'baru@cemilanqontas.id',
                 'password' => 'password123',
-                'commission_rate' => 0.25,
                 'is_active' => true,
             ])
             ->assertHasNoErrors();
@@ -74,7 +73,6 @@ class OperatorResourceTest extends TestCase
             'email' => 'baru@cemilanqontas.id',
             'role' => 'operator',
             'owner_id' => $owner->id,
-            'commission_rate' => 0.25,
         ]);
     }
 }
