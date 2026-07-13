@@ -3,6 +3,7 @@
 namespace Tests\Feature\MultiTenant;
 
 use App\Filament\Resources\UserResource;
+use App\Filament\Resources\UserResource\Pages\CreateUser;
 use App\Filament\Resources\UserResource\Pages\EditUser;
 use App\Filament\Resources\UserResource\Pages\ListUsers;
 use App\Models\Cluster;
@@ -83,6 +84,8 @@ class SuperAdminUserGuardTest extends TestCase
         $this->assertDatabaseHas('users', ['id' => $otherSuper->id]);
     }
 
+    // ===================== Guard delete (server-side) =====================
+
     public function test_super_admin_cannot_single_delete_self(): void
     {
         $super = $this->actingSuper();
@@ -92,8 +95,6 @@ class SuperAdminUserGuardTest extends TestCase
 
         $this->assertDatabaseHas('users', ['id' => $super->id]);
     }
-
-    // ===================== Guard delete (berdata) =====================
 
     public function test_cannot_delete_owner_with_data_friendly(): void
     {
@@ -144,6 +145,54 @@ class SuperAdminUserGuardTest extends TestCase
         $fresh = $super->fresh();
         $this->assertTrue($fresh->is_active, 'Superadmin tak boleh menonaktifkan dirinya sendiri.');
         $this->assertSame('super_admin', $fresh->role, 'Superadmin tak boleh menurunkan role dirinya sendiri.');
+    }
+
+    // ===================== Super Admin tunggal =====================
+
+    public function test_another_super_admin_exists_helper(): void
+    {
+        $super = $this->actingSuper();
+
+        $this->assertTrue(User::anotherSuperAdminExists(), 'Sudah ada satu super admin.');
+        $this->assertFalse(
+            User::anotherSuperAdminExists($super->getKey()),
+            'Dikecualikan dirinya sendiri → tak ada super LAIN.'
+        );
+    }
+
+    public function test_cannot_create_second_super_admin_via_resource(): void
+    {
+        $this->actingSuper(); // sistem sudah punya 1 super_admin
+
+        Livewire::test(CreateUser::class)
+            ->fillForm([
+                'name' => 'Super Kedua',
+                'email' => 'super2@test.id',
+                'password' => 'password123',
+                'role' => 'super_admin',
+                'hpp_per_mika' => 9500,
+                'harga_mika' => 200,
+                'komisi_per_mika' => 500,
+                'komisi_kios_baru_per_mika' => 1000,
+                'is_active' => true,
+            ])
+            ->call('create');
+
+        // Apapun jalurnya (opsi form disembunyikan / guard server halt) → tetap 1 super.
+        $this->assertSame(1, User::where('role', 'super_admin')->count(), 'Hanya boleh satu Super Admin.');
+    }
+
+    public function test_cannot_promote_user_to_super_admin_via_edit(): void
+    {
+        $this->actingSuper();
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+
+        Livewire::test(EditUser::class, ['record' => $owner->getKey()])
+            ->fillForm(['role' => 'super_admin'])
+            ->call('save');
+
+        $this->assertSame('owner', $owner->fresh()->role, 'Owner tak boleh dipromosikan jadi super admin kedua.');
+        $this->assertSame(1, User::where('role', 'super_admin')->count());
     }
 
     // ===================== Owner nonaktif → operator terkunci =====================

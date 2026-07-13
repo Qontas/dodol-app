@@ -69,13 +69,22 @@ class UserResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('role')
                             ->label('Role')
-                            ->options(fn (): array => auth()->user()?->isSuperAdmin()
-                                ? [
-                                    'super_admin' => 'Super Admin',
-                                    'owner' => 'Owner',
-                                    'operator' => 'Operator',
-                                ]
-                                : ['operator' => 'Operator'])
+                            ->options(function (?User $record): array {
+                                if (! auth()->user()?->isSuperAdmin()) {
+                                    return ['operator' => 'Operator'];
+                                }
+
+                                $options = ['owner' => 'Owner', 'operator' => 'Operator'];
+
+                                // Super Admin tunggal: opsi super_admin hanya muncul kalau
+                                // belum ada super lain (atau record ini SENDIRI si super,
+                                // agar tetap terpilih saat Edit dirinya).
+                                if (! User::anotherSuperAdminExists($record?->getKey())) {
+                                    $options = ['super_admin' => 'Super Admin'] + $options;
+                                }
+
+                                return $options;
+                            })
                             ->default('operator')
                             ->required()
                             ->live()

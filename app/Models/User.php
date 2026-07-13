@@ -71,6 +71,20 @@ class User extends Authenticatable implements FilamentUser
         return $this->role === 'super_admin';
     }
 
+    /**
+     * Sistem hanya boleh punya SATU super_admin (keputusan owner: tak ada alasan
+     * bisnis untuk super admin kedua; tiap tambahan = permukaan serangan lintas-tenant).
+     * True kalau sudah ada super_admin lain (opsional kecualikan satu id, mis. saat
+     * Edit si super itu sendiri). Dipakai form role option + guard CreateUser/EditUser.
+     */
+    public static function anotherSuperAdminExists(?int $exceptId = null): bool
+    {
+        return static::query()
+            ->where('role', 'super_admin')
+            ->when($exceptId, fn ($q) => $q->whereKeyNot($exceptId))
+            ->exists();
+    }
+
     public function isOwner(): bool
     {
         return $this->role === 'owner';

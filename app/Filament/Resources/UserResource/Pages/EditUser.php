@@ -3,7 +3,9 @@
 namespace App\Filament\Resources\UserResource\Pages;
 
 use App\Filament\Resources\UserResource;
+use App\Models\User;
 use Filament\Actions;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 
 class EditUser extends EditRecord
@@ -35,6 +37,22 @@ class EditUser extends EditRecord
         if (isset($this->record) && (int) $this->record->id === (int) auth()->id()) {
             $data['is_active'] = true;
             $data['role'] = $this->record->role;
+        }
+
+        // Super Admin tunggal (server-side): tolak promosi user lain jadi super_admin
+        // kalau sudah ada super lain. Kecualikan record ini sendiri (self di atas
+        // sudah menjaga role super tetap super).
+        if (($data['role'] ?? null) === 'super_admin'
+            && isset($this->record)
+            && User::anotherSuperAdminExists($this->record->getKey())) {
+            Notification::make()
+                ->danger()
+                ->title('Ditolak')
+                ->body('Sistem hanya boleh punya satu Super Admin.')
+                ->persistent()
+                ->send();
+
+            $this->halt();
         }
 
         return $data;
