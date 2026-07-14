@@ -143,10 +143,10 @@ class CreateKioskDuringTripTest extends TestCase
         $this->assertDatabaseMissing('kiosks', ['name' => 'Kios Curang']);
     }
 
-    public function test_konsinyasi_with_running_deposit_creates_pending_titipan(): void
+    public function test_konsinyasi_jatah_creates_pending_titipan(): void
     {
-        // Kedai konsinyasi + titipan berjalan → OTOMATIS bikin titipan berjalan →
-        // LANGSUNG bisa "Tagih + Titip Ulang" di kunjungan pertama.
+        // Kedai konsinyasi: SATU field mika (Jatah Titipan) → OTOMATIS titipan awal
+        // sejumlah jatah → LANGSUNG bisa "Tagih + Titip Ulang" di kunjungan pertama.
         $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
         $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
         $cluster = Cluster::create(['name' => 'Area Konsinyasi', 'owner_id' => $owner->id]);
@@ -161,7 +161,6 @@ class CreateKioskDuringTripTest extends TestCase
             ->set('clusterId', $cluster->id)
             ->set('jenisKedai', 'konsinyasi')
             ->set('defaultQtyMika', 4)
-            ->set('titipanBerjalan', 4)
             ->set('storeNote', 'Biasa titip 4 mika')
             ->call('saveKiosk');
 
@@ -170,6 +169,7 @@ class CreateKioskDuringTripTest extends TestCase
         $this->assertSame(4, (int) $kiosk->default_qty_mika);
         $this->assertSame('Biasa titip 4 mika', $kiosk->store_note);
 
+        // Titipan awal = jatah (4 mika).
         $pending = \App\Models\Delivery::where('kiosk_id', $kiosk->id)->doesntHave('settlement')->first();
         $this->assertNotNull($pending, 'Kedai konsinyasi harus punya titipan berjalan langsung.');
         $this->assertSame(4, (int) $pending->qty_delivered);

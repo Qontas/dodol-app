@@ -114,15 +114,18 @@ class KioskResource extends Resource
                             ->helperText('Optional. Untuk hitung umur kios sebagai customer. Kosongkan untuk auto-set saat delivery pertama.'),
                     ]),
 
-                // JENIS KEDAI saat input (owner input kedai KARENA sudah titip di sana).
-                // Konsinyasi → isi titipan berjalan sekarang → CreateKiosk::afterCreate()
-                // membuat 1 delivery konsinyasi PENDING (App\Support\OpeningBalance) supaya
-                // kios langsung bisa "Tagih + Titip Ulang" di kunjungan pertama (tanpa kolom
-                // flag; "kios lama" lebur ke sini). Cash-only → set is_cash_only, tak ada
-                // titipan/jatah. Field radio & opening balance form-only (dehydrated false).
-                Section::make('Jenis Kedai & Titipan Awal')
-                    ->description('Konsinyasi: dodol dititip, dibayar pas laku. Cash-only: beli putus tiap kali (tak ada titipan/jatah).')
-                    ->visibleOn('create')
+                // JENIS KEDAI + JATAH TITIPAN (owner input kedai KARENA sudah titip di sana).
+                // SATU field mika saja: "Jatah Titipan" (default_qty_mika). Konsinyasi →
+                // CreateKiosk::afterCreate() otomatis bikin 1 delivery konsinyasi PENDING
+                // (App\Support\OpeningBalance) SEJUMLAH JATAH itu → kios langsung bisa "Tagih
+                // + Titip Ulang" di kunjungan pertama; tagihan dikoreksi otomatis oleh input
+                // sisa/BS operator di lapangan (owner tak perlu tahu stok fisik). Cash-only →
+                // is_cash_only, tak ada titipan/jatah. Radio form-only (dehydrated false).
+                Section::make('Jenis Kedai & Jatah Titipan')
+                    ->description('Konsinyasi: dodol dititip, dibayar pas laku. Cash-only: beli putus tiap kali (tak ada titipan/jatah). Jatah titipan sekaligus jadi titipan awal — operator yang cek sisa fisiknya di lapangan.')
+                    // Tampil saat create (semua jenis) ATAU saat edit kedai konsinyasi
+                    // (bukan cash-only). Edit cash-only → section disembunyikan (tak relevan).
+                    ->visible(fn (string $operation, Get $get): bool => $operation === 'create' || ! ($get('is_cash_only') ?? false))
                     ->schema([
                         Forms\Components\Radio::make('jenis_kedai')
                             ->label('Jenis Kedai')
@@ -133,17 +136,22 @@ class KioskResource extends Resource
                             ->default('konsinyasi')
                             ->required()
                             ->live()
-                            ->dehydrated(false),
+                            ->dehydrated(false)
+                            ->visibleOn('create'),
 
-                        Forms\Components\TextInput::make('opening_balance_mika')
-                            ->label('Titipan berjalan sekarang (mika)')
+                        Forms\Components\TextInput::make('default_qty_mika')
+                            ->label('Jatah Titipan (mika per kunjungan)')
                             ->numeric()
-                            ->minValue(0)
-                            ->maxValue(1000)
+                            ->minValue(1)
+                            ->maxValue(100)
                             ->suffix('mika')
-                            ->helperText('Berapa mika yang SAAT INI ada di kios (belum dibayar). Isi kalau kios sudah punya titipan berjalan → langsung bisa ditagih kunjungan pertama. Isi 0 kalau belum ada.')
-                            ->visible(fn (Get $get): bool => ($get('jenis_kedai') ?? 'konsinyasi') === 'konsinyasi')
-                            ->dehydrated(false),
+                            ->helperText('Berapa mika yang dititip di kedai ini tiap kunjungan. Ini juga jadi titipan awal — operator yang nanti cek berapa sisanya di lapangan.')
+                            // Create: hanya untuk konsinyasi. Edit: sembunyi kalau cash-only.
+                            ->visible(fn (string $operation, Get $get): bool => $operation === 'create'
+                                ? (($get('jenis_kedai') ?? 'konsinyasi') === 'konsinyasi')
+                                : ! ($get('is_cash_only') ?? false))
+                            ->required(fn (string $operation, Get $get): bool => $operation === 'create'
+                                && (($get('jenis_kedai') ?? 'konsinyasi') === 'konsinyasi')),
                     ]),
 
                 Section::make('Lokasi')
@@ -331,14 +339,6 @@ class KioskResource extends Resource
                             ->helperText('Kalau dodol biasanya habis di bawah sekian hari, kios ini dianggap laris. Kosongkan kalau tidak dipantau.')
                             ->placeholder('Contoh: 5'),
 
-                        Forms\Components\TextInput::make('default_qty_mika')
-                            ->label('Jumlah Mika Biasanya per Antar')
-                            ->numeric()
-                            ->minValue(1)
-                            ->maxValue(100)
-                            ->suffix('mika')
-                            ->helperText('Berapa mika yang biasa dititip tiap pengantaran (kosongkan kalau berubah-ubah).'),
-
                         Forms\Components\Toggle::make('is_active')
                             ->label('Status Aktif')
                             ->default(true)
@@ -346,9 +346,12 @@ class KioskResource extends Resource
 
                         // Saat CREATE, jenis kedai dipilih lewat radio "Jenis Kedai" di atas
                         // (yang mengeset is_cash_only). Di EDIT, owner bisa ubah manual di sini.
+                        // ->live() supaya toggle cash-only langsung menyembunyikan field Jatah
+                        // Titipan di section atas (satu field mika, relevan hanya utk konsinyasi).
                         Forms\Components\Toggle::make('is_cash_only')
                             ->label('Kios Bayar Tunai Langsung (Cash-Only)')
                             ->default(false)
+                            ->live()
                             ->visibleOn('edit')
                             ->helperText('Aktifkan kalau kios ini selalu bayar tunai saat itu juga, tidak menitip dulu.'),
                     ]),

@@ -35,6 +35,8 @@ class KioskMapJumpTest extends TestCase
             ->fillForm([
                 'name' => 'Sippin Milk & Tea',
                 'cluster_id' => $cluster->id,
+                // Jatah Titipan wajib utk kedai konsinyasi (default jenis) — samakan dgn form operator.
+                'default_qty_mika' => 4,
                 'maps_paste_input' => '3.6157078, 98.6758666',
             ])
             ->callFormComponentAction('maps_paste_input', 'jumpToMapsLocation')

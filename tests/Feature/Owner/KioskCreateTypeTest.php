@@ -3,6 +3,7 @@
 namespace Tests\Feature\Owner;
 
 use App\Filament\Resources\KioskResource\Pages\CreateKiosk;
+use App\Filament\Resources\KioskResource\Pages\EditKiosk;
 use App\Models\Cluster;
 use App\Models\Delivery;
 use App\Models\Kiosk;
@@ -40,8 +41,10 @@ class KioskCreateTypeTest extends TestCase
         $this->actingAs($this->owner);
     }
 
-    public function test_konsinyasi_with_opening_balance_creates_pending_titipan(): void
+    public function test_konsinyasi_jatah_creates_pending_titipan(): void
     {
+        // SATU field mika: Jatah Titipan (default_qty_mika) = 4 → otomatis titipan awal 4.
+        // Tak ada lagi field "opening_balance_mika" terpisah.
         Livewire::test(CreateKiosk::class)
             ->fillForm([
                 'name' => 'Kedai Owner Konsinyasi',
@@ -49,18 +52,42 @@ class KioskCreateTypeTest extends TestCase
                 'store_note' => 'Biasa titip 4',
                 'default_qty_mika' => 4,
                 'jenis_kedai' => 'konsinyasi',
-                'opening_balance_mika' => 4,
             ])
             ->call('create')
             ->assertHasNoFormErrors();
 
         $kiosk = Kiosk::where('name', 'Kedai Owner Konsinyasi')->firstOrFail();
         $this->assertFalse((bool) $kiosk->is_cash_only);
+        $this->assertSame(4, (int) $kiosk->default_qty_mika);
         $this->assertSame('Biasa titip 4', $kiosk->store_note);
 
+        // Titipan awal = jatah (4 mika), bukan dari field terpisah.
         $pending = Delivery::where('kiosk_id', $kiosk->id)->doesntHave('settlement')->first();
         $this->assertNotNull($pending);
         $this->assertSame(4, (int) $pending->qty_delivered);
+    }
+
+    /** EDIT konsinyasi: satu field Jatah Titipan TAMPIL (bisa diubah). */
+    public function test_edit_konsinyasi_shows_jatah_field(): void
+    {
+        $kiosk = Kiosk::factory()->create([
+            'cluster_id' => $this->cluster->id, 'is_cash_only' => false, 'default_qty_mika' => 4,
+        ]);
+
+        Livewire::test(EditKiosk::class, ['record' => $kiosk->getRouteKey()])
+            ->assertFormFieldExists('default_qty_mika')
+            ->assertFormSet(['default_qty_mika' => 4]);
+    }
+
+    /** EDIT cash-only: field Jatah Titipan TERSEMBUNYI (tak relevan). */
+    public function test_edit_cash_only_hides_jatah_field(): void
+    {
+        $kiosk = Kiosk::factory()->create([
+            'cluster_id' => $this->cluster->id, 'is_cash_only' => true, 'default_qty_mika' => null,
+        ]);
+
+        Livewire::test(EditKiosk::class, ['record' => $kiosk->getRouteKey()])
+            ->assertFormFieldIsHidden('default_qty_mika');
     }
 
     public function test_cash_only_sets_flag_and_no_titipan(): void

@@ -129,13 +129,14 @@
             @enderror
         </div>
 
-        {{-- KONSINYASI: jatah + titipan berjalan sekarang. Titipan berjalan >= 1 →
-             otomatis bikin titipan → kedai LANGSUNG bisa "Tagih + Titip Ulang". --}}
+        {{-- KONSINYASI: SATU field mika — Jatah Titipan. Jatah ini otomatis jadi titipan
+             awal → kedai LANGSUNG bisa "Tagih + Titip Ulang"; sisa fisik dicek operator
+             di lapangan (sisa bagus + BS) → tagihan terkoreksi otomatis. --}}
         @if($jenisKedai === 'konsinyasi')
-            <div class="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-4">
+            <div class="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
                 <div>
                     <label for="defaultQtyMika" class="block text-sm font-bold text-slate-900 mb-2">
-                        Jatah (mika biasa dititip) <span class="text-red-500">*</span>
+                        Jatah Titipan (mika per kunjungan) <span class="text-red-500">*</span>
                     </label>
                     <input
                         type="number"
@@ -145,24 +146,8 @@
                         inputmode="numeric"
                         onfocus="this.select()"
                         class="w-full rounded-xl border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-3">
+                    <p class="text-xs text-slate-500 mt-1">Berapa mika yang dititip di kedai ini tiap kunjungan. Ini juga jadi titipan awal — kamu yang cek berapa sisanya pas kunjungan pertama.</p>
                     @error('defaultQtyMika')
-                        <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
-                    @enderror
-                </div>
-                <div>
-                    <label for="titipanBerjalan" class="block text-sm font-bold text-slate-900 mb-2">
-                        Titipan Berjalan Sekarang (mika)
-                    </label>
-                    <input
-                        type="number"
-                        id="titipanBerjalan"
-                        wire:model="titipanBerjalan"
-                        min="0"
-                        inputmode="numeric"
-                        onfocus="this.select()"
-                        class="w-full rounded-xl border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-3">
-                    <p class="text-xs text-slate-500 mt-1">Berapa mika yang SAAT INI sudah ada di kedai (belum dibayar). Isi kalau kamu memang lagi/baru naruh di sini — kedai langsung bisa ditagih kunjungan berikutnya. Isi 0 kalau belum ada.</p>
-                    @error('titipanBerjalan')
                         <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
                     @enderror
                 </div>

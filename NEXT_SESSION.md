@@ -1,6 +1,45 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 14 Juli 2026*
 
+## LEBUR DUA FIELD MIKA JADI SATU (form kios) (14 Juli 2026) — SELESAI & PUSHED
+**365 PASS** (dari 363; +5 test bersih, 0 regresi). Satu commit atomik.
+
+MASALAH: form kios punya DUA field mika yang membingungkan — "Jumlah Mika Biasanya per
+Antar" (default_qty_mika = jatah) DAN "Titipan berjalan sekarang" (opening balance). Owner
+TIDAK TAHU stok fisik saat input — itu urusan operator cek di lapangan.
+
+FIX (owner Filament Create+Edit DAN operator create-kiosk, KONSISTEN dua-duanya):
+1. HAPUS field "Titipan berjalan sekarang" (owner: `opening_balance_mika`; operator: prop
+   `titipanBerjalan`) — dari form, validasi, view, semua.
+2. SATU field saja: **"Jatah Titipan (mika per kunjungan)"** (`default_qty_mika`). Helper:
+   "Berapa mika yang dititip tiap kunjungan. Ini juga jadi titipan awal — operator cek sisanya
+   di lapangan." Wajib utk konsinyasi (owner & operator konsisten).
+3. Kedai KONSINYASI dibuat → OTOMATIS titipan awal SEJUMLAH JATAH via `OpeningBalance::create`
+   (sumber angka = default_qty_mika, bukan field terpisah) → langsung bisa "Tagih + Titip Ulang"
+   kunjungan pertama; tagihan dikoreksi otomatis input sisa/BS operator.
+4. Kedai CASH-ONLY → field jatah TERSEMBUNYI (owner: visible closure by jenis_kedai/is_cash_only;
+   `is_cash_only` toggle jadi `->live()` di edit; operator: `@if jenisKedai==konsinyasi`).
+
+RUMUS KOREKSI (tak berubah, diverifikasi E2E): tagihan AKSI 1 = (biji_dititip − returnFresh −
+returnExpired) × 800. Contoh test: jatah 4 (60 biji), operator isi sisa bagus 30 biji →
+tagihan (60−30)×800 = **Rp 24.000** (2 mika laku). Owner tak perlu tahu stok fisik.
+
+Test: `JatahOpeningBalanceE2ETest` (3: E2E jatah→titipan awal→tagihan terkoreksi sisa, cash-only
+tanpa jatah/titipan, blokir 2-langkah masih jalan) + edit-form smoke (2: konsinyasi tampil /
+cash-only sembunyi). Update KioskCreateTypeTest, CreateKioskDuringTripTest, KioskMapJumpTest.
+
+⚠️ STATUS FIELD INTERVAL/LARIS (dicek, TAK dihapus — lapor dulu sesuai permintaan):
+- **"Idealnya dikunjungi tiap berapa hari"** (`target_visit_interval_days`) → **DIPAKAI** logika:
+  overdue dashboard owner (`OwnerDashboardController:66`), urgency operator (`ActiveTrip:387`),
+  urutan prioritas StartTrip (`StartTrip:98`). JANGAN hapus.
+- **"Peringatan kalau belum dikunjungi"** (`warning_visit_interval_days`) → **DIPAKAI**
+  (`ActiveTrip:393`, `StartTrip:99`). JANGAN hapus.
+- **"Batas kios laris (hari)"** (`fast_mover_threshold_days`) → dipakai HANYA utk badge visual
+  "laris" (`ActiveTrip:404` computeKioskFlags) — TIDAK memengaruhi prioritas/urutan kunjungan
+  (informational). Semi-legacy. REKOMENDASI: boleh dibuang dari form kalau owner tak pakai badge
+  "laris"; tapi karena masih render badge yang terlihat, aku TAHAN dulu — owner putuskan.
+
+
 ## WIDGET "RINGKASAN BULAN INI" (dashboard owner) (14 Juli 2026) — SELESAI & PUSHED
 **360 PASS** (dari 353; +7 test, 0 regresi). Satu commit atomik.
 

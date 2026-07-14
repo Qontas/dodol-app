@@ -18,9 +18,10 @@ class CreateKiosk extends CreateRecord
     /**
      * JENIS KEDAI saat create (radio "Jenis Kedai", form-only/dehydrated false):
      *  - cash_only  → set is_cash_only=true (tak ada titipan/jatah).
-     *  - konsinyasi → kalau "titipan berjalan sekarang" >=1, buat titipan berjalan
-     *    (1 delivery konsinyasi PENDING) via OpeningBalance — TANPA kolom flag —
-     *    sehingga kios langsung bisa "Tagih + Titip Ulang" di kunjungan pertama.
+     *  - konsinyasi → kalau JATAH TITIPAN (default_qty_mika) >=1, otomatis buat titipan
+     *    berjalan SEJUMLAH JATAH itu (1 delivery konsinyasi PENDING) via OpeningBalance —
+     *    TANPA field mika terpisah — sehingga kios langsung bisa "Tagih + Titip Ulang" di
+     *    kunjungan pertama; tagihannya dikoreksi otomatis oleh input sisa/BS operator.
      * Kegagalan titipan tak menggagalkan pembuatan kios.
      */
     protected function afterCreate(): void
@@ -53,17 +54,18 @@ class CreateKiosk extends CreateRecord
             return;
         }
 
-        // Konsinyasi: bikin titipan berjalan bila diisi.
-        if ((int) ($data['opening_balance_mika'] ?? 0) < 1) {
+        // Konsinyasi: titipan awal = JATAH (default_qty_mika). Satu angka, satu sumber.
+        $jatah = (int) ($kiosk->default_qty_mika ?? 0);
+        if ($jatah < 1) {
             return;
         }
 
-        $delivery = OpeningBalance::create($kiosk, (int) $data['opening_balance_mika']);
+        $delivery = OpeningBalance::create($kiosk, $jatah);
 
         if ($delivery === null) {
             Notification::make()
                 ->title('Titipan berjalan belum tercatat')
-                ->body('Kios tersimpan, tapi saldo awal tidak dibuat (kios sudah punya titipan, atau belum ada varian produk aktif). Cek Master Data → Produk.')
+                ->body('Kios tersimpan, tapi titipan awal tidak dibuat (kios sudah punya titipan, atau belum ada varian produk aktif). Cek Master Data → Produk.')
                 ->warning()
                 ->send();
         }

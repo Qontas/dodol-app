@@ -29,13 +29,9 @@ class CreateKiosk extends Component
 
     // JENIS KEDAI saat input (owner input kedai KARENA sudah titip di sana; operator
     // nemu kedai baru sambil naruh dodol). 'konsinyasi' = ada titipan berjalan + jatah;
-    // 'cash_only' = beli putus, tak ada titipan/jatah.
+    // 'cash_only' = beli putus, tak ada titipan/jatah. KONSINYASI → titipan awal otomatis
+    // SEJUMLAH JATAH (defaultQtyMika) via OpeningBalance (satu field mika, bukan dua).
     public string $jenisKedai = 'konsinyasi';
-
-    // KONSINYASI: berapa mika titipan berjalan SAAT INI (belum dibayar). >=1 → otomatis
-    // bikin titipan berjalan (OpeningBalance) supaya kedai LANGSUNG bisa "Tagih + Titip
-    // Ulang" di kunjungan pertama.
-    public int $titipanBerjalan = 0;
 
     // CATATAN KEDAI (teks bebas) — karakteristik kedai, tampil menonjol ke operator.
     public string $storeNote = '';
@@ -116,9 +112,8 @@ class CreateKiosk extends Component
             })],
             'jenisKedai' => 'required|in:konsinyasi,cash_only',
             // Jatah hanya wajib untuk kedai KONSINYASI. Cash-only tak punya jatah.
-            'defaultQtyMika' => $isKonsinyasi ? 'required|integer|min:1' : 'nullable|integer|min:1',
-            // Titipan berjalan saat ini (konsinyasi) — 0 kalau kebetulan belum ada.
-            'titipanBerjalan' => 'nullable|integer|min:0|max:1000',
+            // Jatah ini SEKALIGUS jadi titipan awal (OpeningBalance) untuk konsinyasi.
+            'defaultQtyMika' => $isKonsinyasi ? 'required|integer|min:1|max:100' : 'nullable|integer|min:1',
             'storeNote' => 'nullable|string|max:500',
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
@@ -155,10 +150,11 @@ class CreateKiosk extends Component
             // (bukan NULL yang jatuh ke bawah tanpa nomor & mengacaukan urutan rute).
             Kiosk::appendToClusterOrder($kiosk);
 
-            // KONSINYASI + titipan berjalan → bikin titipan (OpeningBalance) supaya kedai
-            // LANGSUNG bisa "Tagih + Titip Ulang" di kunjungan pertama. Idempoten.
-            if ($isKonsinyasi && (int) $this->titipanBerjalan >= 1) {
-                \App\Support\OpeningBalance::create($kiosk, (int) $this->titipanBerjalan);
+            // KONSINYASI → titipan awal otomatis SEJUMLAH JATAH (defaultQtyMika) via
+            // OpeningBalance supaya kedai LANGSUNG bisa "Tagih + Titip Ulang" di kunjungan
+            // pertama; tagihan dikoreksi otomatis oleh input sisa/BS operator. Idempoten.
+            if ($isKonsinyasi && (int) $this->defaultQtyMika >= 1) {
+                \App\Support\OpeningBalance::create($kiosk, (int) $this->defaultQtyMika);
             }
 
             return $kiosk;
