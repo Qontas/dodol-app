@@ -27,6 +27,24 @@ Baris yang `notes`-nya BUKAN "Input lapangan oleh operator..."/"Foto ...operator
 = catatan manual owner → owner salin manual ke store_note lewat panel. Kalau semua stamp sistem → abaikan.
 Kalau nanti yakin `notes` mau di-drop total: hentikan dulu tulis-audit di ActiveTrip/CreateKiosk/Importer.
 
+### 2. Tombol "📍 Pakai Lokasi Saya (GPS)" di form kios owner (Create & Edit)
+Owner sering daftar kedai saat DI lokasi — ingin fitur sama seperti operator create-kiosk. Ternyata
+`LeafletMapPicker` SUDAH punya method `useMyLocation()` (Geolocation API), tapi cuma sebagai kontrol
+IKON kecil di pojok peta (kurang terlihat). FIX: render sebagai TOMBOL PROMINENT di atas peta
+(`leaflet-map-picker.blade.php`, sejajar tombol operator), gate-nya `showMyLocationButton` yang sudah
+di-set di `KioskResource`. Kontrol ikon kecil (`addGpsControl`) tak dipasang lagi (hindari dobol).
+`useMyLocation()` (`public/js/leaflet-map-picker.js`) diperkuat: error jelas (izin ditolak / tak
+tersedia / timeout / browser tak dukung) via state Alpine `gpsError`+`gpsLoading`, opsi
+`{enableHighAccuracy, timeout:10000}`, + `invalidateSize` setelah recenter (anti tile abu-abu).
+Konsisten dgn Loncat (paste link) & klik-peta: ketiganya `writeCoordinates` → state `location` yang
+sama (persist lat/lng via afterStateUpdated). REUSE, bukan implementasi baru.
+
+VERIFIKASI BROWSER (headed Chrome, `verify-gps-owner.cjs` — geolocation di-mock; script di-gitignore):
+- CREATE: tombol tampil → klik → marker pindah ke (3.7123456, 98.7123456), peta recenter, lat/lng
+  ke-tulis ke Livewire state (persist saat save). EDIT: tombol tampil juga (komponen sama). Izin
+  ditolak → pesan "Izin lokasi ditolak..." jelas, form utuh. Paste-link & klik-peta tetap jalan
+  (KioskMapJumpTest hijau). ALL PASS.
+
 
 ## LEBUR DUA FIELD MIKA JADI SATU (form kios) (14 Juli 2026) — SELESAI & PUSHED
 **365 PASS** (dari 363; +5 test bersih, 0 regresi). Satu commit atomik.

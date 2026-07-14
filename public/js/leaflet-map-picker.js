@@ -11,6 +11,12 @@ document.addEventListener('DOMContentLoaded', () => {
             map: null,
             marker: null,
 
+            // State tombol prominent "Pakai Lokasi Saya (GPS)" (dirender di blade,
+            // reaktif Alpine). showGpsButton ikut config yg sama dgn kontrol peta kecil.
+            showGpsButton: !!config.showMyLocationButton,
+            gpsLoading: false,
+            gpsError: '',
+
             getCoordinates() {
                 const state = $wire.get(config.statePath) ?? {};
                 const hasCoords = state && state.lat !== null && state.lat !== undefined
@@ -74,9 +80,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
 
-                if (config.showMyLocationButton) {
-                    this.addGpsControl();
-                }
+                // showMyLocationButton kini dirender sebagai tombol PROMINENT di blade
+                // (di atas peta, sejajar tombol operator) — bukan lagi kontrol ikon kecil
+                // di pojok peta, biar owner mudah menemukannya. addGpsControl() dipertahankan
+                // (dipakai method useMyLocation yang sama) tapi tak dipasang ke peta lagi.
 
                 if (config.showFullscreenControl) {
                     this.addFullscreenControl();
@@ -135,18 +142,38 @@ document.addEventListener('DOMContentLoaded', () => {
             },
 
             useMyLocation() {
+                this.gpsError = '';
+
                 if (!('geolocation' in navigator)) {
-                    alert('GPS tidak didukung browser ini.');
+                    this.gpsError = 'Browser ini tidak mendukung GPS/lokasi.';
                     return;
                 }
+
+                this.gpsLoading = true;
                 navigator.geolocation.getCurrentPosition(
                     (pos) => {
+                        this.gpsLoading = false;
                         const { latitude, longitude } = pos.coords;
                         this.map.setView([latitude, longitude], 17);
                         this.marker.setLatLng([latitude, longitude]);
                         this.writeCoordinates(latitude, longitude);
+                        // Cegah tile abu-abu setelah recenter (container mungkin baru
+                        // di-relayout) — sama fix dgn ResizeObserver invalidateSize.
+                        setTimeout(() => this.map.invalidateSize(), 60);
                     },
-                    () => alert('Gagal mendapatkan lokasi. Pastikan GPS aktif dan izin lokasi diberikan.')
+                    (err) => {
+                        this.gpsLoading = false;
+                        if (err && err.code === err.PERMISSION_DENIED) {
+                            this.gpsError = 'Izin lokasi ditolak. Aktifkan izin lokasi untuk situs ini di browser, lalu coba lagi.';
+                        } else if (err && err.code === err.POSITION_UNAVAILABLE) {
+                            this.gpsError = 'Lokasi tidak tersedia. Pastikan GPS/lokasi perangkat aktif.';
+                        } else if (err && err.code === err.TIMEOUT) {
+                            this.gpsError = 'Terlalu lama mencari lokasi (timeout). Coba lagi di tempat yang lebih terbuka.';
+                        } else {
+                            this.gpsError = 'Gagal mendapatkan lokasi. Coba lagi.';
+                        }
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
                 );
             },
 
