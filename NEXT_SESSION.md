@@ -1,5 +1,37 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 13 Juli 2026*
+*Sesi terakhir: 14 Juli 2026*
+
+## WIDGET "RINGKASAN BULAN INI" (dashboard owner) (14 Juli 2026) — SELESAI & PUSHED
+**360 PASS** (dari 353; +7 test, 0 regresi). Satu commit atomik.
+
+Dashboard owner (`/owner/dashboard`) dapat kartu **"Ringkasan Bulan Ini"** — 3 angka utama
+bulan berjalan (1 s/d hari ini), scoped OwnerScope (owner login saja):
+- 💰 **Omset** = SUM(`amount_paid`) atas delivery yg di-settle kunjungan aktif trip bulan ini.
+- 📈 **Untung Bersih** = omset − HPP − komisi (= `(SUM(qty_sold)/15)×(12000−hpp) − komisi`).
+- 👷 **Komisi Operator** = `SUM(qty_delivered non-BS) × komisi_per_mika` (basis DROP, Opsi Y).
+
+**RUMUS DIKONFIRMASI DULU (investigasi):** untung_kotor = mika_terjual×(12000−hpp);
+untung_bersih = untung_kotor − komisi_rian → komisi BENAR-BENAR terpotong. Kerugian BS/writeoff
+ditampilkan TERPISAH (`kerugianTitipan`), TIDAK mengurangi untung bersih (lapor apa adanya).
+Contoh (jual=drop 100 mika, hpp 9500, tarif 1000): omset Rp1.200.000, HPP Rp950.000, untung_kotor
+Rp250.000, komisi Rp100.000, untung_bersih Rp150.000. `commissions.commission_amount` (generated
+STORED) di-reverse-engineer saat trip end supaya = `komisi_rian` → `rekap_komisi` laporan bulanan
+KONSISTEN, bukan sumber beda.
+
+**KONSISTENSI DIBUKTIKAN TEST:** angka widget == totals `MonthlyReportController::buildMonthlyData`
+(omset/komisi/untung_bersih) — satu sumber kebenaran, scope trip `ended_at` + whereYear/whereMonth
+`trip_date` (identik laporan). Untuk bulan berjalan, 1–hari-ini ≡ whereMonth (tak ada data masa depan).
+
+**PERFORMA:** agregat DB (SUM), TANPA loop PHP. **7 query KONSTAN** (dibuktikan test 1-trip vs 6-trip
+= sama, no N+1): 3 bulan ini (pluck settled_delivery_ids + settlement SUM omset/qty_sold + delivery
+SUM drop) + 3 bulan lalu (pembanding vs) + 1 grouped komisi per-operator. Tak bergantung 956 kios.
+Vs-bulan-lalu delta % ditampilkan (murah, agregat sama). Rincian komisi per-operator muncul hanya
+kalau owner >1 operator (kalau 1, total = angka operator itu). TANPA cache (angka selalu live).
+
+File: `OwnerDashboardController::monthlySummary()` + `resources/views/owner/dashboard.blade.php`.
+Test: `RingkasanBulanIniTest` (6: omset/untung/komisi, komisi-terpotong, konsisten-laporan, isolasi
+tenant, hanya-trip-selesai-bulan-ini, per-operator) + `RingkasanQueryCountTest` (1: 7 query konstan).
+
 
 ## HARDENING PANEL SUPERADMIN LANJUTAN (13 Juli 2026) — SELESAI & PUSHED
 **353 PASS** (dari 351; +2 test, 0 regresi). 2 commit atomik. Tiga perubahan:

@@ -101,6 +101,57 @@ class OwnerDashboardController extends Controller
             ->get()
             ->sum('untung_bersih_owner');
 
+        // Widget — RINGKASAN BULAN INI: omset, untung bersih, komisi operator untuk
+        // bulan berjalan (1 s/d hari ini). Semua agregat di level DB (SUM), tanpa loop
+        // PHP per-trip. Rumus & scope IDENTIK totals MonthlyReportController (trip ended
+        // saja) supaya angka tak pernah beda dua versi. Perbandingan vs bulan lalu murah
+        // (agregat yang sama, bulan sebelumnya). Lihat monthlySummary().
+        $hppPerMikaVal = $user->getHppPerMikaValue();
+        $komisiPerMikaVal = $user->getKomisiPerMikaValue();
+
+        $now = today();
+        $lastMonth = $now->copy()->subMonthNoOverflow();
+
+        $ringkasanBulanIni = $this->monthlySummary($ownerId, $now->year, $now->month, $hppPerMikaVal, $komisiPerMikaVal);
+        $ringkasanBulanLalu = $this->monthlySummary($ownerId, $lastMonth->year, $lastMonth->month, $hppPerMikaVal, $komisiPerMikaVal);
+
+        // Delta % vs bulan lalu (null kalau bulan lalu 0 → tak ada basis banding).
+        $pctDelta = function ($now, $prev) {
+            if ($prev == 0) {
+                return null;
+            }
+            return round((($now - $prev) / abs($prev)) * 100, 1);
+        };
+        $ringkasanDelta = [
+            'omset' => $pctDelta($ringkasanBulanIni['omset'], $ringkasanBulanLalu['omset']),
+            'untung_bersih' => $pctDelta($ringkasanBulanIni['untung_bersih'], $ringkasanBulanLalu['untung_bersih']),
+            'komisi' => $pctDelta($ringkasanBulanIni['komisi'], $ringkasanBulanLalu['komisi']),
+        ];
+
+        // Rincian komisi per-operator bulan ini (1 grouped query). Ditampilkan hanya
+        // kalau owner punya >1 operator — kalau 1, angka total sudah = angka operator itu.
+        $komisiPerOperator = Delivery::query()
+            ->join('trips', 'trips.id', '=', 'deliveries.trip_id')
+            ->leftJoin('users', 'users.id', '=', 'trips.operator_id')
+            ->where('trips.owner_id', $ownerId)
+            ->whereNotNull('trips.ended_at')
+            ->whereYear('trips.trip_date', $now->year)
+            ->whereMonth('trips.trip_date', $now->month)
+            ->where('deliveries.delivery_type', '!=', 'bs_redistribution')
+            ->groupBy('trips.operator_id', 'users.name')
+            ->selectRaw('trips.operator_id, users.name as operator_name, COALESCE(SUM(deliveries.qty_delivered), 0) as drop_mika')
+            ->get()
+            ->map(fn ($r) => [
+                'operator' => $r->operator_name ?? '—',
+                'komisi' => (int) round(((float) $r->drop_mika) * $komisiPerMikaVal),
+            ])
+            ->sortByDesc('komisi')
+            ->values();
+
+        $bulanIdArr = [1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+        $bulanShortArr = [1 => 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+        $ringkasanPeriode = sprintf('%s %d (1–%d %s)', $bulanIdArr[$now->month], $now->year, $now->day, $bulanShortArr[$now->month]);
+
         // Data: sum(amount_paid) per hari 30 hari terakhir
         $startDate = today()->subDays(29);
         $endDate = today();
@@ -269,8 +320,67 @@ class OwnerDashboardController extends Controller
             'prediksiKios',
             'stoppedKiosks',
             'titipanTertunda',
-            'kerugianTitipan'
+            'kerugianTitipan',
+            'ringkasanBulanIni',
+            'ringkasanBulanLalu',
+            'ringkasanDelta',
+            'ringkasanPeriode',
+            'komisiPerOperator'
         ));
+    }
+
+    /**
+     * Ringkasan finansial satu bulan untuk owner, HANYA dari trip yang SUDAH SELESAI
+     * (ended_at) — scope & rumus IDENTIK totals MonthlyReportController::buildMonthlyData
+     * supaya angka tak pernah beda dua versi. Semua agregat di level DB (SUM), 3 query.
+     *
+     * Rumus (mirror accessor Trip):
+     *   omset        = SUM(settlements.amount_paid) atas delivery yg di-settle kunjungan
+     *                  aktif trip bulan ini (basis LAKU, = Trip::omset_val)
+     *   untung_kotor = (SUM(qty_sold)/15) × (12000 − hpp)          (= Trip::untung_kotor)
+     *   komisi       = SUM(qty_delivered non-BS) × komisi_per_mika (= Trip::komisi_rian, basis DROP)
+     *   untung_bersih= untung_kotor − komisi                       (= Trip::untung_bersih_owner)
+     */
+    private function monthlySummary(int $ownerId, int $year, int $mon, float $hpp, float $komisiPerMika): array
+    {
+        // Delivery yg di-settle oleh kunjungan AKTIF (belum dikoreksi) trip SELESAI owner
+        // bulan ini. Sama persis sumber Trip::omset_val / Trip::mika_terjual.
+        $settledDeliveryIds = KioskVisit::active()
+            ->whereNotNull('settled_delivery_id')
+            ->whereHas('trip', fn ($q) => $q->where('owner_id', $ownerId)
+                ->whereNotNull('ended_at')
+                ->whereYear('trip_date', $year)
+                ->whereMonth('trip_date', $mon))
+            ->pluck('settled_delivery_id');
+
+        $sale = Settlement::whereIn('delivery_id', $settledDeliveryIds)
+            ->selectRaw('COALESCE(SUM(amount_paid), 0) as omset, COALESCE(SUM(qty_sold), 0) as qty_sold')
+            ->first();
+
+        $omset = (float) ($sale->omset ?? 0);
+        $mikaTerjual = ((float) ($sale->qty_sold ?? 0)) / 15;
+        $untungKotor = $mikaTerjual * (12000 - $hpp);
+
+        // Komisi Rian basis DROP: mika diletakkan (exclude BS daur-ulang) × tarif.
+        // Clause !='bs_redistribution' identik Trip::getTotalDropReal() (delivery_type
+        // NOT NULL DEFAULT 'consignment', jadi tak ada jebakan NULL).
+        $dropMika = (float) Delivery::whereHas('trip', fn ($q) => $q->where('owner_id', $ownerId)
+                ->whereNotNull('ended_at')
+                ->whereYear('trip_date', $year)
+                ->whereMonth('trip_date', $mon))
+            ->where('delivery_type', '!=', 'bs_redistribution')
+            ->sum('qty_delivered');
+
+        $komisi = $dropMika * $komisiPerMika;
+
+        return [
+            'omset' => $omset,
+            'untung_kotor' => $untungKotor,
+            'komisi' => $komisi,
+            'untung_bersih' => $untungKotor - $komisi,
+            'mika_terjual' => $mikaTerjual,
+            'drop_mika' => $dropMika,
+        ];
     }
 
     /**

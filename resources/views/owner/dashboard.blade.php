@@ -107,6 +107,72 @@
             </div>
         </div>
 
+        {{-- Ringkasan Bulan Ini: omset, untung bersih, komisi operator (bulan berjalan) --}}
+        @php
+            $fmtDelta = function ($pct) {
+                if (is_null($pct)) {
+                    return ['—', 'text-slate-400', ''];
+                }
+                $naik = $pct >= 0;
+                return [
+                    ($naik ? '▲ ' : '▼ ') . number_format(abs($pct), 1, ',', '.') . '%',
+                    $naik ? 'text-green-600' : 'text-red-600',
+                    'vs bulan lalu',
+                ];
+            };
+        @endphp
+        <div class="bg-white rounded-lg border border-slate-200 p-5">
+            <div class="flex items-baseline justify-between gap-3 flex-wrap">
+                <h3 class="font-bold text-slate-900">Ringkasan Bulan Ini</h3>
+                <span class="text-xs font-medium text-slate-500">{{ $ringkasanPeriode }}</span>
+            </div>
+
+            <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {{-- Omset --}}
+                @php [$dOmset, $cOmset, $lOmset] = $fmtDelta($ringkasanDelta['omset']); @endphp
+                <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div class="text-xs uppercase tracking-wide font-medium text-slate-500">💰 Omset</div>
+                    <div class="mt-2 text-2xl font-bold text-green-700">
+                        Rp {{ number_format($ringkasanBulanIni['omset'], 0, ',', '.') }}
+                    </div>
+                    <div class="mt-1 text-xs {{ $cOmset }}">{{ $dOmset }} <span class="text-slate-400">{{ $lOmset }}</span></div>
+                </div>
+
+                {{-- Untung Bersih --}}
+                @php [$dUntung, $cUntung, $lUntung] = $fmtDelta($ringkasanDelta['untung_bersih']); @endphp
+                <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                    <div class="text-xs uppercase tracking-wide font-medium text-emerald-700">📈 Untung Bersih</div>
+                    <div class="mt-2 text-2xl font-bold {{ $ringkasanBulanIni['untung_bersih'] >= 0 ? 'text-emerald-700' : 'text-red-600' }}">
+                        Rp {{ number_format($ringkasanBulanIni['untung_bersih'], 0, ',', '.') }}
+                    </div>
+                    <div class="mt-1 text-xs {{ $cUntung }}">{{ $dUntung }} <span class="text-slate-400">{{ $lUntung }}</span></div>
+                    <div class="mt-2 text-[11px] text-slate-500 leading-snug">
+                        Omset − HPP − komisi. Kerugian BS ditampilkan terpisah.
+                    </div>
+                </div>
+
+                {{-- Komisi Operator --}}
+                @php [$dKomisi, $cKomisi, $lKomisi] = $fmtDelta($ringkasanDelta['komisi']); @endphp
+                <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <div class="text-xs uppercase tracking-wide font-medium text-amber-700">👷 Komisi Operator</div>
+                    <div class="mt-2 text-2xl font-bold text-amber-700">
+                        Rp {{ number_format($ringkasanBulanIni['komisi'], 0, ',', '.') }}
+                    </div>
+                    <div class="mt-1 text-xs {{ $cKomisi }}">{{ $dKomisi }} <span class="text-slate-400">{{ $lKomisi }}</span></div>
+                    @if ($komisiPerOperator->count() > 1)
+                        <div class="mt-2 space-y-0.5">
+                            @foreach ($komisiPerOperator as $op)
+                                <div class="flex justify-between text-[11px] text-amber-800">
+                                    <span class="truncate pr-2">{{ $op['operator'] }}</span>
+                                    <span class="font-medium whitespace-nowrap">Rp {{ number_format($op['komisi'], 0, ',', '.') }}</span>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+
         {{-- Tabel Stok Per Batch --}}
         @if ($batchStok->count() > 0)
             <div class="bg-white rounded-lg border border-slate-200 mt-6">
