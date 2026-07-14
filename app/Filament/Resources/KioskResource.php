@@ -89,10 +89,10 @@ class KioskResource extends Resource
 
                         Forms\Components\Textarea::make('store_note')
                             ->label('Catatan Kedai')
-                            ->rows(2)
+                            ->rows(3)
                             ->maxLength(500)
                             ->placeholder('cth: Cash-only, biasa minta 5 mika / Suka-suka, kadang banyak kadang dikit')
-                            ->helperText('Karakteristik/kebiasaan kedai. Tampil MENONJOL ke operator saat buka kedai.')
+                            ->helperText('Kebiasaan/karakteristik kedai. Tampil menonjol ke operator saat buka kedai.')
                             ->columnSpanFull(),
 
                         Forms\Components\TextInput::make('sort_order')
@@ -374,16 +374,12 @@ class KioskResource extends Resource
                             ->content(fn (?Kiosk $record): string => $record?->stopped_by ? ucfirst($record->stopped_by) : '—'),
                     ]),
 
-                Section::make('Catatan')
-                    ->collapsed()
-                    ->schema([
-                        Forms\Components\Textarea::make('notes')
-                            ->label('Catatan')
-                            ->rows(3)
-                            ->maxLength(1000)
-                            ->placeholder('Catatan tambahan tentang kios ini')
-                            ->columnSpanFull(),
-                    ]),
+                // CATATAN: field form "notes" (section "Catatan") DIHAPUS 14 Juli 2026 —
+                // duplikat membingungkan dengan "Catatan Kedai" (store_note). Yang
+                // dipertahankan = store_note (satu-satunya yang DIRENDER MENONJOL ke operator
+                // di active-trip). Kolom DB `notes` SENGAJA TIDAK di-drop (masih dipakai
+                // sistem: jejak audit foto/stop di ActiveTrip, stamp "Input lapangan operator"
+                // di CreateKiosk, & "GPS: <link>" dari KioskImporter) — reversible.
             ]);
     }
 

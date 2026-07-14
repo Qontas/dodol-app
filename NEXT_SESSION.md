@@ -1,6 +1,33 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 14 Juli 2026*
 
+## FORM KIOS OWNER: LEBUR CATATAN + TOMBOL GPS (14 Juli 2026) — SELESAI & PUSHED
+**365 PASS** (0 test baru, 0 regresi — perubahan UI/JS diverifikasi browser). Dua commit atomik.
+
+### 1. Dua field catatan → satu (`store_note`)
+INVESTIGASI (dua kolom DB BEDA, bukan satu dirender dua kali):
+- **`store_note`** (string 500, migration `2026_07_13_000002`) = "Catatan Kedai" — SATU-SATUNYA yang
+  DIRENDER MENONJOL ke operator (`active-trip.blade.php:515-518`, kotak biru saat buka kedai).
+- **`notes`** (text, kolom asli kiosks) = "Catatan" (section bawah) — BUKAN duplikat murni: dipakai
+  SISTEM → jejak audit foto/stop (`ActiveTrip.php:762`), stamp "Input lapangan oleh operator"
+  (`CreateKiosk`), & "GPS: <link>" dari import (`KioskImporter.php:106`, diuji `KioskImporterAidilTest`).
+
+FIX: field form `notes` (section "Catatan") DIHAPUS dari owner Filament (`KioskResource`). Pertahankan
+`store_note` (label "Catatan Kedai", helper "Kebiasaan/karakteristik kedai. Tampil menonjol ke operator
+saat buka kedai."). **Kolom `notes` SENGAJA TIDAK di-drop** (masih dipakai sistem → reversible & tak
+hilang data). Operator create-kiosk sudah satu field (`storeNote`) — tak ada duplikat di sana.
+TAK migrasi `notes`→`store_note` (isinya sebagian audit/GPS sistem → akan mengotori catatan operator).
+
+⚠️ CEK DATA PRODUKSI (READ-ONLY, owner jalankan di Railway console) — apakah ada `notes` isi manual
+owner yang PERLU dipindah ke `store_note` (bukan sekadar stamp sistem/GPS):
+```bash
+php artisan tinker --execute="foreach (\App\Models\Kiosk::withoutGlobalScopes()->whereNotNull('notes')->where('notes','!=','')->get() as \$k){ echo \$k->id.' | '.\$k->name.' | store_note='.(\$k->store_note ?? '-').' | notes='.str_replace(chr(10),' / ',\$k->notes).PHP_EOL; }"
+```
+Baris yang `notes`-nya BUKAN "Input lapangan oleh operator..."/"Foto ...operator..."/"GPS: http..."
+= catatan manual owner → owner salin manual ke store_note lewat panel. Kalau semua stamp sistem → abaikan.
+Kalau nanti yakin `notes` mau di-drop total: hentikan dulu tulis-audit di ActiveTrip/CreateKiosk/Importer.
+
+
 ## LEBUR DUA FIELD MIKA JADI SATU (form kios) (14 Juli 2026) — SELESAI & PUSHED
 **365 PASS** (dari 363; +5 test bersih, 0 regresi). Satu commit atomik.
 
