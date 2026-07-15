@@ -33,17 +33,13 @@ class CreateKiosk extends CreateRecord
             return;
         }
 
-        // URUTAN RUTE: kosong = otomatis TERAKHIR di cluster (bukan NULL yang mengacaukan
-        // urutan). Kalau owner mengisi angka eksplisit → hormati + auto-reflow
-        // (reorderWithinCluster geser yang lain, tak ada duplikat). Reset ke null dulu
-        // supaya reorderWithinCluster memakai jalur "sisip baru".
-        $desiredSort = $data['sort_order'] ?? null;
-        $kiosk->update(['sort_order' => null]);
-        if ($desiredSort !== null && $desiredSort !== '') {
-            Kiosk::reorderWithinCluster($kiosk, (int) $desiredSort);
-        } else {
-            Kiosk::appendToClusterOrder($kiosk);
-        }
+        // URUTAN RUTE: kios baru SELALU jadi urutan TERAKHIR di area-nya (bukan NULL yang
+        // jatuh ke bawah tanpa nomor & mengacaukan urutan rute). Sejak field "Urutan Rute"
+        // dibuang dari form (15 Juli 2026), tak ada lagi jalur "owner isi angka eksplisit
+        // saat create" — owner mengatur urutan BELAKANGAN di halaman daftar (drag per-Area
+        // atau ketik angka di kolom "Urutan" → Kiosk::reorderWithinCluster). Sama persis
+        // dengan perilaku operator create-kiosk.
+        Kiosk::appendToClusterOrder($kiosk);
 
         $jenis = $data['jenis_kedai'] ?? 'konsinyasi';
 

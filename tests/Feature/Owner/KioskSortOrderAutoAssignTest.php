@@ -123,7 +123,37 @@ class KioskSortOrderAutoAssignTest extends TestCase
         $this->assertSame(1, (int) $kiosk->sort_order);
     }
 
-    public function test_owner_create_with_explicit_order_is_honored_and_reflows(): void
+    /**
+     * Field "Urutan Rute" DIBUANG dari form create/edit (15 Juli 2026): owner tak
+     * memakainya saat input. Konsekuensinya kios baru SELALU jadi TERAKHIR di area-nya
+     * dan kios lain TIDAK tergeser — tak ada lagi jalur "sisip di posisi N" saat create
+     * (menyisipkan tetap bisa BELAKANGAN lewat kolom "Urutan" di daftar → diuji
+     * KioskSortOrderReflowTest).
+     */
+    public function test_owner_create_form_has_no_sort_order_field(): void
+    {
+        Filament::setCurrentPanel(Filament::getPanel('owner'));
+        $this->actingAs($this->owner);
+
+        Livewire::test(OwnerCreateKiosk::class)
+            ->assertFormFieldDoesNotExist('sort_order');
+    }
+
+    public function test_owner_edit_form_has_no_sort_order_field(): void
+    {
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'sort_order' => 2]);
+
+        Filament::setCurrentPanel(Filament::getPanel('owner'));
+        $this->actingAs($this->owner);
+
+        Livewire::test(EditKiosk::class, ['record' => $kiosk->id])
+            ->assertFormFieldDoesNotExist('sort_order');
+
+        // Urutan yang sudah ada TIDAK ikut hilang cuma karena field-nya dibuang dari form.
+        $this->assertSame(2, (int) $kiosk->refresh()->sort_order);
+    }
+
+    public function test_owner_create_appends_last_without_shifting_others(): void
     {
         $a = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'sort_order' => 1, 'name' => 'A']);
         $b = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'sort_order' => 2, 'name' => 'B']);
@@ -134,24 +164,23 @@ class KioskSortOrderAutoAssignTest extends TestCase
 
         Livewire::test(OwnerCreateKiosk::class)
             ->fillForm([
-                'name' => 'Sisip',
+                'name' => 'Kios Baru',
                 'cluster_id' => $this->cluster->id,
-                'sort_order' => 2, // sisip di posisi 2
                 'jenis_kedai' => 'cash_only',
             ])
             ->call('create')
             ->assertHasNoFormErrors();
 
-        $new = Kiosk::where('name', 'Sisip')->firstOrFail();
-        $this->assertSame(2, (int) $new->sort_order);
+        $new = Kiosk::where('name', 'Kios Baru')->firstOrFail();
+        $this->assertSame(4, (int) $new->sort_order); // terakhir di area
 
-        // Reflow: B(2)→3, C(3)→4, A tetap 1. Tak ada duplikat, gapless.
+        // Kios lama tetap di posisinya — tak ada reflow saat create.
         $this->assertSame(1, (int) $a->refresh()->sort_order);
-        $this->assertSame(3, (int) $b->refresh()->sort_order);
-        $this->assertSame(4, (int) $c->refresh()->sort_order);
+        $this->assertSame(2, (int) $b->refresh()->sort_order);
+        $this->assertSame(3, (int) $c->refresh()->sort_order);
 
         $orders = Kiosk::where('cluster_id', $this->cluster->id)->pluck('sort_order')->sort()->values()->all();
-        $this->assertSame([1, 2, 3, 4], $orders);
+        $this->assertSame([1, 2, 3, 4], $orders); // gapless, tak ada duplikat
     }
 
     // ---------- EDIT pindah cluster ----------

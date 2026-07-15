@@ -95,12 +95,13 @@ class KioskResource extends Resource
                             ->helperText('Kebiasaan/karakteristik kedai. Tampil menonjol ke operator saat buka kedai.')
                             ->columnSpanFull(),
 
-                        Forms\Components\TextInput::make('sort_order')
-                            ->label('Urutan Rute (dalam Area)')
-                            ->numeric()
-                            ->placeholder('Kosongkan = di bawah dalam area ini')
-                            ->helperText('Angka lebih kecil tampil lebih dulu DALAM AREA yang sama, di daftar & urutan kunjungan operator. Isi angka yang sudah dipakai kios lain? Otomatis digeser, tak akan kembar. Bisa juga diatur lewat drag di halaman daftar — filter ke satu Area dulu, tombol drag baru muncul.'),
-
+                        // CATATAN: field form "sort_order" ("Urutan Rute") DIHAPUS 15 Juli 2026 —
+                        // owner tak memakainya saat input & makan tempat di form. Kios baru SELALU
+                        // dapat urutan TERAKHIR di area-nya (CreateKiosk::afterCreate →
+                        // Kiosk::appendToClusterOrder). Urutan tetap bisa diatur BELAKANGAN di
+                        // halaman daftar: drag (filter 1 Area) atau ketik angka di kolom "Urutan"
+                        // (TextInputColumn → reorderWithinCluster, anti-duplikat). Kolom DB
+                        // sort_order & kedua jalur itu TIDAK disentuh — cuma field di form ini.
                         Forms\Components\TextInput::make('phone')
                             ->label('Nomor Telepon')
                             ->tel()
@@ -311,10 +312,16 @@ class KioskResource extends Resource
                             ->helperText('Foto akan dikecilkan otomatis. Maksimal 5MB. Format: JPG, PNG, WEBP. Opsional.')
                             ->columnSpanFull(),
 
+                        // DEFAULT kios BARU (15 Juli 2026, angka dari owner): ideal 10 hari,
+                        // peringatan 14 hari, laris 7 hari. ->default() Filament HANYA berlaku
+                        // di form CREATE — form EDIT selalu diisi dari record, jadi kios LAMA
+                        // tetap memakai nilainya sendiri (tak ada nilai yang dipaksakan ulang).
+                        // Catatan: default lama terbalik (peringatan 10 < ideal 14 → kios ditandai
+                        // "telat" sebelum jatuh tempo); angka baru mengembalikan urutan yang benar.
                         Forms\Components\TextInput::make('warning_visit_interval_days')
                             ->label('Peringatan kalau belum dikunjungi (hari)')
                             ->numeric()
-                            ->default(10)
+                            ->default(14)
                             ->minValue(1)
                             ->maxValue(60)
                             ->suffix('hari')
@@ -323,7 +330,7 @@ class KioskResource extends Resource
                         Forms\Components\TextInput::make('target_visit_interval_days')
                             ->label('Idealnya dikunjungi tiap berapa hari (hari)')
                             ->numeric()
-                            ->default(14)
+                            ->default(10)
                             ->minValue(1)
                             ->maxValue(90)
                             ->suffix('hari')
@@ -333,6 +340,7 @@ class KioskResource extends Resource
                             ->label('Batas kios laris (hari)')
                             ->numeric()
                             ->nullable()
+                            ->default(7)
                             ->minValue(1)
                             ->maxValue(120)
                             ->suffix('hari')
