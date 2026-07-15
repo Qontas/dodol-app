@@ -310,6 +310,17 @@ class KioskResource extends Resource
                                 ];
                             })
                             ->helperText('Foto akan dikecilkan otomatis. Maksimal 5MB. Format: JPG, PNG, WEBP. Opsional.')
+                            // Hook untuk tombol "Ambil Foto (Kamera)" di bawah — lihat
+                            // kiosk-camera-button.blade.php. Cuma penanda DOM; tak mengubah
+                            // perilaku widget.
+                            ->extraAttributes(['data-kiosk-photo' => '1'])
+                            ->columnSpanFull(),
+
+                        // Tombol kamera/galeri untuk widget foto di atas. Owner sering daftar
+                        // kedai saat DI lokasi (sama seperti tombol GPS) → butuh jalur satu-ketuk
+                        // ke kamera tanpa keluar app, TAPI galeri harus tetap bisa. Lihat blade-nya
+                        // untuk alasan kenapa capture dipasang sesaat, bukan permanen di input.
+                        Forms\Components\View::make('filament.forms.components.kiosk-camera-button')
                             ->columnSpanFull(),
 
                         // DEFAULT kios BARU (15 Juli 2026, angka dari owner): ideal 10 hari,

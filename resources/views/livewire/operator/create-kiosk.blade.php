@@ -287,13 +287,31 @@
             <label class="block text-sm font-bold text-slate-900 mb-2">
                 Foto Kios <span class="text-slate-400 font-normal">(opsional)</span>
             </label>
-            <input
-                type="file"
-                accept="image/*"
-                x-on:change="handleFoto($event)"
-                class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4
-                       file:rounded-lg file:border-0 file:text-sm file:font-semibold
-                       file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100">
+
+            {{-- DUA jalur, SENGAJA dua input terpisah (bukan satu input dengan capture):
+                 atribut `capture` MEMAKSA kamera & MENGHILANGKAN pilihan galeri di HP.
+                 Jadi "Ambil Foto" = input ber-capture (langsung buka kamera belakang, tak
+                 usah keluar app), "Dari Galeri" = input polos (perilaku LAMA, tak berubah).
+                 Di desktop `capture` diabaikan browser → dua-duanya jadi file picker biasa.
+                 Keduanya masuk ke handleFoto yang sama → kompres & upload tak berubah. --}}
+            <div class="grid grid-cols-2 gap-2">
+                <button type="button" x-on:click="$refs.fotoKamera.click()" :disabled="preparing"
+                        class="py-2.5 rounded-xl bg-amber-600 text-white text-sm font-semibold
+                               hover:bg-amber-700 active:scale-[0.98] transition disabled:opacity-60">
+                    📷 Ambil Foto
+                </button>
+                <button type="button" x-on:click="$refs.fotoGaleri.click()" :disabled="preparing"
+                        class="py-2.5 rounded-xl border border-amber-400 text-amber-700 text-sm font-semibold
+                               bg-amber-50 hover:bg-amber-100 active:scale-[0.98] transition disabled:opacity-60">
+                    🖼️ Dari Galeri
+                </button>
+            </div>
+
+            <input type="file" accept="image/*" capture="environment" x-ref="fotoKamera"
+                   class="hidden" x-on:change="handleFoto($event)">
+            <input type="file" accept="image/*" x-ref="fotoGaleri"
+                   class="hidden" x-on:change="handleFoto($event)">
+
             <div x-show="preparing" class="mt-2 text-xs text-amber-600">Menyiapkan foto…</div>
             <div wire:loading wire:target="foto" class="mt-2 text-xs text-amber-600">Mengunggah foto…</div>
             @if($foto)
