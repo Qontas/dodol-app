@@ -6,6 +6,7 @@ use App\Models\Cluster;
 use App\Models\Kiosk;
 use App\Support\GoogleMapsShortLinkResolver;
 use App\Support\KioskLocationParser;
+use App\Support\KioskPhoto;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -118,15 +119,26 @@ class CreateKiosk extends Component
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
             'telepon' => 'nullable|string|max:20',
-            'foto' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
-        ], [
+            // Plafon & format foto dipusatkan di App\Support\KioskPhoto (dulu tiap jalur
+            // punya aturannya sendiri → perilaku beda-beda). Foto besar TIDAK ditolak
+            // lagi: sudah dikompres di browser, dan plafon 20MB cuma jaring pengaman.
+            'foto' => KioskPhoto::rules(),
+        ], array_merge([
             'namaKios.required' => 'Nama kios wajib diisi',
             'namaPemilik.required' => 'Nama pemilik wajib diisi',
             'clusterId.required' => 'Pilih area dulu',
             'clusterId.exists' => 'Area tidak valid',
             'defaultQtyMika.required' => 'Isi jatah (mika biasa dititip)',
             'defaultQtyMika.min' => 'Minimal 1 mika',
-        ]);
+        ], KioskPhoto::pesanValidasi('foto')));
+
+        // HEIC di server tanpa delegate HEIF: tolak DI SINI dengan instruksi yang bisa
+        // ditindaklanjuti, jangan biarkan tersimpan mentah (= foto blank buat yang lain).
+        if (KioskPhoto::heicTakBisaDiproses($this->foto)) {
+            $this->addError('foto', KioskPhoto::pesanHeicTakDidukung());
+
+            return null;
+        }
 
         $kiosk = DB::transaction(function () use ($isKonsinyasi) {
             $kiosk = Kiosk::create([
@@ -160,15 +172,18 @@ class CreateKiosk extends Component
             return $kiosk;
         });
 
-        // Foto opsional dari lapangan: disimpan ke disk media (configurable via
-        // MEDIA_DISK — lokal default, R2/S3 saat siap). Kompres utama dilakukan di
-        // browser sebelum upload; ImageResizer jaring pengaman server-side yang kini
-        // jalan di disk LOCAL maupun CLOUD (R2/S3).
+        // Foto opsional dari lapangan. Kompres utama di browser; KioskPhoto::store()
+        // menangani konversi HEIC → JPG + ImageResizer (jaring pengaman server) dan
+        // menyimpan ke disk media (MEDIA_DISK: lokal default, R2/S3 di produksi).
         if ($this->foto) {
-            $disk = config('app.media_disk', 'public');
-            $path = $this->foto->store('kiosks', $disk);
-            \App\Support\ImageResizer::fit($path, $disk, 1280, 1280);
-            $kiosk->update(['photo_path' => $path]);
+            $path = KioskPhoto::store($this->foto);
+
+            if ($path === null) {
+                // Kios sudah tersimpan — jangan gagalkan semuanya cuma karena foto.
+                session()->flash('foto_gagal', 'Kios tersimpan, tapi fotonya gagal diproses. Buka kios ini lalu unggah ulang fotonya.');
+            } else {
+                $kiosk->update(['photo_path' => $path]);
+            }
         }
 
         session()->flash('kios_saved', 'Kios baru berhasil ditambahkan.');

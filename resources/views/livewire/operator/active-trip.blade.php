@@ -1177,55 +1177,26 @@
     </div>
     @endif
 
-    {{-- Kompres foto di browser (canvas, tanpa library eksternal — andal di lapangan/PWA
-         tanpa CDN). Sisi terpanjang ~1280px, JPEG ~0.7. Kalau kompres gagal, file asli
-         tetap diupload (ImageResizer server jadi jaring pengaman terakhir). Pola sama
-         create-kiosk.blade.php. Setelah upload selesai → saveKioskPhoto() menyimpan. --}}
+    {{-- Kompres foto di browser SEBELUM upload — satu sumber dengan create-kiosk:
+         resources/js/kiosk-photo.js (window.kompresFotoKios; canvas, sisi terpanjang
+         1600px, JPEG 0.8, tanpa library). Foto kamera HP 8–17MB dikecilkan dulu supaya
+         tak kena plafon & cepat terkirim di sinyal lapangan. Kalau kompres tak bisa
+         (mis. HEIC di Android), file asli dikirim & server yang konversi/kecilkan.
+         Setelah upload selesai → saveKioskPhoto() menyimpan. --}}
     <script>
         function kioskPhotoUpload() {
             return {
                 busy: false,
-                handle(e) {
+                async handle(e) {
                     const file = e.target.files[0];
                     if (!file) return;
                     this.busy = true;
-                    const send = (out) => {
-                        this.$wire.upload('kioskPhoto', out,
-                            () => { this.$wire.saveKioskPhoto().then(() => { this.busy = false; }); },
-                            () => { this.busy = false; },
-                        );
-                    };
-                    if (!file.type || !file.type.startsWith('image/')) { send(file); }
-                    else { this.compress(file).then(send).catch(() => send(file)); }
-                    e.target.value = '';
-                },
-                compress(file) {
-                    return new Promise((resolve, reject) => {
-                        const url = URL.createObjectURL(file);
-                        const img = new Image();
-                        img.onload = () => {
-                            URL.revokeObjectURL(url);
-                            const maxSide = 1280;
-                            let w = img.width, h = img.height;
-                            if (w > maxSide || h > maxSide) {
-                                if (w >= h) { h = Math.round(h * maxSide / w); w = maxSide; }
-                                else { w = Math.round(w * maxSide / h); h = maxSide; }
-                            }
-                            const canvas = document.createElement('canvas');
-                            canvas.width = w; canvas.height = h;
-                            const ctx = canvas.getContext('2d');
-                            if (!ctx) { reject(); return; }
-                            ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
-                            ctx.drawImage(img, 0, 0, w, h);
-                            canvas.toBlob((blob) => {
-                                if (!blob) { reject(); return; }
-                                const name = (file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg';
-                                resolve(new File([blob], name, { type: 'image/jpeg' }));
-                            }, 'image/jpeg', 0.7);
-                        };
-                        img.onerror = () => { URL.revokeObjectURL(url); reject(); };
-                        img.src = url;
-                    });
+                    e.target.value = ''; // boleh pilih file yang SAMA lagi setelah ini
+                    const out = await window.kompresFotoKios(file);
+                    this.$wire.upload('kioskPhoto', out,
+                        () => { this.$wire.saveKioskPhoto().then(() => { this.busy = false; }); },
+                        () => { this.busy = false; },
+                    );
                 },
             };
         }

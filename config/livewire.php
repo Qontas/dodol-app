@@ -72,7 +72,17 @@ return [
         // final tetap disimpan ke R2 server-side (config('app.media_disk')). Berlaku
         // untuk form owner (Filament) & operator (Livewire) sekaligus.
         'disk' => 'local',     // Example: 'local', 's3'              | Default: 'default'
-        'rules' => null,       // Example: ['file', 'mimes:png,jpg']  | Default: ['required', 'file', 'max:12288'] (12MB)
+        // Plafon temp upload DINAIKKAN dari default 12MB → 20MB, disamakan dengan
+        // plafon validasi aplikasi (App\Support\KioskPhoto::MAKS_KB). Perlu karena foto
+        // HEIC dikirim MENTAH ke server (browser Android tak bisa decode HEIC → server
+        // yang konversi) dan foto HP bisa besar. Ini BUKAN "buka pintu lebar-lebar":
+        // foto JPG/PNG sudah dikompres di browser jadi <1MB sebelum sampai sini; angka
+        // ini cuma jaring pengaman supaya file sah tak ditolak mentah, dan tetap ADA
+        // batasnya (cegah abuse). PHP-nya sendiri di-set 24M/28M (php-ini/uploads.ini)
+        // supaya file di atas plafon ditolak validasi Laravel dengan pesan jelas,
+        // bukan mati diam-diam di level PHP.
+        'rules' => ['required', 'file', 'max:20480'], // 20MB
+
         'directory' => null,   // Example: 'tmp'                      | Default: 'livewire-tmp'
         'middleware' => null,  // Example: 'throttle:5,1'             | Default: 'throttle:60,1'
         'preview_mimes' => [   // Supported file types for temporary pre-signed file URLs...

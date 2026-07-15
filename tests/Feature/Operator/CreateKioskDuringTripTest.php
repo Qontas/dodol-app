@@ -211,9 +211,11 @@ class CreateKioskDuringTripTest extends TestCase
 
         $this->actingAs($operator);
 
-        // Foto besar (2000x1500) harus diperkecil ke dalam 1280px (jaring pengaman
-        // server-side untuk disk lokal; kompres utama di browser).
-        $foto = UploadedFile::fake()->image('kios.jpg', 2000, 1500);
+        // Foto besar (2400x1800) harus diperkecil ke dalam KioskPhoto::MAKS_SISI
+        // (jaring pengaman server-side; kompres utama di browser). Dimensi dinaikkan
+        // dari 2000x1500 karena batasnya kini 1600 — dengan 2000px foto masih akan
+        // dikecilkan, tapi 2400 membuat tes ini tetap menguji hal yang sama tegasnya.
+        $foto = UploadedFile::fake()->image('kios.jpg', 2400, 1800);
 
         Livewire::test(CreateKiosk::class)
             ->set('namaKios', 'Kios Berfoto')
@@ -229,9 +231,12 @@ class CreateKioskDuringTripTest extends TestCase
         $this->assertNotNull($kiosk->photo_path);
         Storage::disk('public')->assertExists($kiosk->photo_path);
 
-        // Resize GD: dimensi akhir tidak melebihi 1280px.
+        // Resize GD: dimensi akhir tidak melebihi plafon (dari konstanta, bukan angka
+        // mentah yang gampang menyimpang dari kompres browser & form owner).
+        $maks = \App\Support\KioskPhoto::MAKS_SISI;
         [$w, $h] = getimagesize(Storage::disk('public')->path($kiosk->photo_path));
-        $this->assertLessThanOrEqual(1280, $w);
-        $this->assertLessThanOrEqual(1280, $h);
+        $this->assertLessThanOrEqual($maks, $w);
+        $this->assertLessThanOrEqual($maks, $h);
+        $this->assertLessThan(2400, $w, 'Foto 2400px harus benar-benar diperkecil.');
     }
 }

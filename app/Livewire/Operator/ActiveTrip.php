@@ -10,7 +10,7 @@ use App\Models\Delivery;
 use App\Models\Settlement;
 use App\Models\KioskVisit;
 use App\Models\ProductVariant;
-use App\Support\ImageResizer;
+use App\Support\KioskPhoto;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
@@ -731,13 +731,24 @@ class ActiveTrip extends Component
             return;
         }
 
-        $this->validate([
-            'kioskPhoto' => 'required|image|mimes:jpg,jpeg,png,webp|max:5120',
-        ], [
-            'kioskPhoto.required' => 'Pilih foto dulu.',
-            'kioskPhoto.image' => 'File harus berupa gambar.',
-            'kioskPhoto.max' => 'Ukuran foto maksimal 5MB.',
-        ]);
+        // Aturan foto dipusatkan di App\Support\KioskPhoto (plafon 20MB = jaring
+        // pengaman; foto sudah dikompres browser jadi <1MB). Foto besar dari kamera HP
+        // TIDAK ditolak lagi.
+        $this->validate(
+            ['kioskPhoto' => KioskPhoto::rules(required: true)],
+            array_merge(
+                ['kioskPhoto.required' => 'Pilih foto dulu.'],
+                KioskPhoto::pesanValidasi('kioskPhoto'),
+            ),
+        );
+
+        // HEIC di server tanpa delegate HEIF → tolak dengan instruksi, jangan simpan
+        // mentah (HEIC tak tampil di browser Android/desktop = foto blank).
+        if (KioskPhoto::heicTakBisaDiproses($this->kioskPhoto)) {
+            $this->addError('kioskPhoto', KioskPhoto::pesanHeicTakDidukung());
+
+            return;
+        }
 
         // 🔒 Re-verifikasi kepemilikan server-side (jangan percaya selectedKiosk mentah).
         $ownerId = auth()->user()->owner_id;
@@ -750,11 +761,17 @@ class ActiveTrip extends Component
             return;
         }
 
-        $disk = config('app.media_disk', 'public');
         $isReplace = ! empty($kiosk->photo_path);
 
-        $path = $this->kioskPhoto->store('kiosks', $disk);
-        ImageResizer::fit($path, $disk, 1280, 1280);
+        // KioskPhoto::store() = konversi HEIC → JPG (kalau perlu) lalu kompres
+        // (ImageResizer) lalu simpan. Satu jalur, sama dengan create-kiosk & form owner.
+        $path = KioskPhoto::store($this->kioskPhoto);
+
+        if ($path === null) {
+            $this->addError('kioskPhoto', 'Foto gagal diproses. Coba foto ulang.');
+
+            return;
+        }
 
         // Jejak audit di notes (pola CreateKiosk). Timpa bebas — riwayat foto tidak disimpan.
         $verb = $isReplace ? 'diganti' : 'ditambah';

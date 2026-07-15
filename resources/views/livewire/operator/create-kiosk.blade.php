@@ -240,48 +240,23 @@
         </div>
 
         {{-- Foto Kios --}}
-        {{-- Kompres di browser sebelum upload (canvas, tanpa library eksternal — andal
-             di lapangan/PWA tanpa CDN). Sisi terpanjang ~1280px, JPEG ~0.7. Kalau
-             kompres gagal (browser lama/error), file asli tetap diupload. --}}
+        {{-- Kompres di browser SEBELUM upload — foto kamera HP bisa 8–17MB; dikecilkan
+             dulu (resources/js/kiosk-photo.js: canvas, sisi terpanjang 1600px, JPEG 0.8,
+             tanpa library) supaya operator tak perlu memikirkan ukuran file. Kalau
+             kompres tak bisa (mis. HEIC di Android), file asli tetap dikirim & SERVER
+             yang mengonversi/mengecilkan — jadi tak pernah buntu di sini. --}}
         <div x-data="{
             preparing: false,
-            handleFoto(e) {
+            async handleFoto(e) {
                 const file = e.target.files[0];
                 if (!file) return;
-                if (!file.type || !file.type.startsWith('image/')) { $wire.upload('foto', file); return; }
                 this.preparing = true;
-                this.compress(file)
-                    .then((out) => { $wire.upload('foto', out); })
-                    .catch(() => { $wire.upload('foto', file); })
-                    .finally(() => { this.preparing = false; });
-            },
-            compress(file) {
-                return new Promise((resolve, reject) => {
-                    const url = URL.createObjectURL(file);
-                    const img = new Image();
-                    img.onload = () => {
-                        URL.revokeObjectURL(url);
-                        const maxSide = 1280;
-                        let w = img.width, h = img.height;
-                        if (w > maxSide || h > maxSide) {
-                            if (w >= h) { h = Math.round(h * maxSide / w); w = maxSide; }
-                            else { w = Math.round(w * maxSide / h); h = maxSide; }
-                        }
-                        const canvas = document.createElement('canvas');
-                        canvas.width = w; canvas.height = h;
-                        const ctx = canvas.getContext('2d');
-                        if (!ctx) { reject(); return; }
-                        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h); // cegah bg hitam PNG transparan
-                        ctx.drawImage(img, 0, 0, w, h);
-                        canvas.toBlob((blob) => {
-                            if (!blob) { reject(); return; }
-                            const name = (file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg';
-                            resolve(new File([blob], name, { type: 'image/jpeg' }));
-                        }, 'image/jpeg', 0.7);
-                    };
-                    img.onerror = () => { URL.revokeObjectURL(url); reject(); };
-                    img.src = url;
-                });
+                try {
+                    const out = await window.kompresFotoKios(file);
+                    await $wire.upload('foto', out);
+                } finally {
+                    this.preparing = false;
+                }
             }
         }">
             <label class="block text-sm font-bold text-slate-900 mb-2">
@@ -314,12 +289,25 @@
 
             <div x-show="preparing" class="mt-2 text-xs text-amber-600">Menyiapkan foto…</div>
             <div wire:loading wire:target="foto" class="mt-2 text-xs text-amber-600">Mengunggah foto…</div>
+            {{-- Pratinjau HANYA untuk format yang bisa dirender browser. temporaryUrl()
+                 MELEMPAR FileNotPreviewableException untuk ekstensi di luar
+                 livewire.temporary_file_upload.preview_mimes (mis. .heic) → halaman
+                 operator 500 begitu HEIC dipilih, SEBELUM validasi sempat jalan.
+                 Ketahuan dari test, bukan dari lapangan. HEIC dapat konfirmasi teks
+                 (bukan gambar rusak) — file-nya dikonversi ke JPG saat disimpan. --}}
             @if($foto)
                 <div class="mt-2">
-                    <img
-                        src="{{ $foto->temporaryUrl() }}"
-                        alt="Pratinjau foto kios"
-                        class="w-full max-h-48 object-cover rounded-xl border border-slate-200">
+                    @if($foto->isPreviewable())
+                        <img
+                            src="{{ $foto->temporaryUrl() }}"
+                            alt="Pratinjau foto kios"
+                            class="w-full max-h-48 object-cover rounded-xl border border-slate-200">
+                    @else
+                        <p class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                            ✅ Foto terpilih ({{ $foto->getClientOriginalName() }}). Pratinjau tak tersedia
+                            untuk format ini — foto dikonversi otomatis saat disimpan.
+                        </p>
+                    @endif
                 </div>
             @endif
             @error('foto')

@@ -7,6 +7,7 @@ use App\Models\Cluster;
 use App\Models\Kiosk;
 use App\Support\GoogleMapsShortLinkResolver;
 use App\Support\KioskLocationParser;
+use App\Support\KioskPhoto;
 use Illuminate\Database\Eloquent\Builder;
 use App\Filament\Forms\Components\LeafletMapPicker;
 use Filament\Forms;
@@ -279,15 +280,48 @@ class KioskResource extends Resource
                             ->label('Foto Kios')
                             ->image()
                             ->imageEditor()
-                            // Kompres di browser sebelum upload (Filepond): perkecil ke
-                            // sisi maks 1280px supaya hemat & cepat, selaras form operator.
+                            // Kompres di browser sebelum upload (FilePond): perkecil ke
+                            // sisi maks 1600px, selaras kompres operator (kiosk-photo.js).
                             ->imageResizeMode('contain')
-                            ->imageResizeTargetWidth('1280')
-                            ->imageResizeTargetHeight('1280')
-                            ->maxSize(5120)
+                            ->imageResizeTargetWidth((string) KioskPhoto::MAKS_SISI)
+                            ->imageResizeTargetHeight((string) KioskPhoto::MAKS_SISI)
+                            // 🔴 AKAR "foto >5MB ditolak, owner harus kompres manual dulu":
+                            // FilePond memvalidasi ukuran file ASLI saat DIPILIH, SEBELUM
+                            // plugin resize-nya sempat mengecilkan. Dengan maxSize(5120),
+                            // foto kamera HP (8–17MB) ditolak DI BROWSER ("File is too
+                            // large") dan tak pernah dikirim — mesin pengecil yang sudah
+                            // ada tak pernah kebagian giliran. Direproduksi di browser
+                            // sebelum diperbaiki. Plafon dinaikkan ke 20MB (jaring
+                            // pengaman, BUKAN ukuran yang diharapkan): FilePond kini
+                            // menerima → mengecilkan ke 1600px → yang terkirim ~<1MB.
+                            ->maxSize(KioskPhoto::MAKS_KB)
+                            // HEIC/HEIF diterima HANYA agar bisa DIKONVERSI ke JPG di
+                            // server (saveUploadedFileUsing). Tanpa ini `->image()`
+                            // memasang accept image/* yang membuat `mimetypes:image/*`
+                            // MELOLOSKAN image/heic lalu menyimpannya MENTAH → foto blank
+                            // di Android/desktop. Daftar eksplisit menutup lubang itu.
+                            ->acceptedFileTypes(KioskPhoto::acceptedFileTypes())
                             ->disk(config('app.media_disk', 'public'))
                             ->directory('kiosks')
                             ->visibility('public')
+                            // Satu jalur simpan dengan operator: konversi HEIC → JPG lalu
+                            // kompres (ImageResizer) lalu simpan. Default Filament cuma
+                            // $file->store() — tanpa ini HEIC dari form owner tersimpan
+                            // mentah & tak pernah dikecilkan di server.
+                            ->saveUploadedFileUsing(function ($file): ?string {
+                                $path = KioskPhoto::store($file, config('app.media_disk', 'public'));
+
+                                if ($path === null) {
+                                    Notification::make()
+                                        ->title('Foto tidak bisa diproses')
+                                        ->body(KioskPhoto::pesanHeicTakDidukung())
+                                        ->danger()
+                                        ->persistent()
+                                        ->send();
+                                }
+
+                                return $path;
+                            })
                             // AKAR yang sama dgn list owner (net::ERR_CERT_COMMON_NAME_INVALID
                             // transien ke r2.dev): default Filament (BaseFileUpload::
                             // getUploadedFileUsing bawaan) bikin URL R2 LANGSUNG utk preview
@@ -309,7 +343,7 @@ class KioskResource extends Resource
                                     'url' => $url,
                                 ];
                             })
-                            ->helperText('Foto akan dikecilkan otomatis. Maksimal 5MB. Format: JPG, PNG, WEBP. Opsional.')
+                            ->helperText('Foto besar dari kamera HP tak masalah — dikecilkan otomatis. Format: JPG, PNG, WEBP, HEIC. Opsional.')
                             // Hook untuk tombol "Ambil Foto (Kamera)" di bawah — lihat
                             // kiosk-camera-button.blade.php. Cuma penanda DOM; tak mengubah
                             // perilaku widget.

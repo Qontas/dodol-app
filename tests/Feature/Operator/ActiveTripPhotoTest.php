@@ -130,7 +130,11 @@ class ActiveTripPhotoTest extends TestCase
 
     /**
      * Kompres server (ImageResizer) memperkecil foto besar walau kompres browser tak
-     * jalan (test = tanpa JS). Foto 2400x1800 → sisi terpanjang <= 1280.
+     * jalan (test = tanpa JS). Foto 2400x1800 → sisi terpanjang <= KioskPhoto::MAKS_SISI.
+     *
+     * Batasnya dulu 1280 (ditulis sebagai angka mentah). Sekarang 1600 dan diambil dari
+     * konstanta — satu sumber dengan kompres browser (kiosk-photo.js) & form owner,
+     * supaya tak ada lagi angka yang diam-diam menyimpang antar-jalur.
      */
     public function test_server_side_resize_shrinks_large_photo(): void
     {
@@ -152,7 +156,10 @@ class ActiveTripPhotoTest extends TestCase
         $bytes = Storage::disk('public')->get($kiosk->photo_path);
         $info = getimagesizefromstring($bytes);
         $this->assertNotFalse($info, 'File tersimpan harus gambar valid.');
-        $this->assertLessThanOrEqual(1280, $info[0], 'Lebar harus <= 1280 setelah resize server.');
-        $this->assertLessThanOrEqual(1280, $info[1], 'Tinggi harus <= 1280 setelah resize server.');
+        $maks = \App\Support\KioskPhoto::MAKS_SISI;
+        $this->assertLessThanOrEqual($maks, $info[0], "Lebar harus <= {$maks} setelah resize server.");
+        $this->assertLessThanOrEqual($maks, $info[1], "Tinggi harus <= {$maks} setelah resize server.");
+        // Benar-benar DIKECILKAN, bukan cuma "kebetulan lolos" karena batas dinaikkan.
+        $this->assertLessThan(2400, $info[0], 'Foto 2400px harus benar-benar diperkecil.');
     }
 }
