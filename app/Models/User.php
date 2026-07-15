@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -123,8 +124,78 @@ class User extends Authenticatable implements FilamentUser
      * - Super admin: tak boleh dihapus siapa pun (cegah lockout / hapus admin lain).
      * - Owner berdata (punya kios/trip/operator): nonaktifkan saja, jangan hapus.
      * - Operator berdata (punya trip/komisi): nonaktifkan saja, jangan hapus.
+     *
+     * ⚠️ SELALU MENGHITUNG REAL-TIME — sengaja. Ini yang dipakai guard server-side
+     * (->before()) saat tombol hapus BENAR-BENAR ditekan: keputusan hapus tak boleh
+     * bersandar pada angka yang dimuat saat render tabel (bisa basi berdetik/bermenit).
+     * Untuk RENDER tabel pakai deletionBlockReasonForDisplay() yang 0 query.
      */
     public function deletionBlockReason(): ?string
+    {
+        if ($alasan = $this->deletionBlockReasonByRole()) {
+            return $alasan;
+        }
+
+        if ($this->isOwner()) {
+            return $this->ownerBlockMessage(
+                \App\Models\Kiosk::whereHas('cluster', fn ($q) => $q->where('owner_id', $this->id))->count(),
+                \App\Models\Trip::where('owner_id', $this->id)->count(),
+                static::where('owner_id', $this->id)->count(),
+            );
+        }
+
+        return $this->operatorBlockMessage(
+            $this->operatedTrips()->count(),
+            $this->commissions()->count(),
+        );
+    }
+
+    /**
+     * Versi RENDER-ONLY: baca count yang sudah di-eager-load (withCount di
+     * getEloquentQuery resource) → 0 query tambahan per baris.
+     *
+     * KENAPA ADA: ->disabled() dan ->tooltip() Filament masing-masing memanggil guard
+     * ini sekali per baris, jadi versi real-time menembak 2-3 COUNT × 2 = 4-6 query
+     * PER BARIS (audit: ~53 query untuk 10 baris). Terbatas pagination, tapi mubazir.
+     *
+     * KENAPA TERPISAH, bukan bikin deletionBlockReason() ikut baca count: instance
+     * record yang sama dipakai ulang oleh guard ->before(), jadi kalau guard utama
+     * membaca count hasil render, keputusan HAPUS jadi bersandar angka basi. Pemisahan
+     * ini menjaga: render = murah, keputusan = real-time.
+     *
+     * Kalau count belum dimuat (dipanggil di luar tabel), otomatis jatuh ke versi
+     * real-time — jadi tak pernah salah, cuma tak sehemat itu.
+     */
+    public function deletionBlockReasonForDisplay(): ?string
+    {
+        if ($alasan = $this->deletionBlockReasonByRole()) {
+            return $alasan;
+        }
+
+        if ($this->isOwner()) {
+            if (! $this->countsSudahDimuat(['owned_kiosks_count', 'owned_trips_count', 'operators_count'])) {
+                return $this->deletionBlockReason();
+            }
+
+            return $this->ownerBlockMessage(
+                (int) $this->owned_kiosks_count,
+                (int) $this->owned_trips_count,
+                (int) $this->operators_count,
+            );
+        }
+
+        if (! $this->countsSudahDimuat(['operated_trips_count', 'commissions_count'])) {
+            return $this->deletionBlockReason();
+        }
+
+        return $this->operatorBlockMessage(
+            (int) $this->operated_trips_count,
+            (int) $this->commissions_count,
+        );
+    }
+
+    /** Blokir yang tak butuh hitungan sama sekali (murni dari role/pola email). */
+    private function deletionBlockReasonByRole(): ?string
     {
         if ($this->isSuperAdmin()) {
             return 'Akun Super Admin tidak bisa dihapus.';
@@ -134,27 +205,38 @@ class User extends Authenticatable implements FilamentUser
             return 'Akun sistem tidak bisa dihapus.';
         }
 
-        if ($this->isOwner()) {
-            $kios = \App\Models\Kiosk::whereHas('cluster', fn ($q) => $q->where('owner_id', $this->id))->count();
-            $trip = \App\Models\Trip::where('owner_id', $this->id)->count();
-            $operator = static::where('owner_id', $this->id)->count();
+        return null;
+    }
 
-            if ($kios || $trip || $operator) {
-                return "Owner ini punya {$kios} kios, {$trip} trip, {$operator} operator. Nonaktifkan saja, jangan hapus.";
-            }
-
-            return null;
+    /** Satu sumber teks — supaya jalur real-time & jalur render tak bisa menyimpang. */
+    private function ownerBlockMessage(int $kios, int $trip, int $operator): ?string
+    {
+        if ($kios || $trip || $operator) {
+            return "Owner ini punya {$kios} kios, {$trip} trip, {$operator} operator. Nonaktifkan saja, jangan hapus.";
         }
 
-        // operator
-        $trip = $this->operatedTrips()->count();
-        $komisi = $this->commissions()->count();
+        return null;
+    }
 
+    private function operatorBlockMessage(int $trip, int $komisi): ?string
+    {
         if ($trip || $komisi) {
             return "Operator ini punya {$trip} trip, {$komisi} komisi. Nonaktifkan saja, jangan hapus.";
         }
 
         return null;
+    }
+
+    /** @param  array<string>  $atribut */
+    private function countsSudahDimuat(array $atribut): bool
+    {
+        foreach ($atribut as $a) {
+            if (! array_key_exists($a, $this->attributes)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -219,6 +301,32 @@ class User extends Authenticatable implements FilamentUser
     public function operatedTrips(): HasMany
     {
         return $this->hasMany(Trip::class, 'operator_id');
+    }
+
+    /**
+     * Trip MILIK owner ini (owner_id) — beda dari operatedTrips() yang trip yang
+     * DIJALANKAN user ini sebagai operator. Dipakai withCount guard delete.
+     */
+    public function ownedTrips(): HasMany
+    {
+        return $this->hasMany(Trip::class, 'owner_id');
+    }
+
+    /**
+     * Kios milik owner ini lewat rantai cluster (kiosks tak punya kolom owner_id) —
+     * rantai yang sama dipakai OwnerScope. Dipakai withCount guard delete supaya
+     * hitungan kios ikut query utama tabel, bukan query terpisah per baris.
+     */
+    public function ownedKiosks(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            Kiosk::class,
+            Cluster::class,
+            'owner_id',   // FK di clusters → users
+            'cluster_id', // FK di kiosks → clusters
+            'id',
+            'id',
+        );
     }
 
     public function commissions(): HasMany

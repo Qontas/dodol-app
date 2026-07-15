@@ -130,8 +130,10 @@ class OperatorResource extends Resource
                     ->requiresConfirmation()
                     // Operator berdata (punya trip/komisi) → tombol DISABLED + tooltip alasan;
                     // operator bersih → tombol normal. Lapisan UI di atas guard server-side.
-                    ->disabled(fn (User $record): bool => $record->deletionBlockReason() !== null)
-                    ->tooltip(fn (User $record): ?string => $record->deletionBlockReason())
+                    // RENDER pakai ForDisplay (baca count hasil withCount → 0 query/baris).
+                    ->disabled(fn (User $record): bool => $record->deletionBlockReasonForDisplay() !== null)
+                    ->tooltip(fn (User $record): ?string => $record->deletionBlockReasonForDisplay())
+                    // ⚠️ KEPUTUSAN hapus tetap REAL-TIME, bukan angka render yang bisa basi.
                     ->before(function (User $record, Tables\Actions\DeleteAction $action) {
                         if ($reason = $record->deletionBlockReason()) {
                             Notification::make()->danger()->title('Tidak bisa dihapus')->body($reason)->persistent()->send();
@@ -167,6 +169,10 @@ class OperatorResource extends Resource
         // Sembunyikan akun sistem (operator.migrasi.*) dari daftar operator owner.
         return parent::getEloquentQuery()
             ->excludeSystem()
+            // Hitungan dependensi guard delete ikut query utama (subquery berkorelasi),
+            // bukan 2 COUNT × 2 pemanggil (->disabled + ->tooltip) per baris. Baris di
+            // sini SELALU operator → cukup dua count ini (tak perlu count owner).
+            ->withCount(['operatedTrips', 'commissions'])
             ->where('role', 'operator')
             ->where('owner_id', auth()->id());
     }

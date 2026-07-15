@@ -1,6 +1,51 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 15 Juli 2026*
 
+## FIX N+1 GUARD DELETE di DAFTAR USER (15 Juli 2026) — SELESAI & PUSHED
+**387 PASS** (dari 381; +6 test, 0 regresi). Satu commit atomik. Temuan dari audit performa.
+
+**MASALAH:** `->disabled()` dan `->tooltip()` Filament masing-masing memanggil
+`deletionBlockReason()` sekali PER BARIS, dan tiap panggilan menembak 2–3 `COUNT`
+(owner: kios+trip+operator; operator: trip+komisi) → **4–6 query/baris × 2 pemanggil**.
+Terbatas pagination (tak meledak), tapi mubazir.
+
+**FIX (opsi c — `withCount`, paling bersih):**
+- Relasi BARU di `User`: `ownedTrips()` (hasMany Trip owner_id — beda dari `operatedTrips()`
+  yang trip yang DIJALANKAN sebagai operator) & `ownedKiosks()` (**hasManyThrough** lewat
+  Cluster, karena `kiosks` tak punya kolom owner_id — rantai yang sama dipakai OwnerScope).
+- `withCount` di `getEloquentQuery()` kedua resource → hitungan jadi **subquery berkorelasi
+  di query utama**, bukan query per baris.
+- `deletionBlockReasonForDisplay()` BARU (render) membaca count itu → **0 query/baris**.
+  Kalau count belum dimuat → otomatis fallback ke real-time (tak pernah salah).
+
+⚠️ **KENAPA DUA METODE, bukan bikin `deletionBlockReason()` ikut baca count:** instance
+record yang SAMA dipakai ulang guard `->before()`. Kalau guard utama membaca count hasil
+render, keputusan HAPUS jadi bersandar angka BASI (bisa berdetik/bermenit). Jadi:
+**render = murah (`ForDisplay`), keputusan hapus = real-time (`deletionBlockReason`, TAK
+DIUBAH)**. Ada test yang mengunci ini: count di-load → data baru dibuat → versi render
+tetap basi (by design) TAPI versi real-time melihatnya.
+Teks alasan diekstrak ke `ownerBlockMessage()`/`operatorBlockMessage()` → dua jalur tak bisa menyimpang.
+
+**ANGKA (diukur, bukan ditaksir):**
+| | sebelum | sesudah |
+|---|---|---|
+| Daftar user 5 | 24 query | **4** |
+| Daftar user 25 | 54 query | **7** (selisih = paginasi, bukan per-baris) |
+| Daftar user 75 | 53 query | **5** |
+| Daftar operator (owner) | ~2/baris × 2 | **2 konstan** |
+
+Test: `UserListQueryCountTest` (6: konstan-per-baris user & operator, render 0 query,
+fallback benar, dua jalur identik, keputusan hapus real-time anti-basi).
+`SuperAdminUserGuardTest` (13) tetap hijau → guard tak berubah perilakunya.
+
+### Sisa temuan audit (BELUM dikerjakan, menunggu keputusan owner)
+- **Dashboard owner ~120 query/muat.** Pola 5× per trip dari accessor Trip yang dihitung
+  per baris di `$completedTrips` (`take(5)`) + `$activeTrips`. **PLATEAU** (48 → 120 → 120 →
+  127 untuk 1/6/12/24 trip) jadi tidak meledak, dan **pre-existing** (bukan dari kerjaan
+  belakangan; widget Ringkasan sendiri tetap 7 konstan). Kandidat optimasi berikutnya.
+- **Throttle upload** masih default `throttle:60,1`; dengan plafon 20MB = ~1,2GB/menit/IP
+  secara teoretis. Kalau mau lebih ketat: `'middleware' => 'throttle:20,1'` di config/livewire.php.
+
 ## FORM KIOS: URUTAN + DEFAULT + KAMERA + FOTO BESAR/HEIC (15 Juli 2026) — SELESAI & PUSHED
 **381 PASS** (dari baseline 365; +16 test, 0 regresi). Empat commit atomik.
 

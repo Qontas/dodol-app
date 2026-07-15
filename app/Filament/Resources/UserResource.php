@@ -262,8 +262,13 @@ class UserResource extends Resource
                     ->hidden(fn (User $record): bool => $record->isSuperAdmin() || (int) $record->id === (int) auth()->id())
                     // Owner/operator berdata → tombol tampil tapi DISABLED + tooltip alasan
                     // (owner perlu tahu KENAPA tak bisa dihapus).
-                    ->disabled(fn (User $record): bool => static::deleteBlockReason($record) !== null)
-                    ->tooltip(fn (User $record): ?string => static::deleteBlockReason($record))
+                    // RENDER pakai versi ForDisplay (baca count hasil withCount di
+                    // getEloquentQuery → 0 query per baris). disabled+tooltip memang
+                    // memanggil dua kali, tapi kini dua-duanya cuma baca atribut.
+                    ->disabled(fn (User $record): bool => static::deleteBlockReasonForDisplay($record) !== null)
+                    ->tooltip(fn (User $record): ?string => static::deleteBlockReasonForDisplay($record))
+                    // ⚠️ KEPUTUSAN hapus tetap REAL-TIME (deleteBlockReason), bukan angka
+                    // hasil render yang bisa basi.
                     ->before(function (User $record, Tables\Actions\DeleteAction $action) {
                         if ($reason = static::deleteBlockReason($record)) {
                             Notification::make()->danger()->title('Tidak bisa dihapus')->body($reason)->persistent()->send();
@@ -299,14 +304,24 @@ class UserResource extends Resource
     /**
      * Alasan ramah kenapa $record tak boleh dihapus, atau null kalau boleh.
      * Gabungkan guard lockout (akun sendiri) + guard berdata/role (model).
+     * REAL-TIME — untuk keputusan hapus (->before) & bulk.
      */
     protected static function deleteBlockReason(User $record): ?string
     {
-        if ((int) $record->id === (int) auth()->id()) {
-            return 'Tidak bisa menghapus akun sendiri.';
-        }
+        return static::deleteBlockReasonSelf($record) ?? $record->deletionBlockReason();
+    }
 
-        return $record->deletionBlockReason();
+    /** Sama, tapi untuk RENDER tabel: baca count hasil withCount → 0 query per baris. */
+    protected static function deleteBlockReasonForDisplay(User $record): ?string
+    {
+        return static::deleteBlockReasonSelf($record) ?? $record->deletionBlockReasonForDisplay();
+    }
+
+    private static function deleteBlockReasonSelf(User $record): ?string
+    {
+        return (int) $record->id === (int) auth()->id()
+            ? 'Tidak bisa menghapus akun sendiri.'
+            : null;
     }
 
     public static function getEloquentQuery(): Builder
@@ -314,6 +329,13 @@ class UserResource extends Resource
         // Akun sistem (operator.migrasi.*) selalu disembunyikan dari panel — tak bisa
         // dilihat/diedit/diaktifkan/dihapus dari UI (route edit/delete-nya jadi 404).
         $query = parent::getEloquentQuery()->excludeSystem();
+
+        // Hitungan dependensi untuk guard delete (tombol disabled + tooltip) ikut
+        // query utama = subquery berkorelasi, BUKAN query per baris. Tanpa ini tiap
+        // baris menembak 2-3 COUNT × 2 pemanggil (->disabled + ->tooltip) = ~53 query
+        // untuk 10 baris. Baris owner memakai 3 count pertama, baris operator 2
+        // terakhir; yang tak terpakai tetap murah (masih satu query utama).
+        $query->withCount(['ownedKiosks', 'ownedTrips', 'operators', 'operatedTrips', 'commissions']);
 
         if (auth()->user()?->isSuperAdmin()) {
             return $query; // super admin lihat semua user (kecuali akun sistem)
