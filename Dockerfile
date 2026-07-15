@@ -20,9 +20,20 @@ FROM dunglas/frankenphp:1.12-php8.4
 
 # Ekstensi PHP yang dibutuhkan app (gd untuk foto kios, pdo_mysql, intl, dll).
 # pcntl: disarankan Octane untuk penanganan sinyal worker.
+#
+# imagick: DIPAKAI HANYA untuk konversi HEIC → JPG (App\Support\HeicConverter). GD tak
+# bisa baca HEIC sama sekali, dan browser Android (Poco F7 owner) juga tidak → satu-
+# satunya jalan supaya foto HEIC tak berujung blank. Butuh delegate HEIF (libheif):
+# install-php-extensions memasang libmagickwand-dev + libmagickcore-*-extra, dan paket
+# libmagickcore Debian bookworm bergantung pada libheif1 → HEIC ikut terbawa.
+# Kompres foto biasa TETAP pakai GD (ImageResizer) — imagick tidak menggantikannya.
+# Kalau delegate HEIF ternyata tak ada, app TIDAK rusak: HeicConverter::supported()
+# mendeteksinya saat runtime dan HEIC ditolak dengan pesan jelas. Pastikan dengan
+# `php artisan foto:diagnosa` di console Railway setelah deploy.
 RUN install-php-extensions \
     pdo_mysql \
     gd \
+    imagick \
     intl \
     zip \
     bcmath \
@@ -45,6 +56,9 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-di
 
 # OPcache produksi (validate_timestamps=0 dll) — conf.d image resmi dibaca PHP.
 COPY php-ini/opcache.ini /usr/local/etc/php/conf.d/zz-opcache.ini
+# Batas upload foto kios. WAJIB eksplisit: image ini tak mengaktifkan php.ini apa pun
+# → tanpa file ini PHP pakai default 2M/8M dan foto HEIC mentah gagal diam-diam.
+COPY php-ini/uploads.ini /usr/local/etc/php/conf.d/zz-uploads.ini
 
 # Pastikan folder runtime ADA + writable (storage/logs di-exclude .dockerignore).
 RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache \
