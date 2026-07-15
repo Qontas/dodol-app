@@ -1,5 +1,77 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 14 Juli 2026*
+*Sesi terakhir: 15 Juli 2026*
+
+## FORM KIOS: URUTAN + DEFAULT + KAMERA + FOTO BESAR/HEIC (15 Juli 2026) — SELESAI & PUSHED
+**381 PASS** (dari baseline 365; +16 test, 0 regresi). Empat commit atomik.
+
+### 1. Field "Urutan Rute" DIBUANG dari form (`624eec8`)
+Owner tak memakainya saat input & makan tempat. Kios baru SELALU urutan TERAKHIR di
+area-nya (`appendToClusterOrder`) — jalur "owner isi angka eksplisit saat create" +
+reset-null-lalu-reorder di `CreateKiosk::afterCreate` ikut dibuang (tak ada sumbernya lagi).
+**TIDAK disentuh:** kolom DB `sort_order`, drag per-Area di tabel (`reorderable`, tetap
+muncul saat tepat 1 Area difilter), kolom angka "Urutan" (`TextInputColumn` →
+`reorderWithinCluster` anti-duplikat), `EditKiosk::afterSave` (pindah area → terakhir di
+area baru). Urutan tetap bisa diatur, cuma BELAKANGAN lewat daftar, bukan saat input.
+
+### 2. DEFAULT interval kios BARU (`624eec8`)
+ideal **10** / peringatan **14** / laris **7**. `->default()` Filament HANYA berlaku di form
+CREATE (form EDIT diisi dari record) → **kios LAMA tak berubah**. Catatan: default lama
+kebetulan TERBALIK (peringatan 10 < ideal 14 → kios ditandai telat sebelum jatuh tempo).
+
+### 3. Tombol "📷 Ambil Foto" langsung dari kamera (`0f4317b`)
+**DUA tombol, BUKAN capture di input yang sudah ada** — atribut `capture` MEMAKSA kamera &
+MENGHILANGKAN pilihan galeri di HP; kalau dipasang permanen di input satu-satunya, justru
+merusak galeri yang sudah jalan. Jadi: "Ambil Foto" = input ber-`capture="environment"`,
+"Dari Galeri" = input polos (perilaku lama). Desktop mengabaikan capture.
+Tiga tempat: operator create-kiosk, operator active-trip, owner Filament. Di owner (FilePond
+cuma punya SATU input) capture dipasang **sesaat** sebelum picker dibuka lalu dilepas
+(listener `change` + `window focus` utk picker dibatalkan) → galeri tak terkunci ke kamera.
+**Pipeline upload FilePond TIDAK disentuh** (cuma meng-klik input miliknya sendiri) → kalau
+kelas internal `.filepond--browser` berubah saat upgrade, tombol diam & kotak unggah tetap jalan.
+⚠️ Blade di panel Filament WAJIB inline style, bukan kelas Tailwind app — panel punya CSS build
+SENDIRI; versi pertama pakai kelas Tailwind & tombolnya gepeng (ketahuan dari SCREENSHOT, bukan test).
+
+### 4. Foto besar DIKECILKAN bukan DITOLAK + HEIC (`0fc473a`, `951900f`)
+**AKAR (direproduksi browser, bukan ditebak):** FilePond memvalidasi ukuran file ASLI saat
+DIPILIH — SEBELUM plugin resize-nya mengecilkan. `maxSize(5120)` → foto 17MB ditolak DI
+BROWSER ("File is too large"), **0 byte pernah dikirim** → mesin pengecil tak pernah
+kebagian giliran. Jalur OPERATOR ternyata SUDAH aman (kompres canvas jalan) — **yang rusak
+cuma form owner**.
+- Plafon 5MB → **20MB** (`App\Support\KioskPhoto::MAKS_KB`) = jaring pengaman anti-abuse,
+  BUKAN ukuran yang diharapkan.
+- Kompres browser DIPUSATKAN: `resources/js/kiosk-photo.js` (canvas, 1600px, JPEG 0.8, tanpa
+  library) menggantikan dua salinan `compress()` yang berbeda. Foto <1MB dilewati apa adanya.
+- Plafon disamakan di SEMUA lapis: validasi Laravel + Livewire temp (`config/livewire.php`,
+  dulu diam-diam 12MB) + **`php-ini/uploads.ini`**. Yang terakhir WAJIB: image frankenphp tak
+  mengaktifkan php.ini apa pun → PHP pakai default **2M/8M** dan HEIC mentah mati diam-diam
+  di level PHP sebelum Laravel sempat bicara. Nilai PHP sengaja di ATAS plafon app.
+- **HEIC**: konversi di SERVER (`HeicConverter`, imagick+libheif). Browser Android TIDAK bisa
+  decode HEIC → jalur canvas tak akan pernah menolong owner (Poco F7). Deteksi dari MAGIC
+  BYTES (bukan mime/ekstensi — Android kirim octet-stream), ambil frame pertama (HEIC bisa
+  burst), orientasi dipanggang sebelum strip. `supported()` = feature-detect runtime → kalau
+  HEIF tak ada: **DITOLAK dengan instruksi**, TIDAK pernah simpan HEIC mentah (= foto blank).
+- 🔴 **Lubang lama ditutup**: form owner `->image()` → `mimetypes:image/*` **MELOLOSKAN**
+  `image/heic` → HEIC tersimpan MENTAH. Sudah bisa terjadi SEBELUM sesi ini.
+- 🔴 **Crash dicegah** (ketahuan dari test): `$foto->temporaryUrl()` MELEMPAR
+  `FileNotPreviewableException` untuk `.heic` → halaman operator **500** begitu HEIC dipilih.
+  Kini pratinjau hanya untuk format yang bisa dirender.
+
+**BUKTI BROWSER** (`verify-foto-besar.cjs`, byte yang benar-benar MENDARAT di server):
+| jalur | foto realistis 2.03MB | noise 4000x3000 17.36MB (terburuk) |
+|---|---|---|
+| owner (FilePond) | → **238 KB** (9x) | → 1448 KB (12x) |
+| operator (canvas) | → **95 KB** (22x) | → 1004 KB (18x) |
+EXIF orientation BENAR (uji foto 600x400 Orientation=6 → keluar 400x600 potret). Foto kecil utuh.
+
+⚠️ **WAJIB SETELAH DEPLOY (owner jalankan di console Railway):**
+```bash
+php artisan foto:diagnosa
+```
+Dukungan HEIC **BELUM terbukti langsung** — tak ada Docker di mesin dev; `imagick` ditambahkan
+ke Dockerfile atas dasar metadata paket Debian (libmagickcore bookworm depends libheif1).
+Perintah itu melapor: imagick ada/tidak, format `HEI*`, batas upload. Kalau "TIDAK DIDUKUNG" →
+HEIC ditolak dengan pesan jelas (tak ada yang rusak), lapor supaya dicarikan jalan lain.
+Cek juga `upload_max_filesize` = 24M (bukti `php-ini/uploads.ini` kebaca).
 
 ## FORM KIOS OWNER: LEBUR CATATAN + TOMBOL GPS (14 Juli 2026) — SELESAI & PUSHED
 **365 PASS** (0 test baru, 0 regresi — perubahan UI/JS diverifikasi browser). Dua commit atomik.
@@ -304,7 +376,18 @@ akun hasil /register publik dulu. Owner review manual (nonaktifkan/hapus lewat p
    titipan lama utuh, komisi = 3 mika. `TitipCashBsTest` (5 test) + guard BS > biji ditaruh.
 
 ## TRIGGER SENTENCE
-Bg, lanjut dodol-app. Live di Railway. **PENYEDERHANAAN FORM SERAH TERIMA JADI 3-AKSI SELESAI &
+Bg, lanjut dodol-app. Live di Railway. **FORM KIOS: URUTAN + DEFAULT + KAMERA + FOTO BESAR/HEIC
+SELESAI & PUSHED (15 Juli 2026, 381 PASS)** — field "Urutan Rute" dibuang dari form (kios baru
+otomatis terakhir di area; drag & kolom angka di TABEL tetap ada), default kios baru ideal 10/
+peringatan 14/laris 7 (kios lama tak berubah), tombol "📷 Ambil Foto" langsung kamera + "🖼️ Dari
+Galeri" (dua input terpisah — `capture` di input tunggal justru MEMBUNUH galeri), dan foto besar
+kini DIKECILKAN bukan DITOLAK (akar: FilePond memvalidasi ukuran file ASLI sebelum resize-nya
+jalan → 17MB ditolak di browser, 0 byte terkirim; jalur operator sudah aman sejak awal). Plafon
+5MB→20MB diselaraskan di semua lapis + `php-ini/uploads.ini` (image frankenphp tak punya php.ini
+→ default 2M/8M!). HEIC dikonversi di SERVER (imagick+libheif) karena Chrome Android tak bisa
+decode HEIC. ⚠️ **TODO OWNER: jalankan `php artisan foto:diagnosa` di console Railway** — dukungan
+HEIC belum terbukti langsung (tak ada Docker di mesin dev). Lihat section paling atas.
+Sebelumnya: **PENYEDERHANAAN FORM SERAH TERIMA JADI 3-AKSI SELESAI &
 PUSHED (12 Juli 2026)** — form kunjungan operator dirombak jadi 3 aksi tegas: **AKSI 1 "Tagih +
 Titip Ulang"** (siklus normal: BS per biji, tagih yang laku, titip ulang sejumlah jatah), **AKSI 2
 "Titip Cash"** (naruh ekstra dibayar tunai, TIDAK nagih titipan lama, jatah tetap — dulu checkbox
