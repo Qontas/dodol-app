@@ -372,11 +372,11 @@
                                 <a href="{{ route('owner.trips.export.excel', $completedTrip) }}"
                                    class="rounded bg-green-600 px-2 py-1 text-xs font-semibold text-white hover:bg-green-700">XLS</a>
                                 <form method="POST" action="{{ route('owner.trips.destroy', $completedTrip) }}"
-                                      onsubmit="return confirm('Yakin hapus Trip #{{ $completedTrip->trip_number_of_day }}? Data kunjungan akan terhapus permanen.');">
+                                      onsubmit="return confirm('Arsipkan Trip #{{ $completedTrip->trip_number_of_day }}? Trip & datanya disembunyikan dari laporan, tapi bisa dipulihkan.');">
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit"
-                                            class="rounded bg-slate-700 px-2 py-1 text-xs font-semibold text-white hover:bg-slate-800">Hapus</button>
+                                            class="rounded bg-slate-700 px-2 py-1 text-xs font-semibold text-white hover:bg-slate-800">Arsipkan</button>
                                 </form>
                             </div>
                         </div>

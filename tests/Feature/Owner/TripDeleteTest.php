@@ -58,8 +58,11 @@ class TripDeleteTest extends TestCase
         return compact('trip', 'delivery', 'settlement', 'visit');
     }
 
-    public function test_owner_can_delete_own_trip_and_cascades(): void
+    public function test_owner_archives_own_trip_without_touching_child_data(): void
     {
+        // Perilaku BARU: tombol = ARSIP (soft delete), BUKAN hard delete berantai.
+        // Trip disembunyikan (deleted_at terisi) TAPI data anak TETAP utuh secara fisik
+        // (tak ada FK cascade karena tak ada DB DELETE). Bisa dipulihkan.
         $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
         ['trip' => $trip, 'delivery' => $delivery, 'settlement' => $settlement, 'visit' => $visit] = $this->tripWithData($owner);
 
@@ -67,10 +70,14 @@ class TripDeleteTest extends TestCase
             ->delete(route('owner.trips.destroy', $trip))
             ->assertRedirect();
 
-        $this->assertDatabaseMissing('trips', ['id' => $trip->id]);
-        $this->assertDatabaseMissing('deliveries', ['id' => $delivery->id]);
-        $this->assertDatabaseMissing('settlements', ['id' => $settlement->id]);
-        $this->assertDatabaseMissing('kiosk_visits', ['id' => $visit->id]);
+        // Trip diarsip: baris masih ADA, deleted_at terisi.
+        $this->assertDatabaseHas('trips', ['id' => $trip->id]);
+        $this->assertNotNull(Trip::withTrashed()->find($trip->id)->deleted_at);
+
+        // Data anak TIDAK terhapus fisik.
+        $this->assertDatabaseHas('deliveries', ['id' => $delivery->id]);
+        $this->assertDatabaseHas('settlements', ['id' => $settlement->id]);
+        $this->assertDatabaseHas('kiosk_visits', ['id' => $visit->id]);
     }
 
     public function test_owner_cannot_delete_other_owners_trip(): void
@@ -90,7 +97,7 @@ class TripDeleteTest extends TestCase
         $this->assertDatabaseHas('trips', ['id' => $trip->id]);
     }
 
-    public function test_super_admin_can_delete_any_trip(): void
+    public function test_super_admin_can_archive_any_trip(): void
     {
         $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
         ['trip' => $trip] = $this->tripWithData($owner);
@@ -101,7 +108,9 @@ class TripDeleteTest extends TestCase
             ->delete(route('owner.trips.destroy', $trip))
             ->assertRedirect();
 
-        $this->assertDatabaseMissing('trips', ['id' => $trip->id]);
+        // ARSIP (soft delete): trip disembunyikan, baris tetap ada dengan deleted_at.
+        $this->assertDatabaseHas('trips', ['id' => $trip->id]);
+        $this->assertNotNull(Trip::withTrashed()->find($trip->id)->deleted_at);
     }
 
     public function test_operator_cannot_access_delete_route(): void

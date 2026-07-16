@@ -7,10 +7,18 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Trip extends Model
 {
-    use BelongsToOwner, HasFactory;
+    // PENGECUALIAN dari kebijakan umum "tanpa SoftDeletes" (model lain pakai is_active):
+    // trip diARSIP, bukan dihapus. Global scope SoftDeletes menyembunyikan trip terarsip
+    // dari SEMUA query lewat model Trip / whereHas('trip') → laporan bulanan, dashboard,
+    // omset/untung/komisi otomatis mengecualikannya. Data anak (kiosk_visits, deliveries,
+    // settlements, commissions) TIDAK ikut terhapus fisik saat delete()/arsip. Query pakai
+    // join manual pada tabel `trips` (bukan lewat model) TIDAK kena scope ini — di sana
+    // ditambahkan whereNull('trips.deleted_at') manual. Pulihkan: `php artisan trip:restore`.
+    use BelongsToOwner, HasFactory, SoftDeletes;
 
     protected $fillable = [
         'trip_date',

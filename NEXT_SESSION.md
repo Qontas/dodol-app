@@ -1,5 +1,40 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 15 Juli 2026*
+*Sesi terakhir: 16 Juli 2026*
+
+## ARSIP TRIP (SOFT DELETE) + THROTTLE UPLOAD (16 Juli 2026) — SELESAI & PUSHED
+Dua commit atomik terpisah (soft-delete trip / throttle upload). **+7 test soft-delete, 0 regresi.**
+
+### 1. Tombol "Hapus" trip → "Arsipkan" (SOFT DELETE, bisa dipulihkan)
+**MASALAH:** tombol Hapus trip di dashboard = HARD DELETE permanen. FK cascade ikut
+menghapus kiosk_visits, deliveries, settlements, delivery_origins, commissions. Tak ada
+undo, satu salah-klik = kerugian data + mengubah angka laporan bulanan lama.
+
+**FIX (keputusan owner: ARSIP, bukan hapus permanen):**
+- Migration `2026_07_16_000001_add_soft_deletes_to_trips_table` → kolom `deleted_at`.
+- Model `Trip` pakai trait `SoftDeletes` (PENGECUALIAN dari kebijakan umum "tanpa
+  SoftDeletes"; model lain tetap `is_active`). Global scope menyembunyikan trip terarsip
+  dari SEMUA query lewat model Trip / `whereHas('trip')` → laporan bulanan, dashboard,
+  omset/untung/komisi otomatis mengecualikannya.
+- `TripDeleteController::destroy()` → `$trip->delete()` kini SOFT (isi deleted_at). TIDAK
+  ada DB DELETE → FK cascade TAK jalan → data anak UTUH. Guard `abort_unless 403`
+  (owner pemilik / super admin) DIPERTAHANKAN. Pesan: "Trip diarsipkan… bisa dipulihkan."
+- Konfirmasi tombol (dashboard.blade.php) → "Arsipkan Trip #…? …bisa dipulihkan." Label
+  tombol "Arsipkan".
+- **Join manual pada tabel `trips` (TAK kena global scope) ditambah `whereNull('trips.deleted_at')`:**
+  `OwnerDashboardController::komisiPerOperator`, `OwnerOmsetChart` (Filament, super_admin),
+  `ActiveTrip::lastOperatorFor` (operator). Query lain semua lewat model/whereHas → sudah aman.
+- **PULIHKAN:** `php artisan trip:restore {id}` (unarchive). HARD DELETE permanen HANYA lewat
+  `php artisan trip:force-delete {id}` (interaktif konfirmasi, untuk data uji) — JANGAN dari UI.
+
+**Test `TripSoftDeleteTest` (7):** trip aktif angkanya PERSIS sama setelah trip lain diarsip;
+trip terarsip hilang dari laporan+agregat+dashboard; join manual komisi-per-operator
+mengecualikan terarsip; data anak tidak terhapus fisik (cek raw DB); tombol = arsip bukan
+hard delete; restore mengembalikan; non-owner ditolak (403/404).
+
+### 2. Throttle upload Livewire 60→20/menit
+`config/livewire.php` `temporary_file_upload.middleware` = `'throttle:20,1'` (dari default
+`throttle:60,1`). Plafon upload 20MB; 60/menit terlalu longgar. Operator normal (foto kios
+satu-satu) jauh di bawah 20/menit. HANYA endpoint upload sementara Livewire, bukan route lain.
 
 ## FIX N+1 GUARD DELETE di DAFTAR USER (15 Juli 2026) — SELESAI & PUSHED
 **387 PASS** (dari 381; +6 test, 0 regresi). Satu commit atomik. Temuan dari audit performa.

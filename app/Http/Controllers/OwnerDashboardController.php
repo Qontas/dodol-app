@@ -133,6 +133,7 @@ class OwnerDashboardController extends Controller
         $komisiPerOperator = Delivery::query()
             ->join('trips', 'trips.id', '=', 'deliveries.trip_id')
             ->leftJoin('users', 'users.id', '=', 'trips.operator_id')
+            ->whereNull('trips.deleted_at') // join manual → tak kena SoftDeletes global scope
             ->where('trips.owner_id', $ownerId)
             ->whereNotNull('trips.ended_at')
             ->whereYear('trips.trip_date', $now->year)

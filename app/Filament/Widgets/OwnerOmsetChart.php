@@ -36,6 +36,7 @@ class OwnerOmsetChart extends ChartWidget
             ->join('deliveries', 'settlements.delivery_id', '=', 'deliveries.id')
             ->join('trips', 'deliveries.trip_id', '=', 'trips.id')
             ->join('users', 'trips.owner_id', '=', 'users.id')
+            ->whereNull('trips.deleted_at') // join manual → tak kena SoftDeletes global scope
             ->whereDate('settlements.visit_date', '>=', $start)
             ->groupBy('trips.owner_id', 'users.name', 'settlements.visit_date')
             ->selectRaw('trips.owner_id as owner_id, users.name as owner_name, '

@@ -328,6 +328,7 @@ class ActiveTrip extends Component
         return KioskVisit::whereIn('kiosk_id', $kioskIds)
             ->whereNull('kiosk_visits.corrected_at')
             ->join('trips', 'kiosk_visits.trip_id', '=', 'trips.id')
+            ->whereNull('trips.deleted_at') // join manual → tak kena SoftDeletes global scope
             ->join('users', 'trips.operator_id', '=', 'users.id')
             ->groupBy('kiosk_visits.kiosk_id')
             ->selectRaw('kiosk_visits.kiosk_id, MAX(kiosk_visits.visited_at) as last_visited_at, '
