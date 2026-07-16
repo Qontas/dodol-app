@@ -34,14 +34,25 @@ class MonthlyReportController extends Controller
             ->orderBy('trip_date')
             ->get();
 
+        // Agregat finansial per trip DIBATCH (bukan accessor per-baris yang N+1 saat trip
+        // banyak). Angka IDENTIK accessor Trip (omset_val/komisi_rian/untung_bersih_owner)
+        // — lihat TripAggregator. kios_dikunjungi & mika_drop tetap dari koleksi ter-eager
+        // (murah, sekaligus jaga semantik lama: visits->count() = SEMUA kunjungan).
+        $owner = \App\Models\User::find($ownerId);
+        $tripAgg = \App\Support\TripAggregator::for(
+            $trips->pluck('id')->all(),
+            $owner?->getHppPerMikaValue() ?? 9500.0,
+            $owner?->getKomisiPerMikaValue() ?? 1000.0,
+        );
+
         $rows = $trips->map(fn (Trip $t) => [
             'trip_date' => $t->trip_date->format('d M Y'),
             'operator' => $t->operator?->name ?? '—',
             'kios_dikunjungi' => $t->visits->count(),
             'mika_drop' => (int) $t->deliveries->sum('qty_delivered'),
-            'omset' => (int) $t->omset_val,
-            'komisi' => (int) $t->komisi_rian,
-            'untung_bersih' => (int) $t->untung_bersih_owner,
+            'omset' => (int) ($tripAgg[$t->id]['omset'] ?? 0),
+            'komisi' => (int) ($tripAgg[$t->id]['komisi'] ?? 0),
+            'untung_bersih' => (int) ($tripAgg[$t->id]['untung_bersih'] ?? 0),
         ]);
 
         $totals = [
@@ -101,7 +112,7 @@ class MonthlyReportController extends Controller
             ->whereHas('deliveries.settlement')
             ->count();
 
-        $owner = \App\Models\User::find($ownerId);
+        // $owner sudah di-fetch di atas (dipakai juga untuk hpp/komisi TripAggregator).
         $hargaMika = (float) ($owner?->harga_mika ?? 200.00);
 
         $totalMikaDiantar = (int) \App\Models\Delivery::whereHas('trip', function ($q) use ($ownerId, $year, $mon) {

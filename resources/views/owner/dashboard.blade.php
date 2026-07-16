@@ -340,6 +340,20 @@
             @forelse ($completedTrips as $completedTrip)
                 @php
                     $mikaDrop = $completedTrip->deliveries->sum('qty_delivered');
+                    // Angka finansial dari agregat BATCH (bukan accessor per-baris → hindari N+1).
+                    // Identik accessor Trip. Fallback ke accessor kalau map tak ada (aman).
+                    $agg = $completedAgg[$completedTrip->id] ?? [
+                        'omset' => $completedTrip->omset_val,
+                        'mika_terjual' => $completedTrip->mika_terjual,
+                        'mika_kios_baru' => $completedTrip->mika_kios_baru,
+                        'hpp_estimasi' => $completedTrip->hpp_estimasi,
+                        'untung_kotor' => $completedTrip->untung_kotor,
+                        'mika_komisi' => $completedTrip->mika_komisi,
+                        'komisi' => $completedTrip->komisi_rian,
+                        'untung_bersih' => $completedTrip->untung_bersih_owner,
+                        'kios_baru_count' => $completedTrip->kios_baru_count,
+                        'kios_lama_count' => $completedTrip->kios_lama_count,
+                    ];
                 @endphp
                 <div class="border border-slate-200 rounded-xl p-5 mb-4 last:mb-0 bg-slate-50/50 shadow-sm">
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
@@ -365,7 +379,7 @@
                         </div>
                         <div class="text-right">
                             <p class="text-xs text-slate-500">Omset Akhir</p>
-                            <p class="text-xl font-bold text-green-600">Rp {{ number_format($completedTrip->omset_val, 0, ',', '.') }}</p>
+                            <p class="text-xl font-bold text-green-600">Rp {{ number_format($agg['omset'], 0, ',', '.') }}</p>
                             <div class="mt-2 flex justify-end gap-1.5">
                                 <a href="{{ route('owner.trips.export.pdf', $completedTrip) }}"
                                    class="rounded bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700">PDF</a>
@@ -390,11 +404,11 @@
                         </div>
                         <div>
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Kios Lama</p>
-                            <p class="text-base font-bold text-slate-700">{{ $completedTrip->kios_lama_count }} kios</p>
+                            <p class="text-base font-bold text-slate-700">{{ $agg['kios_lama_count'] }} kios</p>
                         </div>
                         <div>
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Kios Baru</p>
-                            <p class="text-base font-bold text-amber-600">{{ $completedTrip->kios_baru_count }} kios</p>
+                            <p class="text-base font-bold text-amber-600">{{ $agg['kios_baru_count'] }} kios</p>
                         </div>
                         <div>
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Total Mika Dititip</p>
@@ -406,34 +420,34 @@
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-white border border-slate-100 rounded-lg p-4 text-center shadow-inner">
                         <div>
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Terjual</p>
-                            <p class="text-base font-bold text-slate-900">{{ number_format($completedTrip->mika_terjual, 2, ',', '.') }} mika</p>
+                            <p class="text-base font-bold text-slate-900">{{ number_format($agg['mika_terjual'], 2, ',', '.') }} mika</p>
                         </div>
                         <div>
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Kios Baru (Titip)</p>
-                            <p class="text-base font-bold text-amber-700">{{ number_format($completedTrip->mika_kios_baru, 2, ',', '.') }} mika</p>
+                            <p class="text-base font-bold text-amber-700">{{ number_format($agg['mika_kios_baru'], 2, ',', '.') }} mika</p>
                         </div>
                         <div>
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Modal Dodol</p>
-                            <p class="text-base font-bold text-red-600">Rp {{ number_format($completedTrip->hpp_estimasi, 0, ',', '.') }}</p>
+                            <p class="text-base font-bold text-red-600">Rp {{ number_format($agg['hpp_estimasi'], 0, ',', '.') }}</p>
                         </div>
                         <div>
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Keuntungan</p>
-                            <p class="text-base font-bold text-green-600">Rp {{ number_format($completedTrip->untung_kotor, 0, ',', '.') }}</p>
+                            <p class="text-base font-bold text-green-600">Rp {{ number_format($agg['untung_kotor'], 0, ',', '.') }}</p>
                         </div>
                     </div>
 
                     <div class="grid grid-cols-3 gap-4 bg-amber-50 border border-amber-100 rounded-lg p-4 text-center mt-3 shadow-inner">
                         <div>
                             <p class="text-[10px] uppercase text-amber-800 font-medium">Mika Komisi (Drop)</p>
-                            <p class="text-base font-bold text-amber-700">{{ number_format($completedTrip->mika_komisi, 2, ',', '.') }} mika</p>
+                            <p class="text-base font-bold text-amber-700">{{ number_format($agg['mika_komisi'], 2, ',', '.') }} mika</p>
                         </div>
                         <div>
                             <p class="text-[10px] uppercase text-amber-800 font-medium">Komisi Rian</p>
-                            <p class="text-base font-bold text-amber-900">Rp {{ number_format($completedTrip->komisi_rian, 0, ',', '.') }}</p>
+                            <p class="text-base font-bold text-amber-900">Rp {{ number_format($agg['komisi'], 0, ',', '.') }}</p>
                         </div>
                         <div>
                             <p class="text-[10px] uppercase text-emerald-800 font-medium">Untung Bersih Owner</p>
-                            <p class="text-base font-bold text-emerald-700 font-sans">Rp {{ number_format($completedTrip->untung_bersih_owner, 0, ',', '.') }}</p>
+                            <p class="text-base font-bold text-emerald-700 font-sans">Rp {{ number_format($agg['untung_bersih'], 0, ',', '.') }}</p>
                         </div>
                     </div>
                 </div>

@@ -187,6 +187,14 @@ class OwnerDashboardController extends Controller
             ->take(5)
             ->get();
 
+        // Agregat finansial completedTrips DIBATCH (bukan accessor per-baris yang N+1).
+        // Angka IDENTIK accessor Trip — lihat TripAggregator. Kunci: [trip_id => [...]].
+        $completedAgg = \App\Support\TripAggregator::for(
+            $completedTrips->pluck('id')->all(),
+            $hppPerMikaVal,
+            $komisiPerMikaVal,
+        );
+
         // Widget stok batch — sisa mika per batch (scoped owner).
         $batchStok = ProcurementBatch::where('owner_id', $ownerId)
             ->with('deliveries')
@@ -316,6 +324,7 @@ class OwnerDashboardController extends Controller
             'chartData',
             'activeTrips',
             'completedTrips',
+            'completedAgg',
             'batchStok',
             'totalStokTersisa',
             'prediksiKios',

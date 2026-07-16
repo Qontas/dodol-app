@@ -3,11 +3,10 @@
 namespace App\Http\Controllers\Owner;
 
 use App\Http\Controllers\Controller;
-use App\Models\Delivery;
 use App\Models\KioskVisit;
-use App\Models\Settlement;
 use App\Models\Trip;
 use App\Models\User;
+use App\Support\TripAggregator;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -86,81 +85,23 @@ class TripHistoryController extends Controller
 
     /**
      * Agregat finansial untuk SEMUA trip di halaman sekaligus (batch), dikunci per
-     * trip_id. Meniru accessor Trip (omset_val/komisi_rian/untung_bersih_owner) TAPI di
-     * level DB agar tak ada query per-baris. Jumlah query di sini KONSTAN (4) berapa pun
-     * banyak baris — bukan ~5×N accessor. Berlaku juga untuk trip terarsip (data anak
-     * kiosk_visits/deliveries/settlements tidak ikut di-soft-delete).
+     * trip_id — jumlah query KONSTAN, bukan N+1. Delegasi ke TripAggregator (satu pola
+     * dipakai dashboard + laporan bulanan + halaman ini, bukan tiga). Di sini hanya
+     * memetakan ke kolom yang dipakai tabel Riwayat Trip. Angka identik accessor Trip.
      *
      * @param  array<int>  $tripIds
      * @return array<int, array<string, float|int>>
      */
     private function aggregatesFor(array $tripIds, float $hpp, float $komisiPerMika): array
     {
-        if (empty($tripIds)) {
-            return [];
-        }
-
-        // (1) Mika diantar (semua drop) + drop basis komisi (exclude BS daur-ulang).
-        $deliveryAgg = Delivery::whereIn('trip_id', $tripIds)
-            ->groupBy('trip_id')
-            ->selectRaw('trip_id,
-                COALESCE(SUM(qty_delivered), 0) as mika_diantar,
-                COALESCE(SUM(CASE WHEN delivery_type <> ? THEN qty_delivered ELSE 0 END), 0) as drop_komisi',
-                ['bs_redistribution'])
-            ->get()
-            ->keyBy('trip_id');
-
-        // (2) Jumlah kunjungan kios (baris visit; koreksi audit dibuang lewat active()).
-        $visitCount = KioskVisit::active()
-            ->whereIn('trip_id', $tripIds)
-            ->groupBy('trip_id')
-            ->selectRaw('trip_id, COUNT(*) as kios')
-            ->pluck('kios', 'trip_id');
-
-        // (3) settled_delivery_id per trip dari kunjungan AKTIF (basis omset/mika_terjual,
-        // identik omset_val). unique per trip agar tak double-count (mirror whereIn pluck).
-        $settledRows = KioskVisit::active()
-            ->whereIn('trip_id', $tripIds)
-            ->whereNotNull('settled_delivery_id')
-            ->get(['trip_id', 'settled_delivery_id']);
-
-        $deliveryIdsByTrip = [];
-        foreach ($settledRows as $row) {
-            $deliveryIdsByTrip[$row->trip_id][$row->settled_delivery_id] = $row->settled_delivery_id;
-        }
-        $allDeliveryIds = collect($deliveryIdsByTrip)->flatMap(fn ($ids) => array_values($ids))->unique()->all();
-
-        // (4) Settlement per delivery (amount_paid + qty_sold), dijumlah per trip di PHP.
-        $settlements = empty($allDeliveryIds)
-            ? collect()
-            : Settlement::whereIn('delivery_id', $allDeliveryIds)
-                ->get(['delivery_id', 'amount_paid', 'qty_sold'])
-                ->keyBy('delivery_id');
-
         $out = [];
-        foreach ($tripIds as $id) {
-            $mikaDiantar = (int) ($deliveryAgg[$id]->mika_diantar ?? 0);
-            $dropKomisi = (float) ($deliveryAgg[$id]->drop_komisi ?? 0);
-
-            $omset = 0.0;
-            $qtySold = 0.0;
-            foreach ($deliveryIdsByTrip[$id] ?? [] as $deliveryId) {
-                if ($s = $settlements->get($deliveryId)) {
-                    $omset += (float) $s->amount_paid;
-                    $qtySold += (float) $s->qty_sold;
-                }
-            }
-
-            $mikaTerjual = $qtySold / 15;
-            $untungKotor = $mikaTerjual * (12000 - $hpp);
-            $komisi = $dropKomisi * $komisiPerMika;
-
+        foreach (TripAggregator::for($tripIds, $hpp, $komisiPerMika) as $id => $a) {
             $out[$id] = [
-                'kios' => (int) ($visitCount[$id] ?? 0),
-                'mika_diantar' => $mikaDiantar,
-                'omset' => $omset,
-                'komisi' => $komisi,
-                'untung_bersih' => $untungKotor - $komisi,
+                'kios' => $a['active_visits'],
+                'mika_diantar' => $a['mika_diantar'],
+                'omset' => $a['omset'],
+                'komisi' => $a['komisi'],
+                'untung_bersih' => $a['untung_bersih'],
             ];
         }
 

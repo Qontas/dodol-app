@@ -1,6 +1,40 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 17 Juli 2026*
 
+## OPTIMASI QUERY DASHBOARD OWNER — accessor Trip per-baris → BATCH (17 Juli 2026) — SELESAI & PUSHED
+**Dashboard 138 → 38 query (−72%), angka IDENTIK. +4 test (411 PASS), 0 regresi.**
+
+MASALAH: agregat trip (omset/komisi/untung/mika terjual/diantar/kios baru-lama) dihitung
+PER-BARIS lewat accessor Trip → dashboard ~120–138 query (take(5) completedTrips × ~10
+accessor query/baris). Accessor sama juga dipakai laporan bulanan (N+1 kalau trip banyak).
+
+⚠️ MURNI OPTIMASI, BUKAN ubah logika: rumus & konstanta (komisi per-mika×1000, untung
+bersih = untung kotor − komisi, 12000, hpp) TIDAK diubah. Angka HARUS identik.
+
+SOLUSI — satu pola batch (bukan tiga):
+- `App\Support\TripAggregator::for($tripIds, $hpp, $komisiPerMika)` → map [trip_id => {omset,
+  mika_terjual, mika_diantar, mika_komisi, hpp_estimasi, untung_kotor, komisi, untung_bersih,
+  active_visits, kios_baru_count, mika_kios_baru, kios_lama_count}]. **5 query batch KONSTAN**
+  berapa pun banyak trip, meniru PERSIS accessor Trip. Join manual `trips` (kios-baru) diberi
+  `whereNull(t.deleted_at)` (konsisten Ronde 1).
+- Dipakai di: **dashboard** (`completedAgg`, blade baca dari map — bukan accessor), **laporan
+  bulanan** (`$rows` omset/komisi/untung_bersih; kios_dikunjungi & mika_drop tetap dari koleksi
+  eager, murah + jaga semantik lama visits->count()=SEMUA), **Riwayat Trip** (`aggregatesFor`
+  kini DELEGASI ke TripAggregator → hapus duplikasi, satu sumber kebenaran).
+- Accessor per-baris TETAP ADA untuk single-trip (detail/export) — jangan dipakai dalam loop.
+
+Query count (diukur): dashboard **138 → 38**; Riwayat Trip 8 → 9 (tetap konstan, <30);
+widget Ringkasan tetap 7; laporan bulanan tak lagi N+1 per trip.
+
+PENGAMAN ANGKA (test kunci):
+- `TripAggregatorTest` (2): batch == accessor per-baris, nilai IDENTIK (delta 0.0001) di
+  skenario kaya (konsinyasi settle, cash, BS dikecualikan, kios baru drop_only, kios lama,
+  kunjungan DIKOREKSI diabaikan) + angka konkret (omset 120k, komisi 20k, untung bersih 5k,
+  kios_baru 1, active_visits 2).
+- `DashboardQueryCountTest` (2): dashboard <60 query (guard anti-N+1 balik) + completedAgg
+  IDENTIK accessor + render "Rp 120.000"/"Rp 13.000".
+- Laporan bulanan & Riwayat Trip: test lama tetap hijau (angka tak geser).
+
 ## HALAMAN "RIWAYAT TRIP" (History) DI PANEL OWNER (17 Juli 2026) — SELESAI & PUSHED
 **+13 test, 0 regresi (407 PASS).** Fitur baru: owner lihat SEMUA trip (bukan cuma 5 di
 dashboard / per-bulan di laporan), dengan filter, detail per-trip, & kelola arsip.
