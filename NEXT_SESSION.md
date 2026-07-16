@@ -1,5 +1,56 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 16 Juli 2026*
+*Sesi terakhir: 17 Juli 2026*
+
+## HALAMAN "RIWAYAT TRIP" (History) DI PANEL OWNER (17 Juli 2026) — SELESAI & PUSHED
+**+13 test, 0 regresi (407 PASS).** Fitur baru: owner lihat SEMUA trip (bukan cuma 5 di
+dashboard / per-bulan di laporan), dengan filter, detail per-trip, & kelola arsip.
+
+### Route & halaman
+- `/owner/trips` → `TripHistoryController@index` (`owner.trips.index`), menu "Riwayat Trip"
+  di sidebar owner + link dari dashboard.
+- `/owner/trips/{trip}` → `@show` (`owner.trips.show`), `->withTrashed()` agar trip terarsip
+  bisa dibuka.
+- `POST /owner/trips/{trip}/restore` → `TripDeleteController@restore` (`owner.trips.restore`),
+  `->withTrashed()`. Arsip tetap reuse `owner.trips.destroy` (Ronde 1).
+- Semua di grup `role:owner,super_admin`.
+
+### 1. Daftar (list + filter, server-side)
+- SEMUA trip SELESAI (`whereNotNull('ended_at')`) milik owner, **paginate(20)** terbaru dulu
+  (`ended_at` desc), `withQueryString()`.
+- Kolom: Tanggal, Operator, Kios, Mika Diantar, Omset, Komisi, Untung Bersih, Status
+  (Aktif/Diarsip), Aksi (Detail + Arsipkan/Pulihkan).
+- **NO N+1 — agregat BATCH** (`aggregatesFor()`): angka finansial per baris TIDAK pakai
+  accessor per-baris (yang ~5 query/baris → 100+ untuk 20 baris). Sebaliknya 4 query batch
+  di-key trip_id (drop+drop-komisi; count kunjungan; settled_delivery_id aktif; settlement),
+  dijumlah di PHP. **Diukur: 8 query total untuk 20 baris** (konstan, bukan N+1). Angka
+  IDENTIK accessor Trip (omset_val/komisi_rian/untung_bersih_owner) — test mengunci.
+- **Filter** (kombinasi bisa): Status (aktif=default via global scope / diarsip=`onlyTrashed`
+  / semua=`withTrashed`), Operator (dropdown operator owner), Tanggal (`from`–`to` bebas pada
+  `trip_date`, bukan per-bulan). Semua di query server.
+
+### 2. Detail (`owner/trips/show.blade.php`)
+- Ringkasan barang (mika dibawa/diantar/sisa/terjual) + finansial (omset, HPP, untung kotor,
+  mika komisi, komisi Rian, untung bersih) + daftar tiap KUNJUNGAN kios (kios, aksi, waktu,
+  mika titip, BS biji, uang). Eager-load (`visits.kiosk/newDelivery/settledDelivery.settlement`)
+  → tak N+1.
+- Tombol Export PDF/Excel per-trip disambung ke route lama. Guard tenant: 403 kalau bukan
+  owner pemilik/superadmin (praktik: owner lain → 404 via OwnerScope route-binding).
+- Trip terarsip bisa dibuka (badge "Diarsip").
+
+### 3. Kelola arsip
+- Filter status=Diarsip → tombol **"Pulihkan"** (POST restore, konfirmasi "Pulihkan trip ini?
+  Akan kembali dihitung di laporan.") → kosongkan `deleted_at`, trip balik ke laporan/agregat.
+- Trip aktif → tombol "Arsipkan" (reuse alur Ronde 1). Guard owner/superadmin (403/404).
+- Hard delete permanen TETAP tak ada di UI (cuma `php artisan trip:force-delete`).
+
+Test `TripHistoryTest` (13): list paginated terbaru-dulu (trip belum-selesai tak masuk);
+query count <30 (aktual 8); filter operator/tanggal/status + kombinasi; agregat=accessor;
+detail finansial+kunjungan+export; detail trip terarsip; restore dari UI mengembalikan angka;
+arsip dari UI; tenant isolation list+detail; non-owner tak bisa restore.
+
+⚠️ CATATAN LINGKUNGAN: MySQL XAMPP (`C:\xampp\mysql`) sempat mati di sesi ini (error 2002
+connection refused) → dinyalakan ulang `mysqld --defaults-file=C:\xampp\mysql\bin\my.ini`.
+Kalau test tiba-tiba error koneksi, cek mysqld hidup dulu.
 
 ## ARSIP TRIP (SOFT DELETE) + THROTTLE UPLOAD (16 Juli 2026) — SELESAI & PUSHED
 Dua commit atomik terpisah (soft-delete trip / throttle upload). **+7 test soft-delete, 0 regresi.**

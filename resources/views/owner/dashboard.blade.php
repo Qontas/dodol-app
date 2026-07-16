@@ -443,7 +443,11 @@
                 </div>
             @endforelse
 
-            <div class="mt-4 pt-4 border-t border-slate-100 text-right">
+            <div class="mt-4 pt-4 border-t border-slate-100 flex items-center justify-end gap-4">
+                <a href="{{ route('owner.trips.index') }}"
+                   class="inline-flex items-center gap-1 text-sm font-semibold text-amber-700 hover:text-amber-800">
+                    Riwayat Semua Trip &rarr;
+                </a>
                 <a href="{{ route('owner.reports.monthly') }}"
                    class="inline-flex items-center gap-1 text-sm font-semibold text-amber-700 hover:text-amber-800">
                     Lihat Laporan Bulanan &rarr;

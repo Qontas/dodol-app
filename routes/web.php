@@ -4,6 +4,7 @@ use App\Http\Controllers\KioskPhotoController;
 use App\Http\Controllers\Owner\MonthlyReportController;
 use App\Http\Controllers\Owner\TripDeleteController;
 use App\Http\Controllers\Owner\TripExportController;
+use App\Http\Controllers\Owner\TripHistoryController;
 use App\Http\Controllers\OwnerDashboardController;
 use App\Http\Controllers\OwnerSettingsController;
 use Illuminate\Support\Facades\Auth;
@@ -77,13 +78,26 @@ Route::middleware(['auth', 'verified', 'no-store', 'role:owner,super_admin'])
     ->prefix('owner')
     ->name('owner.')
     ->group(function () {
+        // Riwayat Trip (daftar semua trip selesai + filter + detail + kelola arsip).
+        Route::get('/trips', [TripHistoryController::class, 'index'])
+            ->name('trips.index');
+
         Route::get('/trips/{trip}/export/pdf', [TripExportController::class, 'pdf'])
             ->name('trips.export.pdf');
         Route::get('/trips/{trip}/export/excel', [TripExportController::class, 'excel'])
             ->name('trips.export.excel');
 
+        // Detail & pulihkan pakai withTrashed → trip terarsip pun bisa ter-bind.
+        Route::get('/trips/{trip}', [TripHistoryController::class, 'show'])
+            ->name('trips.show')
+            ->withTrashed();
+
         Route::delete('/trips/{trip}', [TripDeleteController::class, 'destroy'])
             ->name('trips.destroy');
+
+        Route::post('/trips/{trip}/restore', [TripDeleteController::class, 'restore'])
+            ->name('trips.restore')
+            ->withTrashed();
 
         Route::get('/reports/monthly', [MonthlyReportController::class, 'index'])
             ->name('reports.monthly');

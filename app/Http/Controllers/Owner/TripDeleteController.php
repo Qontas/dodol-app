@@ -26,4 +26,21 @@ class TripDeleteController extends Controller
 
         return redirect()->back()->with('status', 'Trip diarsipkan. Data disembunyikan dari laporan, tapi bisa dipulihkan.');
     }
+
+    /**
+     * PULIHKAN trip terarsip (kebalikan destroy: kosongkan deleted_at) → trip kembali
+     * muncul & dihitung di laporan/dashboard/agregat. Route pakai withTrashed agar
+     * trip terarsip bisa ter-bind. Guard sama: hanya owner pemilik / super admin.
+     */
+    public function restore(Trip $trip): RedirectResponse
+    {
+        abort_unless(
+            $trip->owner_id === auth()->id() || auth()->user()->isSuperAdmin(),
+            403
+        );
+
+        $trip->restore();
+
+        return redirect()->back()->with('status', 'Trip dipulihkan. Kembali dihitung di laporan.');
+    }
 }

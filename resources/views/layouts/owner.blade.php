@@ -39,6 +39,7 @@
             @php
                 $nav = [
                     ['label' => 'Dashboard', 'route' => 'owner.dashboard', 'active' => request()->routeIs('owner.dashboard')],
+                    ['label' => 'Riwayat Trip', 'route' => 'owner.trips.index', 'active' => request()->routeIs('owner.trips.*')],
                     ['label' => 'Manajemen Kios', 'route' => 'filament.owner.resources.kiosks.index', 'active' => request()->routeIs('filament.owner.resources.kiosks.*')],
                     ['label' => 'Manajemen Area', 'route' => 'filament.owner.resources.clusters.index', 'active' => request()->routeIs('filament.owner.resources.clusters.*')],
                     ['label' => 'Manajemen Supplier', 'route' => 'filament.owner.resources.suppliers.index', 'active' => request()->routeIs('filament.owner.resources.suppliers.*')],
