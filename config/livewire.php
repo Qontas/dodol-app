@@ -84,7 +84,11 @@ return [
         'rules' => ['required', 'file', 'max:20480'], // 20MB
 
         'directory' => null,   // Example: 'tmp'                      | Default: 'livewire-tmp'
-        'middleware' => null,  // Example: 'throttle:5,1'             | Default: 'throttle:60,1'
+        // Throttle upload DIKETATKAN dari default throttle:60,1 → throttle:20,1. Plafon
+        // upload 20MB; 60/menit terlalu longgar. Operator normal jauh di bawah 20 upload/
+        // menit (foto kios satu-satu), jadi tak mengganggu pemakaian sah — hanya menutup
+        // penyalahgunaan. HANYA endpoint upload sementara Livewire, bukan route lain.
+        'middleware' => 'throttle:20,1', // Example: 'throttle:5,1'   | Default: 'throttle:60,1'
         'preview_mimes' => [   // Supported file types for temporary pre-signed file URLs...
             'png', 'gif', 'bmp', 'svg', 'wav', 'mp4',
             'mov', 'avi', 'wmv', 'mp3', 'm4a',
