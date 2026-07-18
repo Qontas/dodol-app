@@ -128,6 +128,9 @@
                         @if($hasPending)
                             <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Ada Titipan</span>
                         @endif
+                        @if(in_array($kiosk->id, $bookingKioskIds) && !$hasPending)
+                            <span class="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-semibold">📌 Belum pernah dititip</span>
+                        @endif
 
                         {{-- Smart Kios Flags --}}
                         @php $flags = $kioskFlags[$kiosk->id] ?? []; @endphp

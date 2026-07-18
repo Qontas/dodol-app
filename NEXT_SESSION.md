@@ -1,5 +1,47 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 17 Juli 2026*
+*Sesi terakhir: 19 Juli 2026*
+
+## KEDAI BOOKING + TUTUP CELAH KOMISI/STOK KIOS-BARU-DALAM-TRIP (19 Juli 2026) — SELESAI & PUSHED
+**+ test baru, 411 regresi TETAP hijau.** Empat perubahan sekaligus.
+
+### 🔴 1. TUTUP CELAH: kios baru dalam trip kini nempel ke TRIP AKTIF (bukan trip migrasi)
+MASALAH (dari investigasi): operator daftar kios baru + naruh dodol lewat `CreateKiosk` →
+titipan dicatat via `OpeningBalance` → nempel ke TRIP MIGRASI sentinel (2000-01-01). Akibat:
+stok trip tak berkurang, **KOMISI operator TIDAK terhitung** (mika drop di trip migrasi tak
+pernah lewat end-trip), mika_drop trip kurang.
+
+FIX: helper baru `App\Support\ConsignmentDrop::record($kiosk, $trip, $qty)` = SATU jalur
+pembuatan delivery konsinyasi pending. `OpeningBalance` kini DELEGASI ke sana (trip = migrasi,
+untuk kedai lama owner). `CreateKiosk` operator DALAM trip aktif → `ConsignmentDrop` ke TRIP
+AKTIF → delivery ikut `getTotalDropReal()` → **stok berkurang + komisi terhitung** (Rp/mika ×
+qty), tanpa jalur komisi terpisah (komisi diturunkan dari deliveries trip, bukan record baru).
+
+### 3. OPERATOR TANPA TRIP AKTIF TAK BISA MENARUH DODOL
+`CreateKiosk`: field "Jatah Titipan" hanya muncul saat `jenisKedai==konsinyasi && hasActiveTrip`.
+Tanpa trip → field disembunyikan + arahan "Mau menitipkan dodol? Mulai trip dulu ya." Kedai
+konsinyasi-tanpa-trip disimpan sebagai BOOKING (identitas saja, jatah NULL, tak ada titipan).
+
+### 2. JENIS KEDAI opsi ketiga: 📌 KEDAI BOOKING (belum ada dodol)
+Sejajar Konsinyasi/Cash-Only (owner Filament radio `jenis_kedai` + operator `CreateKiosk`).
+Booking = `is_cash_only=false && default_qty_mika=NULL` → `Kiosk::isBooking()` (0 query, dari
+kolom baris). Identitas saja, TAK bikin titipan. Operator melihat 3 aksi SUDAH ADA (Titip Cash
+/ Mulai Titipan / Lewati): Titip Cash → set `is_cash_only=true` (cash-only); Mulai Titipan →
+jatah terisi + konsinyasi. Filament `CreateKiosk::afterCreate` handle `jenis==booking`.
+
+### 4. BADGE "📌 Belum pernah dititip" (operator) + kolom "Titipan" (owner) sadar-booking
+- Operator daftar kios (ActiveTrip): badge untuk kios `isBooking()` (dari `bookingKioskIds`,
+  di-filter dari koleksi kios termuat → **0 query tambahan**, bukan N+1). Hilang otomatis
+  begitu Titip Cash / Mulai Titipan (isBooking jadi false).
+- Owner kolom "Titipan": booking → "Booking" (abu, WAJAR) DIPISAH dari anomali betulan
+  (konsinyasi kehilangan titipan → "Belum ada titipan" merah).
+
+### Test
+- `CreateKioskDuringTripTest`: kios-baru-dalam-trip → delivery nempel trip aktif + `getTotalDropReal=4`
+  + `komisi_rian=4000`; tanpa-trip → booking (tak ada titipan, `isBooking()`); jenis booking eksplisit.
+- `BookingKiosOperatorTest` (baru): 3-aksi picker, Titip Cash→cash-only, Mulai Titipan→konsinyasi,
+  badge muncul & hilang, badge absen utk cash-only/konsinyasi.
+- `KioskCreateTypeTest` +booking owner; `KioskListTitipanColumnTest` → 4 kondisi (Booking baru).
+- `OpeningBalanceTest` TETAP hijau (delegasi tak ubah perilaku).
 
 ## OPTIMASI QUERY DASHBOARD OWNER — accessor Trip per-baris → BATCH (17 Juli 2026) — SELESAI & PUSHED
 **Dashboard 138 → 38 query (−72%), angka IDENTIK. +4 test (411 PASS), 0 regresi.**

@@ -285,11 +285,19 @@ class ActiveTrip extends Component
 
         $displayedIds = $kiosks->pluck('id')->all();
 
+        // BADGE "belum pernah dititip" = kedai BOOKING (belum ada dodol; belum cash-only,
+        // belum punya jatah). Diturunkan dari kolom yang SUDAH termuat di tiap kios
+        // (is_cash_only + default_qty_mika, lihat Kiosk::isBooking) → 0 query tambahan,
+        // BUKAN N+1. Hilang otomatis begitu operator Titip Cash (jadi cash) atau Mulai
+        // Titipan (jatah terisi) → isBooking() jadi false.
+        $bookingKioskIds = $kiosks->filter(fn ($k) => $k->isBooking())->pluck('id')->all();
+
         return [
             'kiosks' => $kiosks,
             'visitedKioskIds' => $visitedKioskIds,
             'correctedKioskIds' => $correctedKioskIds,
             'pendingKioskIds' => $this->pendingKioskIdsFor($displayedIds),
+            'bookingKioskIds' => $bookingKioskIds,
             'kioskFlags' => $this->computeKioskFlags($kiosks),
             'lastOperatorPerKiosk' => $this->lastOperatorFor($displayedIds),
             'totalMatched' => $totalMatched,
@@ -1567,6 +1575,11 @@ class ActiveTrip extends Component
             $bijiBayar = $totalBiji - $bsBiji;              // biji yang dibayar kedai
             $amountDue = $bijiBayar * self::HARGA_PER_BIJI; // cash yang diterima
 
+            // KEDAI BOOKING → jenis final = CASH: Titip Cash pertama pada kedai booking
+            // (belum ada dodol, belum cash-only) menetapkan kedai jadi cash-only seterusnya.
+            // Kedai konsinyasi biasa (punya jatah) yang naruh cash-ekstra TIDAK berubah.
+            $bookingJadiCash = $this->selectedKiosk->isBooking();
+
             try {
                 $variant = $this->resolveActiveVariant();
             } catch (\RuntimeException $e) {
@@ -1575,7 +1588,7 @@ class ActiveTrip extends Component
             }
 
             try {
-                DB::transaction(function () use ($cashMika, $bsBiji, $bijiBayar, $amountDue, $variant, $correctionOfVisitId) {
+                DB::transaction(function () use ($cashMika, $bsBiji, $bijiBayar, $amountDue, $variant, $correctionOfVisitId, $bookingJadiCash) {
                     $delivery = Delivery::create([
                         'kiosk_id' => $this->selectedKiosk->id,
                         'trip_id' => $this->trip->id,
@@ -1598,6 +1611,11 @@ class ActiveTrip extends Component
                         'amount_paid' => $amountDue,         // langsung lunas (cash)
                         'is_writeoff' => $bsBiji > 0,        // reuse mekanisme kerugian owner
                     ]);
+
+                    // Kedai booking → tetapkan cash-only seterusnya (jenis final).
+                    if ($bookingJadiCash) {
+                        $this->selectedKiosk->update(['is_cash_only' => true]);
+                    }
 
                     // Jatah kios TIDAK berubah di AKSI 2 (changed_default=false).
                     $visit = KioskVisit::create([
