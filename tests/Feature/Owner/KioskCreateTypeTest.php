@@ -90,6 +90,27 @@ class KioskCreateTypeTest extends TestCase
             ->assertFormFieldIsHidden('default_qty_mika');
     }
 
+    public function test_booking_creates_identity_only_no_titipan(): void
+    {
+        // Jenis BOOKING (owner Filament): identitas saja, tak ada titipan, jatah NULL,
+        // bukan cash-only. Jenis final ditentukan operator di lapangan.
+        Livewire::test(CreateKiosk::class)
+            ->fillForm([
+                'name' => 'Kedai Owner Booking',
+                'cluster_id' => $this->cluster->id,
+                'store_note' => 'Baru survei, belum titip',
+                'jenis_kedai' => 'booking',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $kiosk = Kiosk::where('name', 'Kedai Owner Booking')->firstOrFail();
+        $this->assertFalse((bool) $kiosk->is_cash_only);
+        $this->assertNull($kiosk->default_qty_mika);
+        $this->assertTrue($kiosk->isBooking());
+        $this->assertSame(0, Delivery::where('kiosk_id', $kiosk->id)->count());
+    }
+
     public function test_cash_only_sets_flag_and_no_titipan(): void
     {
         Livewire::test(CreateKiosk::class)

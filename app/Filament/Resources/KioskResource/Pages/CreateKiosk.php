@@ -50,6 +50,14 @@ class CreateKiosk extends CreateRecord
             return;
         }
 
+        if ($jenis === 'booking') {
+            // Booking: identitas saja. TIDAK cash-only, TIDAK ada jatah/titipan. Jenis final
+            // (cash/konsinyasi) ditentukan operator di lapangan. Tak ada OpeningBalance.
+            $kiosk->update(['is_cash_only' => false, 'default_qty_mika' => null]);
+
+            return;
+        }
+
         // Konsinyasi: titipan awal = JATAH (default_qty_mika). Satu angka, satu sumber.
         $jatah = (int) ($kiosk->default_qty_mika ?? 0);
         if ($jatah < 1) {

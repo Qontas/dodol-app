@@ -134,6 +134,12 @@ class KioskResource extends Resource
                             ->options([
                                 'konsinyasi' => '🏪 Kedai Konsinyasi (titipan)',
                                 'cash_only' => '💵 Kedai Cash-Only (beli putus)',
+                                'booking' => '📌 Kedai Booking (belum ada dodol)',
+                            ])
+                            ->descriptions([
+                                'konsinyasi' => 'Sudah punya titipan berjalan (kedai lama). Isi jatah → langsung bisa ditagih.',
+                                'cash_only' => 'Beli putus tiap kali, tanpa titipan/jatah.',
+                                'booking' => 'Catat identitas saja. Belum ada titipan; jenis final ditentukan operator di lapangan.',
                             ])
                             ->default('konsinyasi')
                             ->required()
@@ -495,6 +501,13 @@ class KioskResource extends Resource
                 // pending_titipan_mika di-agregasi via withSum di getEloquentQuery (1
                 // subquery, BUKAN N+1) — telepon tetap ada di form create/edit, cuma
                 // tak ditampilkan di tabel.
+                // TITIPAN / MODAL di kedai. 4 kondisi:
+                //   cash-only            → "Cash Only" (kuning)
+                //   konsinyasi bertitipan→ "X mika" (hijau)
+                //   BOOKING (belum ada dodol; default_qty_mika NULL, tak cash) → "📌 Booking"
+                //     (abu, WAJAR — bukan anomali; menunggu operator menaruh dodol pertama)
+                //   konsinyasi TANPA titipan (default_qty_mika terisi tapi 0 pending) →
+                //     "Belum ada titipan" (MERAH — anomali betulan: titipan menghilang)
                 Tables\Columns\TextColumn::make('pending_titipan_mika')
                     ->label('Titipan')
                     ->badge()
@@ -505,23 +518,32 @@ class KioskResource extends Resource
                         }
 
                         $mika = (int) ($record->pending_titipan_mika ?? 0);
+                        if ($mika > 0) {
+                            return $mika.' mika';
+                        }
 
-                        return $mika > 0 ? $mika.' mika' : 'Belum ada titipan';
+                        return $record->isBooking() ? 'Booking' : 'Belum ada titipan';
                     })
                     ->color(function (Kiosk $record): string {
                         if ($record->is_cash_only) {
                             return 'warning';
                         }
+                        if (((int) ($record->pending_titipan_mika ?? 0)) > 0) {
+                            return 'success';
+                        }
 
-                        return ((int) ($record->pending_titipan_mika ?? 0)) > 0 ? 'success' : 'danger';
+                        return $record->isBooking() ? 'gray' : 'danger';
                     })
                     ->icon(function (Kiosk $record): ?string {
                         if ($record->is_cash_only) {
                             return 'heroicon-m-banknotes';
                         }
+                        if (((int) ($record->pending_titipan_mika ?? 0)) > 0) {
+                            return 'heroicon-m-inbox-arrow-down';
+                        }
 
-                        return ((int) ($record->pending_titipan_mika ?? 0)) > 0
-                            ? 'heroicon-m-inbox-arrow-down'
+                        return $record->isBooking()
+                            ? 'heroicon-m-bookmark'
                             : 'heroicon-m-exclamation-triangle';
                     }),
 

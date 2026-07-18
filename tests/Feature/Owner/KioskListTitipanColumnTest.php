@@ -50,7 +50,7 @@ class KioskListTitipanColumnTest extends TestCase
             ->assertTableActionDoesNotExist('set_opening_balance');
     }
 
-    public function test_titipan_column_shows_three_conditions(): void
+    public function test_titipan_column_shows_four_conditions(): void
     {
         // Konsinyasi + titipan berjalan → "4 mika".
         $konsinyasi = Kiosk::factory()->create([
@@ -61,13 +61,18 @@ class KioskListTitipanColumnTest extends TestCase
         // Cash-only → "Cash Only".
         Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'is_cash_only' => true]);
 
-        // Konsinyasi TANPA titipan (anomali) → "Belum ada titipan".
-        Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'is_cash_only' => false]);
+        // BOOKING (belum ada dodol; jatah NULL, bukan cash) → "Booking" (WAJAR, abu — bukan anomali).
+        $booking = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'is_cash_only' => false, 'default_qty_mika' => null]);
+        $this->assertTrue($booking->isBooking());
+
+        // Konsinyasi TANPA titipan (jatah terisi tapi titipan hilang) → "Belum ada titipan" (anomali, merah).
+        Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'is_cash_only' => false, 'default_qty_mika' => 6]);
 
         Livewire::test(ListKiosks::class)
             ->assertSee('4 mika')
             ->assertSee('Cash Only')
-            ->assertSee('Belum ada titipan')
+            ->assertSee('Booking')          // kondisi baru: booking bukan anomali
+            ->assertSee('Belum ada titipan') // anomali betulan (konsinyasi kehilangan titipan)
             ->assertDontSee('Telepon');
     }
 
