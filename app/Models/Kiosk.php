@@ -93,6 +93,19 @@ class Kiosk extends Model
     }
 
     /**
+     * "Kedai BOOKING" = identitas dicatat, tapi BELUM ada dodol sama sekali: bukan cash-only
+     * dan belum punya jatah (default_qty_mika NULL). Jenis final ditentukan operator di
+     * lapangan → begitu operator "Mulai Titipan" (jatah terisi) atau "Titip Cash"
+     * (is_cash_only=true), kedai TAK lagi booking. Diturunkan MURNI dari kolom yang sudah
+     * ada di baris (is_cash_only + default_qty_mika) → 0 query tambahan, aman untuk list
+     * ratusan kios (badge operator & kolom "Titipan" owner memakainya tanpa N+1).
+     */
+    public function isBooking(): bool
+    {
+        return ! $this->is_cash_only && $this->default_qty_mika === null;
+    }
+
+    /**
      * Pindahkan $kiosk ke posisi $desired DALAM cluster-nya sendiri, tanpa pernah
      * menghasilkan duplikat ATAU lubang — pola "insert-within-list" (ala
      * Notion/Trello reorder), bukan sekadar "increment semua >= target" (itu naif,

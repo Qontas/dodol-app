@@ -4,7 +4,6 @@ namespace App\Support;
 
 use App\Models\Delivery;
 use App\Models\Kiosk;
-use App\Models\ProductVariant;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -44,16 +43,7 @@ class OpeningBalance
 
         $ownerId = $kiosk->cluster?->owner_id;
 
-        $variant = ProductVariant::query()
-            ->where('is_active', true)
-            ->when($ownerId !== null, fn ($q) => $q->whereHas('product', fn ($p) => $p->where('owner_id', $ownerId)))
-            ->first();
-
-        if (! $variant) {
-            return null; // tak ada varian aktif → tak bisa buat titipan
-        }
-
-        return DB::transaction(function () use ($kiosk, $qtyMika, $ownerId, $variant) {
+        return DB::transaction(function () use ($kiosk, $qtyMika, $ownerId) {
             $trip = static::migrationTripFor($ownerId);
 
             // Kios lama: first_titip_date di masa lampau (sebelum sistem) supaya tidak
@@ -62,18 +52,13 @@ class OpeningBalance
                 $kiosk->forceFill(['first_titip_date' => today()->subDay()->toDateString()])->save();
             }
 
-            return Delivery::create([
-                'kiosk_id' => $kiosk->id,
-                'trip_id' => $trip->id,
-                'product_variant_id' => $variant->id,
-                'procurement_batch_id' => null,
-                'source_type' => 'new_procurement',
-                'delivery_type' => 'consignment',
-                'qty_delivered' => $qtyMika,
-                'unit_price' => $variant->sale_price_per_pack,
-                'cost_snapshot' => null,
-                'notes' => 'Saldo awal (kios lama) — titipan berjalan sebelum masuk sistem.',
-            ]);
+            // SATU jalur delivery: sama dgn drop operator, hanya trip-nya = trip migrasi.
+            return ConsignmentDrop::record(
+                $kiosk,
+                $trip,
+                $qtyMika,
+                'Saldo awal (kios lama) — titipan berjalan sebelum masuk sistem.',
+            );
         });
     }
 
