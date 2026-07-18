@@ -143,15 +143,22 @@ class CreateKioskDuringTripTest extends TestCase
         $this->assertDatabaseMissing('kiosks', ['name' => 'Kios Curang']);
     }
 
-    public function test_konsinyasi_jatah_creates_pending_titipan(): void
+    public function test_konsinyasi_dalam_trip_titipan_nempel_ke_trip_aktif(): void
     {
-        // Kedai konsinyasi: SATU field mika (Jatah Titipan) → OTOMATIS titipan awal
-        // sejumlah jatah → LANGSUNG bisa "Tagih + Titip Ulang" di kunjungan pertama.
-        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        // 🔴 TUTUP CELAH: operator daftar kedai konsinyasi DALAM trip aktif → titipan dicatat
+        // ke TRIP AKTIF (bukan trip migrasi sentinel), sehingga stok trip berkurang & komisi
+        // operator terhitung. Dulu titipan nempel ke trip migrasi 2000 (komisi 0, stok tak turun).
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true, 'komisi_per_mika' => 1000]);
         $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
         $cluster = Cluster::create(['name' => 'Area Konsinyasi', 'owner_id' => $owner->id]);
         $product = \App\Models\Product::factory()->create(['owner_id' => $owner->id]);
         \App\Models\ProductVariant::factory()->create(['product_id' => $product->id, 'is_active' => true, 'sale_price_per_pack' => 12000]);
+
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'starting_cluster_id' => $cluster->id, 'qty_carried_total' => 50,
+            'started_at' => now(), 'ended_at' => null, 'trip_date' => today()->format('Y-m-d'),
+        ]);
 
         $this->actingAs($operator);
         Livewire::actingAs($operator);
@@ -169,10 +176,80 @@ class CreateKioskDuringTripTest extends TestCase
         $this->assertSame(4, (int) $kiosk->default_qty_mika);
         $this->assertSame('Biasa titip 4 mika', $kiosk->store_note);
 
-        // Titipan awal = jatah (4 mika).
+        // Titipan 4 mika NEMPEL KE TRIP AKTIF (bukan trip migrasi).
         $pending = \App\Models\Delivery::where('kiosk_id', $kiosk->id)->doesntHave('settlement')->first();
         $this->assertNotNull($pending, 'Kedai konsinyasi harus punya titipan berjalan langsung.');
         $this->assertSame(4, (int) $pending->qty_delivered);
+        $this->assertSame($trip->id, (int) $pending->trip_id, 'Titipan harus nempel ke TRIP AKTIF.');
+        $this->assertSame('consignment', $pending->delivery_type);
+
+        // Stok trip berkurang & komisi operator terhitung (4 × Rp1.000).
+        $trip->refresh();
+        $this->assertSame(4, $trip->getTotalDropReal());
+        $this->assertEqualsWithDelta(4000.0, (float) $trip->komisi_rian, 0.01);
+    }
+
+    public function test_konsinyasi_tanpa_trip_aktif_jadi_booking_tanpa_titipan(): void
+    {
+        // Poin 3: tanpa trip aktif, operator TIDAK boleh menaruh dodol. Pilihan konsinyasi
+        // jatuh ke BOOKING (identitas saja) → tak ada titipan, jatah NULL, bukan cash-only.
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
+        $cluster = Cluster::create(['name' => 'Area Tanpa Trip', 'owner_id' => $owner->id]);
+        $product = \App\Models\Product::factory()->create(['owner_id' => $owner->id]);
+        \App\Models\ProductVariant::factory()->create(['product_id' => $product->id, 'is_active' => true, 'sale_price_per_pack' => 12000]);
+
+        $this->actingAs($operator);
+        Livewire::actingAs($operator);
+
+        // Tanpa trip → field jatah tersembunyi + arahan "Mulai trip dulu".
+        Livewire::test(CreateKiosk::class)
+            ->assertSet('hasActiveTrip', false)
+            ->assertSee('Mulai trip dulu')
+            ->set('namaKios', 'Kedai Booking Tanpa Trip')
+            ->set('namaPemilik', 'Pak Nanti')
+            ->set('clusterId', $cluster->id)
+            ->set('jenisKedai', 'konsinyasi')
+            ->set('defaultQtyMika', 4)
+            ->call('saveKiosk')
+            ->assertHasNoErrors();
+
+        $kiosk = Kiosk::where('name', 'Kedai Booking Tanpa Trip')->firstOrFail();
+        $this->assertFalse((bool) $kiosk->is_cash_only);
+        $this->assertNull($kiosk->default_qty_mika, 'Tanpa trip → tak ada jatah (booking).');
+        $this->assertTrue($kiosk->isBooking());
+        $this->assertSame(0, \App\Models\Delivery::where('kiosk_id', $kiosk->id)->count(), 'Tanpa trip → tak ada titipan.');
+    }
+
+    public function test_booking_jenis_creates_identity_only(): void
+    {
+        // Jenis booking eksplisit (walau ADA trip): tetap identitas saja, tak ada titipan.
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
+        $cluster = Cluster::create(['name' => 'Area Booking', 'owner_id' => $owner->id]);
+        $product = \App\Models\Product::factory()->create(['owner_id' => $owner->id]);
+        \App\Models\ProductVariant::factory()->create(['product_id' => $product->id, 'is_active' => true, 'sale_price_per_pack' => 12000]);
+        Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'starting_cluster_id' => $cluster->id, 'qty_carried_total' => 50,
+            'started_at' => now(), 'ended_at' => null, 'trip_date' => today()->format('Y-m-d'),
+        ]);
+
+        $this->actingAs($operator);
+        Livewire::actingAs($operator);
+        Livewire::test(CreateKiosk::class)
+            ->set('namaKios', 'Kedai Booking Eksplisit')
+            ->set('namaPemilik', 'Bu Booking')
+            ->set('clusterId', $cluster->id)
+            ->set('jenisKedai', 'booking')
+            ->call('saveKiosk')
+            ->assertHasNoErrors();
+
+        $kiosk = Kiosk::where('name', 'Kedai Booking Eksplisit')->firstOrFail();
+        $this->assertTrue($kiosk->isBooking());
+        $this->assertFalse((bool) $kiosk->is_cash_only);
+        $this->assertNull($kiosk->default_qty_mika);
+        $this->assertSame(0, \App\Models\Delivery::where('kiosk_id', $kiosk->id)->count());
     }
 
     public function test_cash_only_kiosk_has_no_titipan_and_no_jatah(): void

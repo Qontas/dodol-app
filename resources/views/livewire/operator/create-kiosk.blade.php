@@ -6,15 +6,8 @@
 
     {{-- Header --}}
     <div class="mb-6">
-        @php
-            $activeTrip = \App\Models\Trip::where('operator_id', auth()->id())
-                ->whereDate('trip_date', today())
-                ->whereNotNull('started_at')
-                ->whereNull('ended_at')
-                ->first();
-        @endphp
-        @if ($activeTrip)
-            <a href="{{ route('operator.trip.active', $activeTrip->id) }}" wire:navigate
+        @if ($hasActiveTrip)
+            <a href="{{ route('operator.trip.active', $activeTripId) }}" wire:navigate
                class="text-slate-500 text-sm flex items-center gap-1 hover:text-slate-800">
                 <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M9.707 14.707a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 1.414L7.414 9H15a1 1 0 110 2H7.414l2.293 2.293a1 1 0 010 1.414z" clip-rule="evenodd"/>
@@ -103,7 +96,7 @@
             @enderror
         </div>
 
-        {{-- JENIS KEDAI: konsinyasi (titipan) vs cash-only (beli putus) --}}
+        {{-- JENIS KEDAI: konsinyasi (titip sekarang) / cash-only / booking (identitas saja) --}}
         <div>
             <label class="block text-sm font-bold text-slate-900 mb-2">
                 Jenis Kedai <span class="text-red-500">*</span>
@@ -112,8 +105,8 @@
                 <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer {{ $jenisKedai === 'konsinyasi' ? 'border-amber-400 bg-amber-50' : 'border-slate-200' }}">
                     <input type="radio" wire:model.live="jenisKedai" value="konsinyasi" class="mt-1 text-amber-600">
                     <span class="text-sm">
-                        <span class="font-bold text-slate-900 block">🏪 Kedai Konsinyasi (titipan)</span>
-                        <span class="text-xs text-slate-500">Dodol dititip dulu, dibayar pas laku. Punya jatah &amp; titipan berjalan.</span>
+                        <span class="font-bold text-slate-900 block">🏪 Kedai Konsinyasi (titip sekarang)</span>
+                        <span class="text-xs text-slate-500">Naruh dodol sekarang dari stok trip. Dihitung sebagai titipan berjalan + komisi.</span>
                     </span>
                 </label>
                 <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer {{ $jenisKedai === 'cash_only' ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200' }}">
@@ -123,20 +116,26 @@
                         <span class="text-xs text-slate-500">Beli tunai tiap kali, jumlah suka-suka. Tak ada titipan &amp; tak ada jatah.</span>
                     </span>
                 </label>
+                <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer {{ $jenisKedai === 'booking' ? 'border-sky-400 bg-sky-50' : 'border-slate-200' }}">
+                    <input type="radio" wire:model.live="jenisKedai" value="booking" class="mt-1 text-sky-600">
+                    <span class="text-sm">
+                        <span class="font-bold text-slate-900 block">📌 Kedai Booking (belum ada dodol)</span>
+                        <span class="text-xs text-slate-500">Catat identitasnya dulu. Nanti pas dikunjungi, tentukan mau dititip atau cash.</span>
+                    </span>
+                </label>
             </div>
             @error('jenisKedai')
                 <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
             @enderror
         </div>
 
-        {{-- KONSINYASI: SATU field mika — Jatah Titipan. Jatah ini otomatis jadi titipan
-             awal → kedai LANGSUNG bisa "Tagih + Titip Ulang"; sisa fisik dicek operator
-             di lapangan (sisa bagus + BS) → tagihan terkoreksi otomatis. --}}
-        @if($jenisKedai === 'konsinyasi')
+        {{-- KONSINYASI + TRIP AKTIF: field Jatah Titipan. Dodol yang ditaruh dicatat ke TRIP
+             AKTIF (stok berkurang + komisi). Kedai langsung bisa "Tagih + Titip Ulang". --}}
+        @if($jenisKedai === 'konsinyasi' && $hasActiveTrip)
             <div class="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
                 <div>
                     <label for="defaultQtyMika" class="block text-sm font-bold text-slate-900 mb-2">
-                        Jatah Titipan (mika per kunjungan) <span class="text-red-500">*</span>
+                        Jatah Titipan (mika ditaruh sekarang) <span class="text-red-500">*</span>
                     </label>
                     <input
                         type="number"
@@ -146,11 +145,20 @@
                         inputmode="numeric"
                         onfocus="this.select()"
                         class="w-full rounded-xl border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-3">
-                    <p class="text-xs text-slate-500 mt-1">Berapa mika yang dititip di kedai ini tiap kunjungan. Ini juga jadi titipan awal — kamu yang cek berapa sisanya pas kunjungan pertama.</p>
+                    <p class="text-xs text-slate-500 mt-1">Berapa mika yang kamu taruh sekarang dari stok trip. Ini jadi titipan berjalan + dihitung komisi. Kamu yang cek sisanya pas kunjungan berikutnya.</p>
                     @error('defaultQtyMika')
                         <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
                     @enderror
                 </div>
+            </div>
+        @endif
+
+        {{-- KONSINYASI TANPA TRIP AKTIF: tak bisa menaruh dodol (sistem tak tahu stok mana
+             yang keluar). Arahkan operator mulai trip dulu; kedai disimpan sebagai booking. --}}
+        @if($jenisKedai === 'konsinyasi' && ! $hasActiveTrip)
+            <div class="rounded-xl border border-sky-200 bg-sky-50 p-4">
+                <p class="text-sm font-bold text-sky-800">Mau menitipkan dodol? Mulai trip dulu ya.</p>
+                <p class="text-xs text-sky-700 mt-1">Tanpa trip aktif, kedai ini disimpan sebagai <b>booking</b> (identitas saja). Nanti pas trip jalan dan kamu kunjungi, baru bisa naruh dodol / cash.</p>
             </div>
         @endif
 

@@ -4,6 +4,8 @@ namespace App\Livewire\Operator;
 
 use App\Models\Cluster;
 use App\Models\Kiosk;
+use App\Models\Trip;
+use App\Support\ConsignmentDrop;
 use App\Support\GoogleMapsShortLinkResolver;
 use App\Support\KioskLocationParser;
 use App\Support\KioskPhoto;
@@ -28,11 +30,20 @@ class CreateKiosk extends Component
     public ?string $mapsInput = null;
     public $foto = null;
 
-    // JENIS KEDAI saat input (owner input kedai KARENA sudah titip di sana; operator
-    // nemu kedai baru sambil naruh dodol). 'konsinyasi' = ada titipan berjalan + jatah;
-    // 'cash_only' = beli putus, tak ada titipan/jatah. KONSINYASI → titipan awal otomatis
-    // SEJUMLAH JATAH (defaultQtyMika) via OpeningBalance (satu field mika, bukan dua).
+    // JENIS KEDAI saat input. TIGA opsi sejajar:
+    //  'konsinyasi' = operator MENARUH dodol sekarang (butuh TRIP AKTIF). Titipan dicatat
+    //                 ke TRIP AKTIF (ConsignmentDrop) → stok trip berkurang + KOMISI operator
+    //                 terhitung. Tanpa trip aktif, pilihan ini otomatis jatuh ke booking.
+    //  'cash_only'  = beli putus, tak ada titipan/jatah.
+    //  'booking'    = catat IDENTITAS saja (belum ada dodol). Jenis final ditentukan operator
+    //                 nanti di lapangan (Titip Cash → cash-only / Mulai Titipan → konsinyasi).
     public string $jenisKedai = 'konsinyasi';
+
+    // Apakah operator sedang punya trip aktif (di-set di mount). Menentukan apakah field
+    // "Jatah Titipan" boleh muncul: TANPA trip, operator tak bisa menaruh dodol (sistem tak
+    // tahu stok mana yang keluar → celah). Titipan HANYA lewat trip aktif.
+    public bool $hasActiveTrip = false;
+    public ?int $activeTripId = null;
 
     // CATATAN KEDAI (teks bebas) — karakteristik kedai, tampil menonjol ke operator.
     public string $storeNote = '';
@@ -80,6 +91,24 @@ class CreateKiosk extends Component
         if ($clusters->count() === 1) {
             $this->clusterId = (int) $clusters->first()->id;
         }
+
+        // Trip aktif menentukan apakah operator boleh menaruh dodol saat daftar (poin 1 & 3).
+        $trip = $this->resolveActiveTrip();
+        $this->hasActiveTrip = $trip !== null;
+        $this->activeTripId = $trip?->id;
+    }
+
+    /**
+     * Trip operasional yang sedang berjalan milik operator ini HARI INI (started, belum
+     * ended). Sumber kebenaran "apakah boleh menaruh dodol" + tujuan Delivery titipan.
+     */
+    private function resolveActiveTrip(): ?Trip
+    {
+        return Trip::where('operator_id', auth()->id())
+            ->whereDate('trip_date', today())
+            ->whereNotNull('started_at')
+            ->whereNull('ended_at')
+            ->first();
     }
 
     public function getClustersProperty()
@@ -97,7 +126,17 @@ class CreateKiosk extends Component
     {
         $ownerId = auth()->user()->owner_id;
 
-        $isKonsinyasi = $this->jenisKedai === 'konsinyasi';
+        // Trip aktif = izin menaruh dodol. Re-resolve saat simpan (bukan andalkan snapshot
+        // mount yang bisa basi kalau trip diakhiri di tab lain).
+        $activeTrip = $this->resolveActiveTrip();
+        $this->hasActiveTrip = $activeTrip !== null;
+        $this->activeTripId = $activeTrip?->id;
+
+        // KONSINYASI hanya BERARTI (menaruh dodol) kalau ada trip aktif. Tanpa trip, pilihan
+        // konsinyasi jatuh ke booking: identitas saja, tanpa titipan (poin 3 — cegah stok
+        // keluar tak tercatat). Titipan SELALU nempel ke trip aktif (poin 1).
+        $titipToTrip = $this->jenisKedai === 'konsinyasi' && $activeTrip !== null;
+        $isCashOnly = $this->jenisKedai === 'cash_only';
 
         $validated = $this->validate([
             'namaKios' => 'required|string|max:255',
@@ -111,10 +150,10 @@ class CreateKiosk extends Component
                     $q->where('owner_id', $ownerId);
                 }
             })],
-            'jenisKedai' => 'required|in:konsinyasi,cash_only',
-            // Jatah hanya wajib untuk kedai KONSINYASI. Cash-only tak punya jatah.
-            // Jatah ini SEKALIGUS jadi titipan awal (OpeningBalance) untuk konsinyasi.
-            'defaultQtyMika' => $isKonsinyasi ? 'required|integer|min:1|max:100' : 'nullable|integer|min:1',
+            'jenisKedai' => 'required|in:konsinyasi,cash_only,booking',
+            // Jatah WAJIB hanya saat menaruh dodol ke trip aktif (konsinyasi + trip aktif).
+            // Cash-only / booking / konsinyasi-tanpa-trip tak punya jatah saat daftar.
+            'defaultQtyMika' => $titipToTrip ? 'required|integer|min:1|max:100' : 'nullable|integer|min:1',
             'storeNote' => 'nullable|string|max:500',
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
@@ -140,15 +179,18 @@ class CreateKiosk extends Component
             return null;
         }
 
-        $kiosk = DB::transaction(function () use ($isKonsinyasi) {
+        $titipanGagal = false;
+
+        $kiosk = DB::transaction(function () use ($titipToTrip, $isCashOnly, $activeTrip, &$titipanGagal) {
             $kiosk = Kiosk::create([
                 'name' => $this->namaKios,
                 'owner_name' => $this->namaPemilik,
                 'phone' => $this->telepon ?: null,
                 'cluster_id' => $this->clusterId, // wajib & tervalidasi milik owner.
-                // Jatah hanya untuk konsinyasi; cash-only tak punya jatah.
-                'default_qty_mika' => $isKonsinyasi ? $this->defaultQtyMika : null,
-                'is_cash_only' => ! $isKonsinyasi,
+                // Jatah HANYA di-set kalau dodol benar-benar ditaruh ke trip aktif.
+                // Booking / konsinyasi-tanpa-trip → NULL (belum ada titipan/jatah).
+                'default_qty_mika' => $titipToTrip ? $this->defaultQtyMika : null,
+                'is_cash_only' => $isCashOnly,
                 'latitude' => $this->latitude,
                 'longitude' => $this->longitude,
                 'is_active' => true,
@@ -162,15 +204,24 @@ class CreateKiosk extends Component
             // (bukan NULL yang jatuh ke bawah tanpa nomor & mengacaukan urutan rute).
             Kiosk::appendToClusterOrder($kiosk);
 
-            // KONSINYASI → titipan awal otomatis SEJUMLAH JATAH (defaultQtyMika) via
-            // OpeningBalance supaya kedai LANGSUNG bisa "Tagih + Titip Ulang" di kunjungan
-            // pertama; tagihan dikoreksi otomatis oleh input sisa/BS operator. Idempoten.
-            if ($isKonsinyasi && (int) $this->defaultQtyMika >= 1) {
-                \App\Support\OpeningBalance::create($kiosk, (int) $this->defaultQtyMika);
+            // 🔴 TITIPAN → TRIP AKTIF: dodol yang ditaruh operator dicatat sebagai delivery
+            // konsinyasi pada TRIP AKTIF (bukan trip migrasi sentinel). Karena nempel ke trip
+            // aktif, ia otomatis ikut getTotalDropReal() → STOK trip berkurang + KOMISI operator
+            // terhitung, TANPA jalur komisi terpisah. Reuse ConsignmentDrop (sama dgn OpeningBalance,
+            // beda trip). Kios langsung bisa "Tagih + Titip Ulang" kunjungan berikutnya.
+            if ($titipToTrip && (int) $this->defaultQtyMika >= 1) {
+                $delivery = ConsignmentDrop::record($kiosk, $activeTrip, (int) $this->defaultQtyMika);
+                // null = owner belum punya varian produk aktif → titipan tak tercatat, tapi
+                // kios tetap tersimpan (jangan gagalkan semuanya). Beri tahu operator.
+                $titipanGagal = $delivery === null;
             }
 
             return $kiosk;
         });
+
+        if ($titipanGagal) {
+            session()->flash('titipan_gagal', 'Kios tersimpan, tapi titipan belum tercatat (belum ada varian produk aktif). Hubungi owner untuk cek Master Data → Produk.');
+        }
 
         // Foto opsional dari lapangan. Kompres utama di browser; KioskPhoto::store()
         // menangani konversi HEIC → JPG + ImageResizer (jaring pengaman server) dan
@@ -187,12 +238,6 @@ class CreateKiosk extends Component
         }
 
         session()->flash('kios_saved', 'Kios baru berhasil ditambahkan.');
-
-        $activeTrip = \App\Models\Trip::where('operator_id', auth()->id())
-            ->whereDate('trip_date', today())
-            ->whereNotNull('started_at')
-            ->whereNull('ended_at')
-            ->first();
 
         if ($activeTrip) {
             return $this->redirect(route('operator.trip.active', $activeTrip->id), navigate: true);
