@@ -37,6 +37,76 @@ class AuthenticationTest extends TestCase
         $this->assertAuthenticated();
     }
 
+    /**
+     * Spasi depan/belakang di email (umum dari autocomplete/keyboard HP) TAK BOLEH
+     * bikin login gagal. Sebelum fix: " owner@x.id " → GAGAL. Sesudah: BERHASIL.
+     */
+    public function test_users_can_authenticate_with_surrounding_whitespace_in_email(): void
+    {
+        $user = User::factory()->create(['email' => 'operator.lapangan@example.com']);
+
+        $component = Volt::test('pages.auth.login')
+            ->set('form.email', '  operator.lapangan@example.com  ')
+            ->set('form.password', 'password');
+
+        $component->call('login');
+
+        $component->assertHasNoErrors()->assertRedirect(route('dashboard', absolute: false));
+        $this->assertAuthenticated();
+    }
+
+    /**
+     * Kapitalisasi email tak berpengaruh (collation _ci + normalisasi input). "OWNER@..."
+     * tetap masuk. Termasuk kombinasi dengan spasi.
+     */
+    public function test_users_can_authenticate_with_different_email_capitalization(): void
+    {
+        $user = User::factory()->create(['email' => 'owner.bisnis@example.com']);
+
+        $component = Volt::test('pages.auth.login')
+            ->set('form.email', '  OWNER.Bisnis@Example.COM ')
+            ->set('form.password', 'password');
+
+        $component->call('login');
+
+        $component->assertHasNoErrors()->assertRedirect(route('dashboard', absolute: false));
+        $this->assertAuthenticated();
+    }
+
+    /**
+     * Password TETAP case-sensitive & apa adanya — normalisasi HANYA menyentuh email.
+     * Password kapital-beda ditolak; password dengan spasi disengaja diterima persis.
+     */
+    public function test_password_remains_case_sensitive_and_is_not_trimmed(): void
+    {
+        // Password sengaja mengandung huruf besar dan spasi tepi.
+        $user = User::factory()->create([
+            'email' => 'kasir@example.com',
+            'password' => bcrypt(' Rahasia Kuat '),
+        ]);
+
+        // (a) Kapitalisasi password beda → DITOLAK.
+        $wrongCase = Volt::test('pages.auth.login')
+            ->set('form.email', 'kasir@example.com')
+            ->set('form.password', ' rahasia kuat ');
+        $wrongCase->call('login')->assertHasErrors();
+        $this->assertGuest();
+
+        // (b) Password di-trim (spasi tepi hilang) → DITOLAK (spasi bagian dari password).
+        $trimmed = Volt::test('pages.auth.login')
+            ->set('form.email', 'kasir@example.com')
+            ->set('form.password', 'Rahasia Kuat');
+        $trimmed->call('login')->assertHasErrors();
+        $this->assertGuest();
+
+        // (c) Password persis (termasuk spasi & kapital) → BERHASIL.
+        $exact = Volt::test('pages.auth.login')
+            ->set('form.email', 'kasir@example.com')
+            ->set('form.password', ' Rahasia Kuat ');
+        $exact->call('login')->assertHasNoErrors();
+        $this->assertAuthenticated();
+    }
+
     public function test_users_can_not_authenticate_with_invalid_password(): void
     {
         $user = User::factory()->create();

@@ -2,6 +2,7 @@
 
 use App\Livewire\Forms\LoginForm;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -14,6 +15,12 @@ new #[Layout('layouts.auth')] class extends Component
      */
     public function login(): void
     {
+        // Normalisasi email SEBELUM validasi: trim + lowercase. Tanpa ini, rule "email"
+        // menolak input berspasi (" owner@x.id ") dari autocomplete/keyboard HP sebelum
+        // authenticate() sempat jalan. Password TAK disentuh (tetap case-sensitive & apa
+        // adanya). authenticate() menormalkan ulang (idempoten) sebagai lapis pengaman.
+        $this->form->email = Str::lower(trim($this->form->email));
+
         $this->validate();
 
         $this->form->authenticate();

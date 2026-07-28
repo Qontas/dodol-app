@@ -32,10 +32,18 @@ class LoginForm extends Form
     {
         $this->ensureIsNotRateLimited();
 
+        // Normalisasi email SEBELUM attempt: trim + lowercase. Autocomplete/keyboard HP
+        // sering menyisipkan spasi (" owner@x.id ") → tanpa trim login GAGAL padahal email
+        // benar. Lowercase konsisten dengan email yang disimpan ternormalisasi (User::email
+        // mutator). PASSWORD SENGAJA TAK DISENTUH: harus tetap case-sensitive & apa adanya
+        // (termasuk spasi, kalau itu memang bagian password).
+        $credentials = $this->only(['email', 'password']);
+        $credentials['email'] = Str::lower(trim($credentials['email']));
+
         // Kredensial salah = email TAK TERDAFTAR (termasuk email yang sudah diganti,
         // mis. operator@ → madan@ lalu login pakai email lama) ATAU password salah.
         // Sengaja satu pesan untuk keduanya (tak membocorkan email mana yang ada).
-        if (! Auth::attempt($this->only(['email', 'password']), $this->remember)) {
+        if (! Auth::attempt($credentials, $this->remember)) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([

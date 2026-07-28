@@ -49,6 +49,9 @@ class UserResource extends Resource
                             ->required()
                             ->maxLength(255)
                             ->unique(ignoreRecord: true)
+                            // Simpan email selalu ternormalisasi (trim + lowercase) — konsisten
+                            // dgn User::email mutator & jalur login. Cegah email tersimpan berspasi.
+                            ->dehydrateStateUsing(fn (string $state): string => mb_strtolower(trim($state)))
                             ->placeholder('user@cemilanqontas.id'),
 
                         Forms\Components\TextInput::make('password')

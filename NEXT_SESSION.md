@@ -1,5 +1,34 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 19 Juli 2026*
+*Sesi terakhir: 28 Juli 2026*
+
+## FIX: NORMALISASI EMAIL (trim + lowercase) — cegah gagal login karena spasi (28 Juli 2026) — SELESAI & PUSHED
+**+ 6 test baru (3 login + 3 normalisasi), 425 regresi hijau (dari 419).**
+
+MASALAH (dari audit read-only): tak ada `trim()` di jalur login. Email berspasi depan/belakang
+(" owner@x.id ") dari autocomplete/keyboard HP Android → **LOGIN GAGAL** padahal email benar,
+operator lapangan tak tahu sebabnya. Kapitalisasi sudah aman (collation `utf8mb4_unicode_ci` _ci
+case-insensitive) tapi email disimpan apa adanya (tak lowercase).
+
+FIX (email dinormalkan trim+lowercase di SEMUA titik; password TAK disentuh — tetap
+case-sensitive & apa adanya termasuk spasi):
+1. **`User::email` mutator** (`app/Models/User.php`) — `Attribute set` = `mb_strtolower(trim())`.
+   SATU titik yang menormalkan SEMUA jalur tulis: seeder, UserResource (super admin),
+   OperatorResource (owner), ManageOperators, tinker/CLI, factory/test. Tak ada yang lolos.
+2. **Login** — `resources/views/livewire/pages/auth/login.blade.php` normalkan `form.email`
+   SEBELUM `$this->validate()` (rule `email` menolak input berspasi kalau tak dinormalkan dulu),
+   + `LoginForm::authenticate()` normalkan ulang sebelum `Auth::attempt` (idempoten, lapis aman).
+   Password lewat apa adanya.
+3. **Filament** — `UserResource` & `OperatorResource` field email `->dehydrateStateUsing(trim+lower)`
+   (eksplisit/self-documenting; mutator sudah menjamin, ini menegaskan di titik form).
+4. TAK mengubah collation DB & unique constraint (sudah tepat: _ci mencegah akun kembar beda-kapital).
+
+Bukti: login `"  owner@x.id  "` → BERHASIL (dulu gagal); `OWNER@` → BERHASIL; password kapital-beda
+/ di-trim → DITOLAK; password berspasi disengaja → diterima persis; buat akun `" Madan@X.id "` →
+tersimpan `madan@x.id`; akun kembar beda-kapital → DITOLAK (1062). Test: `AuthenticationTest`
+(+3), `EmailNormalizationTest` (baru, 3).
+
+⚠️ TODO PRODUKSI (owner jalankan sendiri) — cek email existing yang bermasalah, snippet ada di
+laporan sesi ini (cek dulu, kalau normalisasi bikin kembar → LAPOR jangan paksa).
 
 ## KEDAI BOOKING + TUTUP CELAH KOMISI/STOK KIOS-BARU-DALAM-TRIP (19 Juli 2026) — SELESAI & PUSHED
 **+ test baru, 411 regresi TETAP hijau.** Empat perubahan sekaligus.

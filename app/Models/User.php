@@ -6,6 +6,7 @@ namespace App\Models;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -65,6 +66,26 @@ class User extends Authenticatable implements FilamentUser
             'komisi_per_mika' => 'decimal:2',
             'komisi_kios_baru_per_mika' => 'decimal:2',
         ];
+    }
+
+    /**
+     * Email SELALU disimpan ternormalisasi: trim + lowercase. Satu titik untuk SEMUA
+     * jalur tulis (seeder, UserResource super admin, OperatorResource owner,
+     * ManageOperators, tinker/CLI, factory/test) — tak ada jalur yang bisa lolos.
+     *
+     * Kenapa penting: (a) spasi depan/belakang dari autocomplete HP tak boleh bikin
+     * email kembar/aneh; (b) collation utf8mb4_unicode_ci sudah case-insensitive untuk
+     * lookup, tapi menyimpan lowercase membuat data eksplisit & portabel (aman kalau
+     * suatu saat pindah DB/collation case-sensitive).
+     *
+     * Login-nya sendiri menormalkan input sebelum Auth::attempt (lihat LoginForm),
+     * karena mutator hanya berlaku saat MENULIS model, bukan saat query WHERE email.
+     */
+    protected function email(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value): ?string => $value === null ? null : mb_strtolower(trim($value)),
+        );
     }
 
     public function isSuperAdmin(): bool
