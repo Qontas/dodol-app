@@ -87,6 +87,5 @@ class RingkasanQueryCountTest extends TestCase
         $this->assertSame($few, $many, "Query widget Ringkasan harus konstan (few=$few, many=$many)");
         // 7 query: 2 pluck-id + 2 settlement-sum + 2 drop-sum + 1 per-operator (bulan ini & lalu).
         $this->assertSame(7, $many, "Widget Ringkasan = $many query");
-        fwrite(STDERR, "\n[RINGKASAN] query widget = few(1 trip)=$few, many(6 trip)=$many\n");
     }
 }

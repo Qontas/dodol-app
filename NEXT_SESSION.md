@@ -1,6 +1,52 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 28 Juli 2026*
 
+## FIX TEST FLAKY `UserListQueryCountTest` — ternyata N+1 SUNGGUHAN, bukan warmup (28 Juli 2026) — SELESAI & PUSHED
+**431 regresi hijau, 3x full run berturut-turut, 0 gagal.**
+
+Dugaan awal (ambang terlalu ketat / sensitif warmup) **TERBUKTI SALAH**. Pengukuran query log:
+`$sedikit` (5 user) = **4 KONSTAN** di semua run; `$banyak` (25 user) = **5, 6, 7, 8, 9** (6 run).
+Variansi ada di `$banyak`, dan query ekstranya berbentuk `select * from users where id = ? limit 1`
+— satu per baris. Itu **N+1 nyata**, bukan derau boot.
+
+### Akar: kolom "Komisi/Mika" memuat owner per baris
+`UserResource.php` kolom `komisi_efektif_per_mika` → `$record->owner?->getKomisiPerMikaValue()`.
+`withCount(...)` sudah ada (fix guard delete 15 Juli), tapi **`with('owner')` tak pernah ada**.
+Tiap baris OPERATOR memuat owner-nya sendiri. Terbatas ukuran halaman (maks 10) sehingga tak
+pernah "meledak" → lolos dari ambang selama bertahun-tahun render.
+
+**Kenapa acak:** tabel diurut `name asc`, halaman 1 = 10 baris, nama dari `fake()->name()`.
+Berapa banyak baris OPERATOR yang kebetulan masuk halaman 1 berubah tiap run → query count ikut
+naik-turun. Ambang `selisih <= 4` kadang terlampaui. Merahnya **jujur**, cuma tak terbaca.
+
+### Fix
+1. **Perbaiki N+1-nya** (bukan melonggarkan ambang): `$query->with('owner')` di
+   `UserResource::getEloquentQuery()`. Sesudahnya query count **3 untuk 5 user DAN 3 untuk 25 user**
+   (count paginasi + query utama + eager load) — selisih **0**, deterministik.
+2. **Kunci determinisme fixture**: semua user di test ini diberi **nama eksplisit**, tak lagi nama
+   random factory. Fase 2 sengaja menamai 10 operator baru `"A Operator Besar NN"` supaya mereka
+   mengisi halaman 1 SELURUHNYA = kasus TERBURUK untuk N+1 → daya tangkap test justru NAIK.
+3. Ambang `selisih <= 2` (dulu 4), didokumentasikan: nilai sebenarnya 0; 2 = kelonggaran untuk
+   query berbiaya TETAP; N+1 per-baris menghasilkan **+8** di fixture ini → tetap tertangkap.
+
+### Bukti jaminan masih hidup
+`with('owner')` dihapus sementara → `5 user=4, 25 user=12, selisih=8` → **MERAH**. Dikembalikan
+→ **HIJAU**. Test mengukur hal yang sama, cuma tak lagi terpengaruh nama random.
+
+### Test query-count lain (diperiksa, hasil)
+- `test_daftar_operator_owner_query_konstan` (file sama) — **dirapikan**: nama operator eksplisit.
+  `OperatorResource` tak memuat relasi per baris (cuma `withCount` + `deletionBlockReasonForDisplay`
+  yang 0 query), jadi selama ini stabil; nama eksplisit menjaga agar kolom relasi baru nanti
+  muncul sebagai merah jujur, bukan merah acak.
+- `RingkasanQueryCountTest` — **AMAN** meski `assertSame(7, …)` eksak: yang dihitung difilter per
+  signature SQL agregat, tak bergantung baris/nama. (Dibersihkan: `fwrite(STDERR, …)` sisa debug
+  yang mengotori output tiap run.)
+- `DashboardQueryCountTest` (`< 60`, aktual ~38) & `TripHistoryTest` (`< 30`, 20 baris) — **AMAN**:
+  fixture deterministik, bukan tabel terpaginasi yang urutannya bergantung nama random.
+
+**PELAJARAN:** test query-count yang mengukur tabel TERPAGINASI wajib memakai nama/urutan
+eksplisit. Kalau tidak, komposisi halaman jadi acak dan N+1 sungguhan menyamar jadi "flaky".
+
 ## 🔴 FIX BUG PRA-OPERASIONAL: "PILIH KOTA 1 → KEBUKA PANCING" + "DAFTAR BERHENTI DI BILAL 3" (28 Juli 2026) — SELESAI & PUSHED
 **+ 6 test baru (repro gagal→hijau), 431 regresi hijau (dari 425).**
 

@@ -340,6 +340,15 @@ class UserResource extends Resource
         // terakhir; yang tak terpakai tetap murah (masih satu query utama).
         $query->withCount(['ownedKiosks', 'ownedTrips', 'operators', 'operatedTrips', 'commissions']);
 
+        // Kolom "Komisi/Mika" baris OPERATOR membaca tarif OWNER-nya
+        // ($record->owner?->getKomisiPerMikaValue()). Tanpa eager load ini, tiap baris
+        // operator menembak `select * from users where id = ?` sendiri-sendiri — N+1
+        // yang terbatas ukuran halaman (maks 10) sehingga tak pernah "meledak", tapi
+        // NYATA: 1 query ekstra per operator yang tampil. Ini juga yang membuat
+        // UserListQueryCountTest merah acak — jumlah baris operator di halaman 1
+        // bergantung nama random, jadi query count ikut naik-turun (diukur 5..9).
+        $query->with('owner');
+
         if (auth()->user()?->isSuperAdmin()) {
             return $query; // super admin lihat semua user (kecuali akun sistem)
         }
