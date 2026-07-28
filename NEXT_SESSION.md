@@ -1,6 +1,53 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 28 Juli 2026*
 
+## 🔴 FIX BUG PRA-OPERASIONAL: "PILIH KOTA 1 → KEBUKA PANCING" + "DAFTAR BERHENTI DI BILAL 3" (28 Juli 2026) — SELESAI & PUSHED
+**+ 6 test baru (repro gagal→hijau), 431 regresi hijau (dari 425).**
+
+Owner lapor DUA gejala dari produksi, dugaan satu akar. **Ternyata DUA akar terpisah** — dan
+dua hipotesis awal (daftar kedai tak difilter cluster; sort_order jalan lintas cluster)
+**TERBUKTI SALAH** (2 test yang menguji itu HIJAU sebelum fix apa pun).
+
+### AKAR A — trip basi hari lalu MEMBAJAK pilihan area (gejala 1)
+`StartTrip::startTrip()` "Proteksi 1" mencari trip aktif **tanpa filter tanggal**
+(`whereNull('ended_at')` saja), padahal guard `mount()` di komponen yang SAMA sudah pakai
+`whereDate('trip_date', today())`. Asimetri itu fatal: satu trip lama yang lupa di-"Akhiri Trip"
+(area Pancing, kemarin) → layar Mulai Trip TETAP tampil (guard mount per-hari), operator pilih
+"Kota 1" + 75 mika, tekan Mulai → Proteksi 1 ketemu trip Pancing kemarin → **redirect ke trip
+lama, trip Kota 1 TIDAK PERNAH dibuat**. Diulang berapa kali pun sama persis.
+Diperparah `ActiveTrip::mount()` yang pakai `->first()` polos = **id TERKECIL** → trip basi
+selalu menang walau trip hari ini sudah ada.
+
+FIX:
+1. `StartTrip::startTrip()` Proteksi 1 + fallback `catch` → di-scope `whereDate('trip_date', today())`
+   (proteksi double-submit TIDAK melemah: dua klik selalu di hari yang sama).
+2. `ActiveTrip::mount()` → trip **HARI INI menang mutlak** (`latest('id')`), fallback ke trip
+   belum-selesai TERBARU (bukan terlama) supaya trip yang lewat tengah malam tak mengunci operator.
+   Kontrak lama "{tripId} di URL sengaja diabaikan" **TIDAK diubah** (TripPersistenceAcrossLoginTest tetap hijau).
+
+### AKAR B — plafon keras 50 kartu, tanpa penanda (gejala 2)
+`ActiveTrip::DISPLAY_LIMIT = 50` dipakai sebagai `limit()` MATI. Pancing punya ~54 kedai dengan
+sort_order 1..54 → baris ke-50 = sort_order 50 = **"Bilal 3"**, sisanya (Bilal 2, Bilal 1,
+Yos Sudarso, Sidorukun) tak pernah terlihat. Operator mengira area itu memang habis di situ.
+
+FIX: DISPLAY_LIMIT jadi **ukuran BATCH**, bukan plafon. Properti `kioskLimit` + aksi
+`loadMoreKiosks()` (+50 per tekan) + tombol **"Muat lebih banyak (N kios lagi)"** di ekor daftar,
+plus penanda "— Semua N kios sudah tampil —" kalau habis. `kioskLimit` reset ke 50 saat ganti
+kata kunci / Urutkan Jarak (payload HP tetap terkendali untuk owner ~957 kios).
+
+### YANG TERBUKTI **TIDAK** SALAH (jangan diutak-atik lagi)
+- Filter cluster **SUDAH ADA** (`ActiveTrip.php` `where('cluster_id', $this->starting_cluster_id)`)
+  dan sumbernya memang `trip->starting_cluster_id`. Test isolasi cluster HIJAU sebelum fix.
+- `sort_order` **per-cluster**, bukan global (`Kiosk::appendToClusterOrder` MAX per `cluster_id`,
+  `reorderWithinCluster` COUNT per `cluster_id`). Pancing 49–54 = memang kedai ke-49..54 di area itu.
+- Trip Bebas tidak "nyangkut": `starting_cluster_id` null hanya kalau `tripBebas` dicentang;
+  urutan lintas area dikelompokkan per nama cluster lalu sort_order. Test regresi HIJAU.
+- Isolasi tenant utuh (test load-more lintas-owner: 0 kebocoran).
+
+⚠️ SISA DI PRODUKSI (owner jalankan sendiri): trip basi yang memicu bug ini **masih** `ended_at`
+null → nongol sebagai "trip aktif" palsu di dashboard owner. Snippet read-only untuk cek trip basi
++ sebaran kios per cluster ada di laporan sesi ini. Tutup manual lewat panel owner setelah dicek.
+
 ## FIX: NORMALISASI EMAIL (trim + lowercase) — cegah gagal login karena spasi (28 Juli 2026) — SELESAI & PUSHED
 **+ 6 test baru (3 login + 3 normalisasi), 425 regresi hijau (dari 419).**
 

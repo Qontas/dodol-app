@@ -28,9 +28,20 @@ class ActiveTrip extends Component
     // Alasan valid untuk mengakhiri trip
     public const VALID_END_REASONS = ['stock_habis', 'target_done', 'sakit', 'urgent_personal', 'other'];
 
-    // Maksimum kartu kios yang dirender per layar. Daftar dibatasi demi DOM ringan
-    // + payload kecil; operator menjangkau kios lain lewat kotak pencarian / urut jarak.
+    // Ukuran SATU BATCH kartu kios. Daftar dibatasi demi DOM ringan + payload kecil
+    // di HP lapangan (owner besar punya ~957 kios).
+    //
+    // 🔴 BUKAN plafon keras lagi (bug 28 Juli 2026): dulu ini `limit()` mati di 50,
+    // jadi area dengan 54 kedai berhenti diam-diam di kedai ber-sort_order 50
+    // ("Bilal 3") — operator mengira area itu memang habis di situ. Sekarang batch
+    // pertama 50, sisanya dijangkau lewat tombol "Muat lebih banyak" (loadMoreKiosks)
+    // yang JELAS terlihat, bukan pemotongan senyap.
     public const DISPLAY_LIMIT = 50;
+
+    // Batas kartu yang sedang ditampilkan; naik per DISPLAY_LIMIT tiap "Muat lebih
+    // banyak". Di-reset ke batch pertama tiap kali daftar berganti konteks (cari /
+    // urut jarak) supaya payload tak ikut membengkak diam-diam.
+    public int $kioskLimit = self::DISPLAY_LIMIT;
 
     // --- STATE DASAR ---
     public $trip;
@@ -173,9 +184,23 @@ class ActiveTrip extends Component
 
     public function mount()
     {
-        $this->trip = Trip::where('operator_id', auth()->id())
-            ->whereNull('ended_at')
-            ->first();
+        // Trip aktif operator ini. {tripId} di URL sengaja TIDAK dipakai untuk query
+        // (kontrak lama, lihat TripPersistenceAcrossLoginTest) — operator selalu
+        // mendarat di trip aktifnya walau URL basi/ID sembarang.
+        //
+        // 🔴 URUTAN PENTING (bug 28 Juli 2026): trip HARI INI menang mutlak. Dulu
+        // ->first() polos = id TERKECIL, jadi trip lama yang lupa di-"Akhiri Trip"
+        // (misal area Pancing kemarin) selalu terpilih walau operator baru saja
+        // mulai trip area lain hari ini → daftar kedai yang terbuka area yang salah.
+        // Fallback ke trip belum-selesai TERBARU tetap dipertahankan supaya operator
+        // yang trip-nya lewat tengah malam tidak terkunci keluar dari tripnya.
+        $baseQuery = fn () => Trip::where('operator_id', auth()->id())->whereNull('ended_at');
+
+        $this->trip = $baseQuery()
+            ->whereDate('trip_date', today())
+            ->latest('id')
+            ->first()
+            ?? $baseQuery()->latest('trip_date')->latest('id')->first();
 
         if (!$this->trip) {
             return redirect()->route('operator.dashboard');
@@ -255,7 +280,7 @@ class ActiveTrip extends Component
 
                     return $distA <=> $distB;
                 })
-                ->take(self::DISPLAY_LIMIT)
+                ->take($this->kioskLimit)
                 ->values();
         } else {
             // Default: kios belum dikunjungi dulu, lalu dikelompokkan PER-AREA
@@ -274,11 +299,11 @@ class ActiveTrip extends Component
                 ->orderByRaw('sort_order IS NULL')
                 ->orderBy('sort_order')
                 ->orderBy('name')
-                ->limit(self::DISPLAY_LIMIT)
+                ->limit($this->kioskLimit)
                 ->get();
 
             // Hitung total hanya bila daftar mungkin terpotong (mencapai limit).
-            $totalMatched = $kiosks->count() < self::DISPLAY_LIMIT
+            $totalMatched = $kiosks->count() < $this->kioskLimit
                 ? $kiosks->count()
                 : $countQuery->count();
         }
@@ -303,6 +328,22 @@ class ActiveTrip extends Component
             'totalMatched' => $totalMatched,
             'displayLimit' => self::DISPLAY_LIMIT,
         ];
+    }
+
+    /**
+     * Tampilkan satu batch kios berikutnya (+DISPLAY_LIMIT kartu). Dipakai tombol
+     * "Muat lebih banyak" — pengganti pemotongan senyap di kios ke-50 yang bikin
+     * operator kehilangan ekor rute area (bug 28 Juli 2026).
+     */
+    public function loadMoreKiosks(): void
+    {
+        $this->kioskLimit += self::DISPLAY_LIMIT;
+    }
+
+    /** Ganti kata kunci = daftar berganti konteks → balik ke batch pertama. */
+    public function updatedSearch(): void
+    {
+        $this->kioskLimit = self::DISPLAY_LIMIT;
     }
 
     /**
@@ -431,6 +472,7 @@ class ActiveTrip extends Component
         $this->userLat = (float) $lat;
         $this->userLng = (float) $lng;
         $this->sortedByDistance = true;
+        $this->kioskLimit = self::DISPLAY_LIMIT; // urutan berganti → balik ke batch pertama
 
         $this->loadKiosks();
     }

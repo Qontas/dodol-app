@@ -159,8 +159,18 @@ class StartTrip extends Component
             'qtyCarried.min' => 'Isi jumlah mika dulu',
         ]);
 
-        // Proteksi 1: Intersepsi PHP
+        // Proteksi 1: Intersepsi PHP (anti double-submit / double-tap tombol).
+        //
+        // 🔴 WAJIB per-HARI INI — sengaja sama persis dengan guard mount() di atas.
+        // BUG 28 Juli 2026: dulu tanpa filter tanggal, jadi satu trip lama yang lupa
+        // di-"Akhiri Trip" (ended_at masih null) MEMBAJAK setiap trip berikutnya:
+        // operator pilih area "Kota 1", ditekan Mulai → intersepsi ini ketemu trip
+        // "Pancing" kemarin → redirect ke sana, trip Kota 1 TAK PERNAH dibuat.
+        // Diulang berapa kali pun hasilnya sama. Scope hari ini menutup itu tanpa
+        // melemahkan proteksi double-submit (dua klik terjadi di hari yang sama).
         $activeTrip = Trip::where('operator_id', auth()->id())
+            ->whereDate('trip_date', today())
+            ->whereNotNull('started_at')
             ->whereNull('ended_at')
             ->first();
 
@@ -203,8 +213,12 @@ class StartTrip extends Component
         } catch (\Throwable $e) {
             // Segala macam ledakan duplikasi data diserap di sini.
             // Ambil trip sah yang berhasil dibuat oleh request milidetik pertama.
+            // Sama seperti Proteksi 1: di-scope HARI INI supaya trip basi hari lalu
+            // tidak ikut terambil sebagai "trip yang barusan dibuat".
             $trip = Trip::where('operator_id', auth()->id())
+                ->whereDate('trip_date', today())
                 ->whereNull('ended_at')
+                ->latest('id')
                 ->first();
         }
 

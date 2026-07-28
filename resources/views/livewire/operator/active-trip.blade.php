@@ -79,8 +79,9 @@
             </div>
         </div>
 
-        {{-- Cari kios: daftar dibatasi {{ $displayLimit }} kartu demi ringan di HP;
-             operator tetap bisa menjangkau kios mana pun lewat kotak ini. --}}
+        {{-- Cari kios: daftar dimuat {{ $displayLimit }} kartu per batch demi ringan di
+             HP. Sisa kios dijangkau lewat tombol "Muat lebih banyak" di bawah daftar
+             (atau kotak cari ini) — TIDAK dipotong diam-diam. --}}
         <div class="relative">
             <input type="search" wire:model.live.debounce.400ms="search"
                    placeholder="Cari nama kios…"
@@ -98,9 +99,7 @@
         @if ($totalMatched > count($kiosks))
             <p class="text-xs text-slate-500 -mt-1">
                 Menampilkan {{ count($kiosks) }} dari {{ $totalMatched }} kios{{ trim($search) !== '' ? ' yang cocok' : '' }}.
-                @if (trim($search) === '')
-                    Ketik nama untuk cari kios lain, atau tekan <span class="font-semibold text-amber-700">Urutkan Jarak</span> untuk yang terdekat.
-                @endif
+                Tekan <span class="font-semibold text-amber-700">Muat lebih banyak</span> di bawah untuk sisanya.
             </p>
         @endif
 
@@ -183,6 +182,24 @@
                 @endif
             </div>
         @endforelse
+
+        {{-- Ekor daftar: daftar dimuat per batch, JANGAN pernah berhenti diam-diam.
+             Dulu daftar terpotong keras di kios ke-50 tanpa penanda apa pun, sehingga
+             operator mengira area itu memang habis (bug "berhenti di Bilal 3"). --}}
+        @if ($totalMatched > count($kiosks))
+            <button type="button" wire:click="loadMoreKiosks"
+                    wire:loading.attr="disabled" wire:target="loadMoreKiosks"
+                    class="w-full rounded-xl border border-dashed border-amber-400 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 active:bg-amber-100 disabled:opacity-50">
+                <span wire:loading.remove wire:target="loadMoreKiosks">
+                    Muat lebih banyak ({{ $totalMatched - count($kiosks) }} kios lagi)
+                </span>
+                <span wire:loading wire:target="loadMoreKiosks">Memuat…</span>
+            </button>
+        @elseif (count($kiosks) > 0 && trim($search) === '')
+            <p class="text-center text-xs text-slate-400 py-2">
+                — Semua {{ $totalMatched }} kios di daftar ini sudah tampil —
+            </p>
+        @endif
     </div>
 
     {{-- Tombol Akhiri Trip — selalu terlihat di dasar layar (bottom nav
