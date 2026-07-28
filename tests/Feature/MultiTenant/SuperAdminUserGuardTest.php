@@ -234,6 +234,46 @@ class SuperAdminUserGuardTest extends TestCase
         $this->assertDatabaseMissing('users', ['id' => $operator->id]);
     }
 
+    // ============ Tooltip alasan di TABEL harus punya elemen pembungkus ============
+
+    /**
+     * 🚨 REGRESI YANG DITUTUP: tombol Delete yang disabled memakai ->tooltip() berisi
+     * alasan, tapi tooltipnya TAK PERNAH muncul. Akarnya di Tippy, bukan CSS: `show()`
+     * miliknya punya penjaga `!getCurrentTarget().hasAttribute("disabled")`, jadi
+     * selama atribut `disabled` menempel Tippy menolak tampil — bahkan `.show()`
+     * manual pun tak berefek. Melonggarkan `pointer-events` lewat CSS TIDAK cukup.
+     *
+     * Fix: tooltip dipindah ke elemen PEMBUNGKUS (view kustom
+     * `filament.actions.link-action-tooltip-wrapped`). Test ini menjaga pembungkus itu
+     * tetap ada untuk baris terblokir, dan TIDAK ada untuk baris yang tombolnya aktif
+     * (kalau tidak, tombol aktif punya dua tooltip).
+     */
+    public function test_blocked_delete_button_renders_tooltip_on_wrapper_element(): void
+    {
+        $this->actingSuper();
+        $owner = $this->ownerWithData();
+
+        Livewire::test(ListUsers::class)
+            ->assertSee('fi-dodol-disabled-action-wrapper', false)
+            // Alasannya benar-benar ikut terkirim ke pembungkus, bukan pembungkus kosong.
+            ->assertSee('Nonaktifkan saja, jangan hapus.', false);
+
+        $this->assertNotNull($owner->deletionBlockReason());
+    }
+
+    public function test_enabled_delete_button_has_no_tooltip_wrapper(): void
+    {
+        $this->actingSuper();
+        // Owner TANPA operator: begitu owner punya 1 operator pun, baris owner-nya
+        // ikut terblokir ("punya … 1 operator"), jadi fixture "bersih" harus benar
+        // -benar kosong — bukan sekadar tanpa kios/trip.
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $this->assertNull($owner->deletionBlockReason(), 'Fixture harus benar-benar bersih.');
+
+        Livewire::test(ListUsers::class)
+            ->assertDontSee('fi-dodol-disabled-action-wrapper', false);
+    }
+
     // ===================== Form: komisi cuma untuk OWNER =====================
 
     public function test_tarif_komisi_hidden_for_super_admin_but_visible_for_owner(): void

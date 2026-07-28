@@ -1,6 +1,58 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 29 Juli 2026*
 
+## FIX TOOLTIP MATI DI TABEL — dipindah ke elemen pembungkus (29 Juli 2026) — SELESAI & PUSHED
+**+2 test baru, 443 regresi hijau (dari 441). Diverifikasi di Chrome: tooltip BENAR-BENAR muncul.**
+
+### ⚠️ KOREKSI DIAGNOSIS SESI SEBELUMNYA
+Catatan sebelumnya menyalahkan class `pointer-events-none`. Itu **cuma setengah benar** dan
+membuat "perbaikan CSS satu baris" terlihat cukup — padahal **tidak akan pernah bekerja**.
+
+Diukur bertahap, bukan ditebak:
+1. Halaman uji polos: tombol `disabled` **TETAP** mengirim `mouseenter`/`mouseover` di Chrome
+   selama `pointer-events` bukan `none`. Jadi "browser memblokir event di elemen disabled"
+   (kebijaksanaan umum) **salah** untuk Chrome modern.
+2. Dicoba CSS `button[disabled][x-tooltip] { pointer-events: auto }` → `computedPointer`
+   berubah jadi `auto`, tapi tooltip **tetap tidak muncul**.
+3. Diperiksa instance-nya: `el._tippy` ADA, `state.isEnabled: true`, tapi memanggil
+   `_tippy.show()` **manual** pun menyisakan `isVisible: false`.
+4. Akar ketemu di bundle Tippy (`vendor/filament/support/dist/index.js`) — `show()` punya
+   penjaga eksplisit:
+   ```js
+   if (!(isVisible||isDestroyed||!isEnabled||touchDisabled)
+       && !getCurrentTarget().hasAttribute("disabled")) { …tampilkan… }
+   ```
+   **Selama atribut `disabled` menempel, Tippy MENOLAK tampil.** Komentar Tippy sendiri
+   menyarankan elemen pembungkus. CSS tak akan pernah menyelesaikannya.
+
+### Fix — tooltip pindah ke pembungkus
+View kustom `resources/views/filament/actions/link-action-tooltip-wrapped.blade.php`:
+`<div>` pembungkus memegang `x-tooltip` (tak punya atribut `disabled` → Tippy mau tampil),
+tombol di dalamnya tetap `disabled` + `pointer-events-none` sehingga pointer menembus ke
+pembungkus. Dipasang lewat `->view(...)` pada `DeleteAction` di **UserResource** dan
+**OperatorResource**.
+
+- Dibungkus **hanya** saat aksi benar-benar `isDisabled()` — kalau tidak, tombol aktif punya
+  dua tooltip.
+- **Keamanan tak berubah**: tombolnya tetap tombol disabled yang sama. Diverifikasi di Chrome,
+  klik paksa pada tombol terblokir → modal hapus **tidak** terbuka. Guard `->before()` tetap.
+- Isi view adalah **salinan persis** `vendor/filament/actions/resources/views/link-action.blade.php`
+  + pembungkus. Kalau upgrade Filament mengubah file itu, samakan lagi.
+
+### Bukti browser
+| Tabel | Tooltip muncul | Klik paksa |
+|---|---|---|
+| `/admin/users` (owner berdata) | **YA** — "Owner ini punya 0 kios, 1 trip, 1 operator. Nonaktifkan saja, jangan hapus." | modal hapus tidak terbuka |
+| `/owner-panel/operators` (operator berdata) | **YA** — "Operator ini punya 1 trip, 0 komisi. Nonaktifkan saja, jangan hapus." | modal hapus tidak terbuka |
+
+### ⚠️ SISA KETERBATASAN — tooltip hover TIDAK ADA di layar sentuh
+Owner memakai **Android** ([[owner-pakai-android-poco-f7]]). Di HP tidak ada hover, jadi
+alasan ini tetap **tak terjangkau dari ponsel** — ini batas tooltip sebagai mekanisme, bukan
+bug fix ini. Kalau alasannya perlu terbaca di HP juga, polanya: tombol dibiarkan AKTIF lalu
+klik memunculkan modal penjelasan (`->modalHeading('Tidak bisa dihapus')`,
+`->modalDescription($reason)`, `->modalSubmitAction(false)`) — sama seperti subheading di
+halaman Edit. Belum dikerjakan, menunggu keputusan.
+
 ## 🔴 LUBANG NYATA: HALAMAN EDIT USER MELEWATI SELURUH GUARD DELETE (29 Juli 2026) — SELESAI & PUSHED
 **+10 test baru, 441 regresi hijau (dari 431). Diverifikasi juga di Chrome sungguhan.**
 
@@ -38,13 +90,10 @@ tooltipnya **tak pernah bisa muncul**. Diverifikasi di Chrome:
 `computedPointerEvents = "none"`. Menyalin pola itu = tombol merah mati tanpa penjelasan
 yang bisa diraih — persis kebingungan yang sedang diperbaiki.
 
-### ⚠️ UTANG TERBUKA (belum disentuh, di luar scope sesi ini)
-Tooltip pada tombol Delete **disabled di TABEL** (`UserResource` & `OperatorResource`) mati
-karena sebab yang sama. Diukur langsung di DOM:
-`{disabled:true, pointerEventsNone:true, computedPointer:"none", hasTooltip:true}`.
-Jadi baris owner/operator berdata = tombol mati **tanpa alasan yang terbaca**. Bukan lubang
-keamanan (guard `->before()` tetap jalan), murni UX. Opsi: pindahkan tooltip ke elemen
-pembungkus, atau tiru pola subheading.
+### ⚠️ UTANG TERBUKA — **SUDAH DIBAYAR**, lihat bagian berikutnya
+Tooltip pada tombol Delete **disabled di TABEL** (`UserResource` & `OperatorResource`) mati.
+Bukan lubang keamanan (guard `->before()` tetap jalan), murni UX. **Sudah diperbaiki** —
+dan akar sebenarnya ternyata BUKAN `pointer-events` seperti dikira di sini.
 
 ### `OperatorResource` — DIPERIKSA, AMAN
 Memakai `ManageRecords` (edit lewat modal, tak ada halaman Edit terpisah) dan header action-nya

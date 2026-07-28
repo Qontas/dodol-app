@@ -25,16 +25,14 @@ class EditUser extends EditRecord
      * → tombol HILANG, dan alasannya ditulis di subheading halaman (lihat
      * getSubheading()). ->before() tetap ada sebagai guard server-side real-time.
      *
-     * KENAPA HILANG, bukan "disabled + tooltip" seperti di tabel: tombol Filament yang
-     * disabled dirender dengan `pointer-events-none`, sedangkan `x-tooltip` menempel di
-     * tombol itu sendiri — jadi tooltipnya TAK PERNAH BISA MUNCUL (diverifikasi di
-     * Chrome: computedPointerEvents = "none"). Menyalin pola itu ke sini berarti
-     * menaruh tombol merah mati tanpa penjelasan yang bisa diraih — persis kebingungan
-     * yang sedang diperbaiki. Halaman Edit punya ruang untuk kalimat penuh, jadi
-     * alasannya ditaruh sebagai teks yang selalu terlihat.
-     *
-     * ⚠️ Tooltip disabled di TABEL (UserResource::table) juga mati karena sebab yang
-     * sama — itu isu lama yang terpisah, belum disentuh di sini.
+     * KENAPA HILANG, bukan "disabled + tooltip": tooltip pada tombol disabled TAK
+     * PERNAH muncul begitu saja — `show()` milik Tippy punya penjaga
+     * `!getCurrentTarget().hasAttribute("disabled")`, jadi selama atribut itu menempel
+     * Tippy menolak tampil. Di TABEL hal ini ditangani dengan memindahkan tooltip ke
+     * elemen pembungkus (lihat view `filament.actions.link-action-tooltip-wrapped`).
+     * Di sini pembungkus itu tak diperlukan: halaman Edit punya ruang untuk kalimat
+     * penuh, jadi alasannya ditaruh sebagai teks yang SELALU terlihat — juga terbaca
+     * di layar sentuh, yang tooltip hover tak pernah bisa.
      */
     protected function getHeaderActions(): array
     {

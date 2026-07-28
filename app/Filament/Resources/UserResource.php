@@ -289,6 +289,11 @@ class UserResource extends Resource
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
                     ->requiresConfirmation()
+                    // Tooltip alasan dipasang di elemen PEMBUNGKUS. Tanpa ini tooltip
+                    // pada tombol disabled TAK PERNAH muncul — Tippy menolak tampil
+                    // selama atribut `disabled` menempel. Lihat catatan panjang di
+                    // view-nya.
+                    ->view('filament.actions.link-action-tooltip-wrapped')
                     // Lapisan UI di atas guard server-side (defense in depth tetap utuh):
                     // Super Admin & akun sendiri → tombol Delete DISEMBUNYIKAN total.
                     ->hidden(fn (User $record): bool => $record->isSuperAdmin() || (int) $record->id === (int) auth()->id())

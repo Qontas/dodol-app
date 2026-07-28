@@ -135,6 +135,10 @@ class OperatorResource extends Resource
                     }),
                 Tables\Actions\DeleteAction::make()
                     ->requiresConfirmation()
+                    // Tooltip alasan dipasang di elemen PEMBUNGKUS — tooltip pada tombol
+                    // disabled tak pernah muncul (Tippy menolak selama atribut `disabled`
+                    // ada). Lihat catatan panjang di view-nya.
+                    ->view('filament.actions.link-action-tooltip-wrapped')
                     // Operator berdata (punya trip/komisi) → tombol DISABLED + tooltip alasan;
                     // operator bersih → tombol normal. Lapisan UI di atas guard server-side.
                     // RENDER pakai ForDisplay (baca count hasil withCount → 0 query/baris).
