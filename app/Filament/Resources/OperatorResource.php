@@ -60,6 +60,10 @@ class OperatorResource extends Resource
                             ->required(fn (string $context): bool => $context === 'create')
                             ->minLength(8)
                             ->maxLength(255)
+                            // Cegah Chrome mengisi sendiri field ini saat modal Edit dibuka —
+                            // terisi = dehydrated = password operator ketimpa diam-diam.
+                            // Lihat penjelasan panjang di UserResource.
+                            ->autocomplete('new-password')
                             ->dehydrateStateUsing(fn (string $state): string => bcrypt($state))
                             ->dehydrated(fn (?string $state): bool => filled($state))
                             ->helperText(fn (string $context): string => $context === 'create'

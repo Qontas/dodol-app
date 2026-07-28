@@ -12,6 +12,7 @@ use App\Models\Trip;
 use App\Models\User;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -126,6 +127,205 @@ class SuperAdminUserGuardTest extends TestCase
             ->callTableAction('delete', $operator->getKey());
 
         $this->assertDatabaseMissing('users', ['id' => $operator->id]);
+    }
+
+    // ============ Tombol Delete di HALAMAN EDIT (bukan cuma tabel) ============
+    //
+    // 🚨 REGRESI YANG DITUTUP: header action `DeleteAction::make()` di EditUser dulu
+    // POLOS — tanpa ->hidden/->disabled/->before. Guard delete semuanya hidup di action
+    // TABEL, dan User tak punya event model `deleting`, jadi halaman Edit MELEWATI
+    // seluruh guard: super admin benar-benar bisa menghapus dirinya sendiri dari sana
+    // (lockout permanen), owner berdata meledak jadi FK 1451 mentah. Test di bawah
+    // menguji lapisan UI DAN guard server-side-nya.
+
+    public function test_edit_page_delete_button_hidden_for_self_and_super_admin(): void
+    {
+        $super = $this->actingSuper();
+        $otherSuper = User::factory()->create(['role' => 'super_admin', 'is_active' => true]);
+
+        Livewire::test(EditUser::class, ['record' => $super->getKey()])
+            ->assertActionHidden('delete');
+
+        Livewire::test(EditUser::class, ['record' => $otherSuper->getKey()])
+            ->assertActionHidden('delete');
+    }
+
+    /**
+     * Lapisan kedua untuk kasus super admin / akun sendiri: tombolnya HILANG, jadi
+     * callAction() pun tak bisa dipakai menirukan bypass (Filament menolak action
+     * tersembunyi). Yang diuji di sini predikat yang dikonsultasi ->before() —
+     * SAMA persis dengan yang dipakai tabel & bulk. Kalau ini null, guard runtime
+     * ikut bolong walau tombolnya tak terlihat.
+     */
+    public function test_edit_page_delete_guard_reason_exists_for_self_and_super_admin(): void
+    {
+        $super = $this->actingSuper();
+        $otherSuper = User::factory()->create(['role' => 'super_admin', 'is_active' => true]);
+
+        $this->assertStringContainsString(
+            'sendiri',
+            (string) UserResource::deleteBlockReason($super),
+            'Akun sendiri harus punya alasan blokir yang dibaca ->before().'
+        );
+        $this->assertStringContainsString(
+            'Super Admin',
+            (string) UserResource::deleteBlockReason($otherSuper),
+            'Super admin lain harus punya alasan blokir yang dibaca ->before().'
+        );
+    }
+
+    public function test_edit_page_delete_button_hidden_for_user_with_data(): void
+    {
+        $this->actingSuper();
+        $owner = $this->ownerWithData();
+        $operator = User::factory()->create(['role' => 'operator', 'owner_id' => $owner->id]);
+        Trip::factory()->create(['owner_id' => $owner->id, 'operator_id' => $operator->id]);
+
+        Livewire::test(EditUser::class, ['record' => $owner->getKey()])
+            ->assertActionHidden('delete');
+
+        Livewire::test(EditUser::class, ['record' => $operator->getKey()])
+            ->assertActionHidden('delete');
+
+        // Guard server-side tetap menahan andai UI di-bypass — dan menahannya dengan
+        // pesan ramah, BUKAN QueryException FK 1451 (500) seperti sebelum fix.
+        $this->assertStringContainsString('kios', (string) UserResource::deleteBlockReason($owner));
+        $this->assertStringContainsString('trip', (string) UserResource::deleteBlockReason($operator->fresh()));
+
+        $this->assertDatabaseHas('users', ['id' => $owner->id]);
+        $this->assertDatabaseHas('users', ['id' => $operator->id]);
+    }
+
+    /**
+     * Tombol yang hilang tanpa penjelasan = owner menebak-nebak. Alasannya harus
+     * TERBACA di halaman (bukan tooltip: tombol disabled Filament punya
+     * pointer-events-none, jadi tooltipnya tak pernah muncul).
+     */
+    public function test_edit_page_shows_visible_reason_when_delete_unavailable(): void
+    {
+        $super = $this->actingSuper();
+        $owner = $this->ownerWithData();
+        $cleanOperator = User::factory()->create(['role' => 'operator', 'owner_id' => $owner->id]);
+
+        Livewire::test(EditUser::class, ['record' => $super->getKey()])
+            ->assertSee('Tidak bisa dihapus')
+            ->assertSee('akun sendiri');
+
+        Livewire::test(EditUser::class, ['record' => $owner->getKey()])
+            ->assertSee('Tidak bisa dihapus')
+            ->assertSee('Nonaktifkan saja, jangan hapus.');
+
+        // User bersih → tak ada peringatan menggantung.
+        Livewire::test(EditUser::class, ['record' => $cleanOperator->getKey()])
+            ->assertDontSee('Tidak bisa dihapus');
+    }
+
+    public function test_edit_page_delete_works_for_clean_operator(): void
+    {
+        $this->actingSuper();
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'owner_id' => $owner->id]);
+
+        Livewire::test(EditUser::class, ['record' => $operator->getKey()])
+            ->assertActionVisible('delete')
+            ->assertActionEnabled('delete')
+            ->callAction('delete');
+
+        $this->assertDatabaseMissing('users', ['id' => $operator->id]);
+    }
+
+    // ===================== Form: komisi cuma untuk OWNER =====================
+
+    public function test_tarif_komisi_hidden_for_super_admin_but_visible_for_owner(): void
+    {
+        $super = $this->actingSuper();
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'owner_id' => $owner->id]);
+
+        // Super admin tidak mengantar dodol → tak punya tarif komisi.
+        Livewire::test(EditUser::class, ['record' => $super->getKey()])
+            ->assertFormFieldIsHidden('komisi_per_mika')
+            ->assertFormFieldIsHidden('komisi_kios_baru_per_mika')
+            ->assertFormFieldIsHidden('hpp_per_mika')
+            ->assertFormFieldIsHidden('harga_mika')
+            // 'Owner' (atasan) juga tak relevan untuk super admin.
+            ->assertFormFieldIsHidden('owner_id');
+
+        // Owner = yang MENETAPKAN tarif → tetap tampil normal.
+        Livewire::test(EditUser::class, ['record' => $owner->getKey()])
+            ->assertFormFieldExists('komisi_per_mika')
+            ->assertFormFieldExists('komisi_kios_baru_per_mika')
+            ->assertFormFieldExists('hpp_per_mika')
+            ->assertFormFieldExists('harga_mika');
+
+        // Operator TIDAK menetapkan tarif (dia dibayar pakai tarif owner-nya).
+        Livewire::test(EditUser::class, ['record' => $operator->getKey()])
+            ->assertFormFieldIsHidden('komisi_per_mika')
+            ->assertFormFieldIsHidden('komisi_kios_baru_per_mika');
+    }
+
+    public function test_editing_super_admin_without_tarif_fields_still_saves(): void
+    {
+        $super = $this->actingSuper();
+
+        Livewire::test(EditUser::class, ['record' => $super->getKey()])
+            ->fillForm(['name' => 'Nama Baru'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('Nama Baru', $super->fresh()->name);
+    }
+
+    // ===================== Password: kosong = JANGAN diubah =====================
+
+    public function test_saving_with_empty_password_does_not_change_password(): void
+    {
+        $this->actingSuper();
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $hashLama = $owner->password;
+
+        Livewire::test(EditUser::class, ['record' => $owner->getKey()])
+            ->fillForm(['name' => 'Owner Ganti Nama', 'password' => ''])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $fresh = $owner->fresh();
+        $this->assertSame('Owner Ganti Nama', $fresh->name, 'Simpan memang jalan.');
+        $this->assertSame($hashLama, $fresh->password, 'Password kosong TIDAK boleh menimpa password lama.');
+    }
+
+    public function test_saving_with_filled_password_does_change_password(): void
+    {
+        $this->actingSuper();
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $hashLama = $owner->password;
+
+        Livewire::test(EditUser::class, ['record' => $owner->getKey()])
+            ->fillForm(['password' => 'rahasiabaru123'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $fresh = $owner->fresh();
+        $this->assertNotSame($hashLama, $fresh->password);
+        $this->assertTrue(Hash::check('rahasiabaru123', $fresh->password), 'Password baru harus ter-hash & cocok.');
+    }
+
+    public function test_password_field_blocks_browser_autofill(): void
+    {
+        $this->actingSuper();
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+
+        // autocomplete="new-password" = satu-satunya yang menghentikan Chrome mengisi
+        // field ini dengan password tersimpan. Tanpa itu, sekali klik Simpan menimpa
+        // password dengan nilai yang owner tak pernah lihat.
+        Livewire::test(EditUser::class, ['record' => $owner->getKey()])
+            ->assertSee('autocomplete="new-password"', false);
+
+        // Field password juga harus KOSONG saat halaman dibuka — hash lama TIDAK boleh
+        // bocor ke form (User::$hidden menyembunyikannya dari fill). Kalau ini terisi,
+        // "kosongkan kalau tak ingin mengubah" jadi mustahil dipatuhi.
+        Livewire::test(EditUser::class, ['record' => $owner->getKey()])
+            ->assertFormSet(['password' => null]);
     }
 
     // ===================== Guard self-deactivate (form) =====================

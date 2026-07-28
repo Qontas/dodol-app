@@ -61,6 +61,14 @@ class UserResource extends Resource
                             ->required(fn (string $context): bool => $context === 'create')
                             ->minLength(8)
                             ->maxLength(255)
+                            // ⚠️ autocomplete="new-password": tanpa ini Chrome MENGISI SENDIRI
+                            // field ini dengan password tersimpan saat halaman Edit dibuka.
+                            // Karena field terisi = filled() = dehydrated, sekali klik Simpan
+                            // password user KETIMPA nilai autofill yang owner tak pernah lihat
+                            // — di akun super admin itu artinya lockout. Helper "kosongkan
+                            // kalau tak ingin mengubah" cuma benar kalau field BENAR-BENAR
+                            // kosong, jadi mencegah autofill adalah syarat janji itu berlaku.
+                            ->autocomplete('new-password')
                             ->dehydrateStateUsing(fn (string $state): string => bcrypt($state))
                             ->dehydrated(fn (?string $state): bool => filled($state))
                             ->helperText(fn (string $context): string => $context === 'create'
@@ -68,7 +76,7 @@ class UserResource extends Resource
                                 : 'Kosongkan kalau tidak ingin mengubah password'),
                     ]),
 
-                Section::make('Role & Komisi')
+                Section::make('Role & Akses')
                     ->schema([
                         Forms\Components\Select::make('role')
                             ->label('Role')
@@ -94,7 +102,12 @@ class UserResource extends Resource
                             // Guard lockout: user tak boleh menurunkan role dirinya sendiri
                             // (mis. super_admin → operator, langsung kehilangan akses panel).
                             ->disabled(fn (?User $record): bool => $record !== null && $record->id === auth()->id())
-                            ->helperText('Owner = akses penuh bisnis sendiri. Operator = akses operasional lapangan'),
+                            // Alasan disabled DITULIS, bukan diam-diam: sebelumnya user
+                            // melihat dropdown mati tanpa penjelasan (dan kalau payload
+                            // di-tamper, penolakan baru terasa setelah Simpan).
+                            ->helperText(fn (?User $record): string => $record !== null && $record->id === auth()->id()
+                                ? 'Tidak bisa mengubah role akun sendiri (mencegah kehilangan akses panel).'
+                                : 'Owner = akses penuh bisnis sendiri. Operator = akses operasional lapangan'),
 
                         // Owner dari operator. Owner viewer: auto-set ke dirinya (lihat CreateUser).
                         // Super admin: pilih owner mana operator ini terikat.
@@ -106,42 +119,6 @@ class UserResource extends Resource
                             ->required(fn (Get $get): bool => (bool) auth()->user()?->isSuperAdmin() && $get('role') === 'operator')
                             ->helperText('Operator ini bekerja untuk owner yang dipilih'),
 
-                        Forms\Components\TextInput::make('hpp_per_mika')
-                            ->label('HPP per Mika (Rp)')
-                            ->numeric()
-                            ->default(9500)
-                            ->minValue(1)
-                            ->helperText('Harga Pokok Produksi per mika. Default: Rp 9.500')
-                            ->visible(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin']))
-                            ->required(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin'])),
-
-                        Forms\Components\TextInput::make('harga_mika')
-                            ->label('Harga Mika (Rp)')
-                            ->numeric()
-                            ->default(200)
-                            ->minValue(0)
-                            ->helperText('Harga modal mika per kemasan. Default: Rp 200')
-                            ->visible(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin']))
-                            ->required(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin'])),
-
-                        Forms\Components\TextInput::make('komisi_per_mika')
-                            ->label('Komisi Reguler (Rp)')
-                            ->numeric()
-                            ->default(500)
-                            ->minValue(0)
-                            ->helperText('Komisi per mika untuk kios biasa. Default: Rp 500')
-                            ->visible(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin']))
-                            ->required(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin'])),
-
-                        Forms\Components\TextInput::make('komisi_kios_baru_per_mika')
-                            ->label('Komisi Kios Baru (Rp)')
-                            ->numeric()
-                            ->default(1000)
-                            ->minValue(0)
-                            ->helperText('Komisi per mika untuk kios baru. Default: Rp 1.000')
-                            ->visible(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin']))
-                            ->required(fn (Get $get): bool => in_array($get('role'), ['owner', 'super_admin'])),
-
                         Forms\Components\Toggle::make('is_active')
                             ->label('Status Aktif')
                             ->default(true)
@@ -151,6 +128,58 @@ class UserResource extends Resource
                             ->helperText(fn (?User $record): string => $record !== null && $record->id === auth()->id()
                                 ? 'Tidak bisa menonaktifkan akun sendiri.'
                                 : 'Nonaktifkan untuk disable login user ini'),
+                    ]),
+
+                // Tarif bisnis DIPISAH dari section role, dan hanya untuk role OWNER.
+                //
+                // Dulu keempat field ini ikut section "Role & Komisi" dengan
+                // visible(role in [owner, super_admin]) — jadi akun SUPER ADMIN pun
+                // menampilkan "Komisi Reguler / Komisi Kios Baru", seolah super admin
+                // punya tarif upah. Padahal komisi = upah OPERATOR per mika drop, dan
+                // angkanya SELALU dibaca dari OWNER: laporan/riwayat/dashboard memakai
+                // owner trip (Trip::owner_id, yang tak pernah super admin) — lihat
+                // MonthlyReportController & OwnerDashboardController. Super admin juga
+                // diblokir route 'role:owner' dari /owner/settings & /owner/dashboard,
+                // jadi nilainya memang tak pernah dipakai membayar siapa pun.
+                //
+                // Aman disembunyikan: komponen tersembunyi tak ikut dehydrate, dan
+                // keempat kolom punya DEFAULT di DB (9500/200/1000/1000) sehingga
+                // membuat user non-owner tetap valid tanpa field ini.
+                Section::make('Tarif & Komisi')
+                    ->description('Tarif bisnis owner — dipakai menghitung untung & upah operator.')
+                    ->visible(fn (Get $get): bool => $get('role') === 'owner')
+                    ->schema([
+                        Forms\Components\TextInput::make('hpp_per_mika')
+                            ->label('HPP per Mika (Rp)')
+                            ->numeric()
+                            ->default(9500)
+                            ->minValue(1)
+                            ->helperText('Harga Pokok Produksi per mika. Default: Rp 9.500')
+                            ->required(),
+
+                        Forms\Components\TextInput::make('harga_mika')
+                            ->label('Harga Mika (Rp)')
+                            ->numeric()
+                            ->default(200)
+                            ->minValue(0)
+                            ->helperText('Harga modal mika per kemasan. Default: Rp 200')
+                            ->required(),
+
+                        Forms\Components\TextInput::make('komisi_per_mika')
+                            ->label('Komisi Reguler (Rp)')
+                            ->numeric()
+                            ->default(500)
+                            ->minValue(0)
+                            ->helperText('Komisi per mika untuk kios biasa. Default: Rp 500')
+                            ->required(),
+
+                        Forms\Components\TextInput::make('komisi_kios_baru_per_mika')
+                            ->label('Komisi Kios Baru (Rp)')
+                            ->numeric()
+                            ->default(1000)
+                            ->minValue(0)
+                            ->helperText('Komisi per mika untuk kios baru. Default: Rp 1.000')
+                            ->required(),
                     ]),
             ]);
     }
@@ -308,8 +337,11 @@ class UserResource extends Resource
      * Alasan ramah kenapa $record tak boleh dihapus, atau null kalau boleh.
      * Gabungkan guard lockout (akun sendiri) + guard berdata/role (model).
      * REAL-TIME — untuk keputusan hapus (->before) & bulk.
+     *
+     * PUBLIC karena halaman Edit (EditUser) memakai guard yang SAMA persis untuk header
+     * DeleteAction-nya. Satu sumber aturan — jangan duplikasi logikanya di sana.
      */
-    protected static function deleteBlockReason(User $record): ?string
+    public static function deleteBlockReason(User $record): ?string
     {
         return static::deleteBlockReasonSelf($record) ?? $record->deletionBlockReason();
     }

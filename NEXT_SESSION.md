@@ -1,5 +1,91 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 28 Juli 2026*
+*Sesi terakhir: 29 Juli 2026*
+
+## 🔴 LUBANG NYATA: HALAMAN EDIT USER MELEWATI SELURUH GUARD DELETE (29 Juli 2026) — SELESAI & PUSHED
+**+10 test baru, 441 regresi hijau (dari 431). Diverifikasi juga di Chrome sungguhan.**
+
+Owner kaget melihat tombol **Delete** di halaman Edit akun Super Admin dan mengira ada lubang.
+**Dugaannya BENAR** — dan lebih parah dari yang dikira.
+
+### Akar: guard delete cuma menempel di action TABEL
+Fix 15 Juli memasang `->hidden()/->disabled()/->before()` pada `DeleteAction` di
+`UserResource::table()`. Halaman Edit punya header action **sendiri**, dan isinya polos:
+
+```php
+protected function getHeaderActions(): array { return [Actions\DeleteAction::make()]; }
+```
+
+Tak ada guard model sebagai jaring pengaman — `User` **tidak punya** event `deleting`
+(hanya `DeliveryObserver` & `SettlementObserver` yang ada). Jadi halaman Edit melewati
+**semuanya**. Dibuktikan dengan probe, bukan dibaca-baca:
+
+| Skenario dari halaman Edit (SEBELUM fix) | Hasil nyata |
+|---|---|
+| Super admin hapus **dirinya sendiri** | **BERHASIL TERHAPUS** → lockout permanen |
+| Owner berdata (3 kios) dihapus | `QueryException` FK **1451** mentah → 500, bukan pesan ramah |
+
+### Fix
+1. **`EditUser::getHeaderActions()`** — `->hidden()` untuk **semua** alasan blokir
+   (`UserResource::deleteBlockReason()`), plus `->before()` sebagai guard server-side real-time.
+   `deleteBlockReason()` dinaikkan jadi `public static` supaya halaman Edit & tabel memakai
+   **satu sumber aturan**, bukan logika kembar.
+2. **`EditUser::getSubheading()`** — alasannya **ditulis di bawah judul halaman**
+   ("Tidak bisa dihapus — Owner ini punya 3 kios, …"), selalu terlihat.
+
+**Kenapa BUKAN "disabled + tooltip" seperti tabel:** tombol Filament yang `disabled` dirender
+dengan **`pointer-events-none`**, sedangkan `x-tooltip` menempel di tombol itu sendiri →
+tooltipnya **tak pernah bisa muncul**. Diverifikasi di Chrome:
+`computedPointerEvents = "none"`. Menyalin pola itu = tombol merah mati tanpa penjelasan
+yang bisa diraih — persis kebingungan yang sedang diperbaiki.
+
+### ⚠️ UTANG TERBUKA (belum disentuh, di luar scope sesi ini)
+Tooltip pada tombol Delete **disabled di TABEL** (`UserResource` & `OperatorResource`) mati
+karena sebab yang sama. Diukur langsung di DOM:
+`{disabled:true, pointerEventsNone:true, computedPointer:"none", hasTooltip:true}`.
+Jadi baris owner/operator berdata = tombol mati **tanpa alasan yang terbaca**. Bukan lubang
+keamanan (guard `->before()` tetap jalan), murni UX. Opsi: pindahkan tooltip ke elemen
+pembungkus, atau tiru pola subheading.
+
+### `OperatorResource` — DIPERIKSA, AMAN
+Memakai `ManageRecords` (edit lewat modal, tak ada halaman Edit terpisah) dan header action-nya
+cuma `CreateAction`. Tak ada `DeleteAction` tak terjaga.
+
+## FORM EDIT USER: "Role & Komisi" → dipecah per-role (29 Juli 2026)
+Section `Role & Komisi` dulu menampilkan HPP/Harga Mika/Komisi Reguler/Komisi Kios Baru untuk
+`role in [owner, super_admin]` — jadi akun **Super Admin** ikut menampilkan tarif komisi,
+seolah super admin punya upah per mika. Padahal komisi = upah **operator**, dan angkanya
+**selalu** dibaca dari OWNER (`Trip::owner_id`, tak pernah super admin) —
+lihat `MonthlyReportController` & `OwnerDashboardController`. Super admin juga diblokir
+middleware `role:owner` dari `/owner/settings` & `/owner/dashboard`, jadi nilainya memang
+**tak pernah dipakai membayar siapa pun**.
+
+- Section lama dipecah: **`Role & Akses`** (role + owner + status aktif) dan
+  **`Tarif & Komisi`** (4 field tarif) yang `->visible(role === 'owner')`.
+- Aman disembunyikan: komponen tersembunyi tak ikut dehydrate, dan keempat kolom punya
+  **DEFAULT di DB** (9500 / 200 / 1000 / 1000).
+- Field **Owner (atasan)** sudah otomatis tak tampil untuk super admin (syarat lamanya
+  `role === 'operator'`) — diverifikasi, tak diubah.
+- Guard **tak boleh turun-role sendiri** kini punya **keterangan tertulis** di bawah dropdown
+  ("Tidak bisa mengubah role akun sendiri…"), bukan dropdown mati tanpa penjelasan.
+
+## ⚠️ AUTOFILL PASSWORD BISA MENIMPA PASSWORD DIAM-DIAM (29 Juli 2026)
+Field Password di form Edit tidak punya penangkal autofill. Chrome mengisinya sendiri saat
+halaman dibuka; karena terisi = `filled()` = **dehydrated**, sekali klik Simpan password user
+**ketimpa** nilai yang owner tak pernah lihat. Di akun super admin itu = lockout.
+
+- **Fix:** `->autocomplete('new-password')` di `UserResource` **dan** `OperatorResource`.
+- Logika "kosong = jangan ubah" **sudah benar** (`->dehydrated(fn ($state) => filled($state))`)
+  dan sekarang **ditest**: simpan dengan password kosong → hash **tidak berubah**;
+  isi password → berubah & `Hash::check()` cocok.
+- Field juga dipastikan **kosong saat halaman dibuka** (`User::$hidden` menyembunyikan hash
+  dari fill) — janji "kosongkan kalau tak ingin mengubah" baru berlaku kalau field benar kosong.
+
+### Bukti browser (Chrome, akun seed)
+| Halaman Edit | Tombol Delete | Section Tarif | autocomplete | isi password |
+|---|---|---|---|---|
+| Super Admin (id 1) | **tak ada** + alasan tertulis | **tak ada** | `new-password` | kosong |
+| Owner berdata (id 2) | **tak ada** + alasan tertulis | ada (benar) | `new-password` | kosong |
+| Operator bersih (id 3) | **ada & aktif** | tak ada | `new-password` | kosong |
 
 ## FIX TEST FLAKY `UserListQueryCountTest` — ternyata N+1 SUNGGUHAN, bukan warmup (28 Juli 2026) — SELESAI & PUSHED
 **431 regresi hijau, 3x full run berturut-turut, 0 gagal.**
