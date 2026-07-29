@@ -33,12 +33,20 @@
         <div class="flex justify-between items-start">
             <div>
                 <h1 class="text-xl font-bold text-slate-900">Trip #{{ $trip->trip_number_of_day }}</h1>
+                {{-- Area AWAL trip (tetap, catatan asal) --}}
                 @if ($trip->starting_cluster_id)
                     <p class="text-slate-600 text-sm mt-1">
-                        Area: <span class="text-amber-700 font-semibold">{{ $trip->startingCluster->name }}</span>
+                        Area awal: <span class="text-amber-700 font-semibold">{{ $trip->startingCluster->name }}</span>
                     </p>
                 @else
-                    <p class="text-slate-600 text-sm mt-1">Area: <span class="text-slate-500 font-semibold">Semua Kios</span></p>
+                    <p class="text-slate-600 text-sm mt-1">Area awal: <span class="text-slate-500 font-semibold">Semua Kios</span></p>
+                @endif
+                {{-- Area yang sedang DILIHAT — beda dari area awal saat operator menyeberang.
+                     Tanpa baris ini, "lihat area lain" jadi perpindahan senyap. --}}
+                @if ($viewClusterId !== $trip->starting_cluster_id)
+                    <p class="text-xs text-sky-700 font-semibold mt-0.5">
+                        👀 Sedang lihat: {{ $viewedAreaName }}
+                    </p>
                 @endif
             </div>
             <div class="text-right">
@@ -50,6 +58,53 @@
 
     {{-- Daftar Kios Aktual --}}
     <div class="px-4 space-y-3">
+        {{-- ══ LIHAT AREA LAIN ══
+             Dodol masih sisa setelah area awal habis? Lanjut ke kedai area lain
+             TANPA mengakhiri trip — kalau akhiri lalu mulai trip baru, komisi &
+             data pengantaran terpecah jadi dua trip.
+             Pemilihan area di sini EKSPLISIT, tidak lewat "Urutkan Jarak": cakupan
+             GPS baru ~12%, jadi jarak tak pernah bisa jadi mekanisme lintas area. --}}
+        <div class="mb-2">
+            <button type="button" wire:click="{{ $isAreaPickerOpen ? 'closeAreaPicker' : 'openAreaPicker' }}"
+                    wire:loading.attr="disabled" wire:target="openAreaPicker,closeAreaPicker"
+                    class="w-full flex items-center justify-between gap-2 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2.5 min-h-[44px] text-sm font-semibold text-sky-800 active:bg-sky-100">
+                <span class="flex items-center gap-1.5">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+                    </svg>
+                    Lihat Area Lain
+                </span>
+                <span class="text-xs font-normal text-sky-700">{{ $viewedAreaName }}</span>
+            </button>
+
+            @if ($isAreaPickerOpen)
+                <div class="mt-2 rounded-xl border border-sky-200 bg-white p-2 shadow-sm space-y-1.5">
+                    <p class="px-2 pt-1 text-xs text-slate-500">
+                        Pilih area — trip <span class="font-semibold">tetap Trip #{{ $trip->trip_number_of_day }}</span>, tidak diakhiri.
+                    </p>
+
+                    <button type="button" wire:click="switchArea(null)"
+                            class="w-full text-left rounded-lg px-3 py-2.5 min-h-[44px] text-sm border
+                                   {{ $viewClusterId === null ? 'border-sky-500 bg-sky-50 font-bold text-sky-900' : 'border-slate-200 hover:bg-slate-50' }}">
+                        Semua Area
+                        <span class="block text-xs font-normal text-slate-500">Semua kedai, dikelompokkan per area</span>
+                    </button>
+
+                    @foreach ($availableAreas as $area)
+                        <button type="button" wire:click="switchArea({{ $area->id }})"
+                                class="w-full text-left rounded-lg px-3 py-2.5 min-h-[44px] text-sm border
+                                       {{ $viewClusterId === (int) $area->id ? 'border-sky-500 bg-sky-50 font-bold text-sky-900' : 'border-slate-200 hover:bg-slate-50' }}">
+                            {{ $area->name }}
+                            @if ((int) $area->id === (int) $startingClusterId)
+                                <span class="ml-1 text-[10px] font-semibold text-amber-700">· area awal</span>
+                            @endif
+                            <span class="block text-xs font-normal text-slate-500">{{ $area->kiosks_count }} kios aktif</span>
+                        </button>
+                    @endforeach
+                </div>
+            @endif
+        </div>
+
         <div class="flex justify-between items-center mb-2 gap-2">
             <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Daftar Kunjungan</h2>
             <div class="flex items-center gap-2">
@@ -103,7 +158,21 @@
             </p>
         @endif
 
-        @forelse ($kiosks as $kiosk)
+        @foreach ($kioskGroups as $group)
+            {{-- Judul pemisah per area / per grup GPS: batas area harus TERLIHAT,
+                 bukan cuma terurut diam-diam. --}}
+            @if ($showGroupLabels)
+                <div wire:key="grp-{{ $group['key'] }}" class="flex items-center gap-2 pt-3 first:pt-0">
+                    <span class="h-px flex-1 bg-slate-200"></span>
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-600 whitespace-nowrap">
+                        {{ $group['label'] }}
+                    </span>
+                    <span class="text-[10px] text-slate-400 whitespace-nowrap">{{ $group['note'] }}</span>
+                    <span class="h-px flex-1 bg-slate-200"></span>
+                </div>
+            @endif
+
+        @foreach ($group['kiosks'] as $kiosk)
             @php
                 $isVisited = in_array($kiosk->id, $visitedKioskIds);
                 $hasPending = in_array($kiosk->id, $pendingKioskIds);
@@ -171,17 +240,20 @@
                     </button>
                 @endif
             </div>
-        @empty
+        @endforeach
+        @endforeach
+
+        @if ($kiosks->isEmpty())
             <div class="text-center py-8 text-slate-400">
                 @if (trim($search) !== '')
                     <p>Tidak ada kios cocok dengan "{{ $search }}".</p>
                     <p class="text-sm mt-1">Coba kata kunci lain atau kosongkan pencarian.</p>
                 @else
                     <p>Belum ada kios di area ini.</p>
-                    <p class="text-sm mt-1">Tambah kios dulu via menu Kios Baru.</p>
+                    <p class="text-sm mt-1">Coba <span class="font-semibold text-sky-700">Lihat Area Lain</span>, atau tambah kios via menu Kios Baru.</p>
                 @endif
             </div>
-        @endforelse
+        @endif
 
         {{-- Ekor daftar: daftar dimuat per batch, JANGAN pernah berhenti diam-diam.
              Dulu daftar terpotong keras di kios ke-50 tanpa penanda apa pun, sehingga

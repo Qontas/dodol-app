@@ -43,9 +43,37 @@ class ActiveTrip extends Component
     // urut jarak) supaya payload tak ikut membengkak diam-diam.
     public int $kioskLimit = self::DISPLAY_LIMIT;
 
+    // Radius prefilter mode "Urutkan Jarak" (kilometer). Bounding box SQL memakai
+    // index `idx_kiosks_geo(latitude, longitude)` supaya haversine PHP hanya jalan
+    // untuk kios di sekitar operator — bukan SELURUH kios owner (~957).
+    //
+    // Batas atas beban = jumlah kios BER-GPS di dalam kotak. Cakupan GPS sekarang
+    // ~12% (119 dari 1014), jadi himpunan itu kecil. Kalau suatu saat hampir semua
+    // kios ber-GPS, kecilkan angka ini.
+    public const GEO_BBOX_KM = 25;
+
     // --- STATE DASAR ---
     public $trip;
     public $starting_cluster_id;
+
+    /**
+     * Area yang sedang DILIHAT di daftar kunjungan (fitur lintas area, 29 Juli 2026).
+     *   null → SEMUA area milik owner
+     *   int  → satu cluster
+     *
+     * Diisi dari `trip->starting_cluster_id` saat mount. Menggantinya TIDAK mengubah
+     * dan TIDAK mengakhiri trip — trip tetap yang itu juga, cuma daftarnya yang
+     * bergeser. `starting_cluster_id` di atas tetap dipegang sebagai penanda
+     * "area awal" (dipakai label & urutan), JANGAN dipakai lagi untuk memfilter.
+     *
+     * Jalur TULIS memang sudah siap lintas area: openVisitModal() → ownedKiosk()
+     * hanya memeriksa OWNER, tak pernah memeriksa cluster. Yang dikunci selama ini
+     * cuma DAFTARNYA.
+     */
+    public ?int $viewClusterId = null;
+
+    /** Panel "Lihat Area Lain" sedang terbuka? (daftar area baru di-query saat perlu) */
+    public bool $isAreaPickerOpen = false;
 
     // Pencarian kios (filter server-side by nama). Tetap bisa akses kios mana pun.
     public string $search = '';
@@ -207,6 +235,7 @@ class ActiveTrip extends Component
         }
 
         $this->starting_cluster_id = $this->trip->starting_cluster_id;
+        $this->viewClusterId = $this->trip->starting_cluster_id; // mulai dari area awal
         $this->loadKiosks();
     }
 
@@ -230,23 +259,37 @@ class ActiveTrip extends Component
      */
     private function kioskViewData(): array
     {
-        $query = Kiosk::where('is_active', true);
-
-        // Multi-tenant: batasi ke kios milik owner operator (lewat cluster).
-        // Guard null untuk backward-compat (data lama / operator tanpa owner_id).
-        $ownerId = auth()->user()->owner_id;
-        if ($ownerId !== null) {
-            $query->whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId));
-        }
-
-        if ($this->starting_cluster_id) {
-            $query->where('cluster_id', $this->starting_cluster_id);
-        }
-
         $search = trim($this->search);
-        if ($search !== '') {
-            $query->where('name', 'like', '%'.$search.'%');
-        }
+
+        // Satu definisi "kios yang boleh tampil", dipakai ulang oleh SEMUA cabang
+        // (dekat / sisa / hitungan per-area) supaya tak ada cabang yang diam-diam
+        // memakai aturan berbeda.
+        $ownerId = auth()->user()->owner_id;
+        $base = function () use ($ownerId, $search) {
+            $q = Kiosk::query()
+                ->where('is_active', true)
+                // Kios sentinel walk-in ("Penjualan Walk-in") bukan kedai yang
+                // dikunjungi. Tanpa ini ia muncul sebagai kartu di daftar lintas area.
+                ->excludeWalkInSentinel();
+
+            // Multi-tenant: batasi ke kios milik owner operator (lewat cluster).
+            // Guard null untuk backward-compat (data lama / operator tanpa owner_id).
+            if ($ownerId !== null) {
+                $q->whereHas('cluster', fn ($c) => $c->where('owner_id', $ownerId));
+            }
+
+            // 🔴 Filter area kini dari viewClusterId (bisa diganti DI DALAM trip),
+            // bukan lagi starting_cluster_id yang cuma dibaca sekali di mount().
+            if ($this->viewClusterId) {
+                $q->where('cluster_id', $this->viewClusterId);
+            }
+
+            if ($search !== '') {
+                $q->where('name', 'like', '%'.$search.'%');
+            }
+
+            return $q;
+        };
 
         // Trip-scoped (kecil, tak tergantung jumlah kios). 1 query untuk visit trip
         // ini, lalu dipecah: belum-dikoreksi = "dikunjungi", dikoreksi = badge koreksi.
@@ -257,55 +300,19 @@ class ActiveTrip extends Component
         $correctedKioskIds = $tripVisits->whereNotNull('corrected_at')
             ->pluck('kiosk_id')->unique()->values()->all();
 
-        // Ambil HANYA yang tampil (cap DISPLAY_LIMIT). Belum dikunjungi di atas.
+        // Total per AREA dalam satu query GROUP BY. Dipakai dua hal sekaligus:
+        // judul pemisah ("— Pancing (12 kios) —") dan totalMatched — jadi ini
+        // MENGGANTIKAN query count lama, bukan menambah.
+        $perClusterTotals = $base()
+            ->selectRaw('kiosks.cluster_id as cluster_id, count(*) as agg')
+            ->groupBy('kiosks.cluster_id')
+            ->pluck('agg', 'cluster_id');
+        $totalMatched = (int) $perClusterTotals->sum();
+
         if ($this->sortedByDistance && $this->userLat !== null && $this->userLng !== null) {
-            // Nearest-neighbor butuh seluruh koordinat yang cocok untuk cari terdekat.
-            $all = $query->get();
-            $totalMatched = $all->count(); // dari koleksi termuat → tanpa query count ekstra.
-            $kiosks = $all
-                ->sort(function ($a, $b) use ($visitedKioskIds) {
-                    $visitedA = in_array($a->id, $visitedKioskIds, true) ? 1 : 0;
-                    $visitedB = in_array($b->id, $visitedKioskIds, true) ? 1 : 0;
-                    if ($visitedA !== $visitedB) {
-                        return $visitedA <=> $visitedB;
-                    }
-
-                    $distA = ($a->latitude === null || $a->longitude === null)
-                        ? PHP_FLOAT_MAX
-                        : $this->calculateDistance($this->userLat, $this->userLng, (float) $a->latitude, (float) $a->longitude);
-
-                    $distB = ($b->latitude === null || $b->longitude === null)
-                        ? PHP_FLOAT_MAX
-                        : $this->calculateDistance($this->userLat, $this->userLng, (float) $b->latitude, (float) $b->longitude);
-
-                    return $distA <=> $distB;
-                })
-                ->take($this->kioskLimit)
-                ->values();
+            [$kiosks, $groups] = $this->kiosksByDistance($base, $visitedKioskIds, $perClusterTotals);
         } else {
-            // Default: kios belum dikunjungi dulu, lalu dikelompokkan PER-AREA
-            // (operator seser habis satu area dulu baru pindah), lalu urutan rute
-            // (sort_order — diatur owner sesuai pengalaman lapangan, bukan abjad
-            // lagi) di dalam area itu. Kios tanpa sort_order turun ke bawah DALAM
-            // AREA-nya, tie-break alfabet.
-            $countQuery = clone $query; // tangkap sebelum order/limit untuk hitung total.
-            if (! empty($visitedKioskIds)) {
-                $ids = implode(',', array_map('intval', $visitedKioskIds));
-                $query->orderByRaw("CASE WHEN kiosks.id IN ($ids) THEN 1 ELSE 0 END asc");
-            }
-
-            $kiosks = $query
-                ->orderBy(Cluster::query()->select('name')->whereColumn('clusters.id', 'kiosks.cluster_id'))
-                ->orderByRaw('sort_order IS NULL')
-                ->orderBy('sort_order')
-                ->orderBy('name')
-                ->limit($this->kioskLimit)
-                ->get();
-
-            // Hitung total hanya bila daftar mungkin terpotong (mencapai limit).
-            $totalMatched = $kiosks->count() < $this->kioskLimit
-                ? $kiosks->count()
-                : $countQuery->count();
+            [$kiosks, $groups] = $this->kiosksByRoute($base, $visitedKioskIds, $perClusterTotals);
         }
 
         $displayedIds = $kiosks->pluck('id')->all();
@@ -319,6 +326,10 @@ class ActiveTrip extends Component
 
         return [
             'kiosks' => $kiosks,
+            // Daftar yang benar-benar dirender, sudah terbagi per judul pemisah
+            // ("— Pancing (12 kios) —" / "Tanpa lokasi GPS"). `kiosks` di atas tetap
+            // datar untuk pemanggil lama.
+            'kioskGroups' => $groups,
             'visitedKioskIds' => $visitedKioskIds,
             'correctedKioskIds' => $correctedKioskIds,
             'pendingKioskIds' => $this->pendingKioskIdsFor($displayedIds),
@@ -327,7 +338,190 @@ class ActiveTrip extends Component
             'lastOperatorPerKiosk' => $this->lastOperatorFor($displayedIds),
             'totalMatched' => $totalMatched,
             'displayLimit' => self::DISPLAY_LIMIT,
+            'startingClusterId' => $this->trip->starting_cluster_id,
+            'viewedAreaName' => $this->viewedAreaName(),
+            // Judul pemisah cuma berguna kalau ada lebih dari satu grup — di trip
+            // satu-area ia jadi pengulangan header. Mode jarak selalu berjudul,
+            // karena "Tanpa lokasi GPS" perlu alasannya tertulis.
+            'showGroupLabels' => count($groups) > 1 || $this->sortedByDistance,
         ];
+    }
+
+    /**
+     * Nama area yang sedang dilihat. Tak boleh bergantung pada kartu yang kebetulan
+     * termuat — daftar bisa kosong (mis. hasil pencarian nihil) dan judulnya tetap
+     * harus benar.
+     */
+    private function viewedAreaName(): string
+    {
+        if ($this->viewClusterId === null) {
+            return 'Semua Area';
+        }
+
+        // Kasus umum (belum menyeberang): relasi ini toh sudah dimuat header.
+        if ($this->viewClusterId === $this->trip->starting_cluster_id) {
+            return $this->trip->startingCluster?->name ?? 'Area';
+        }
+
+        return Cluster::whereKey($this->viewClusterId)->value('name') ?? 'Area';
+    }
+
+    /**
+     * Urutan RUTE (default): belum dikunjungi dulu, lalu per-AREA, lalu sort_order
+     * di dalam area (diatur owner sesuai pengalaman lapangan). Kios tanpa sort_order
+     * turun ke bawah DALAM AREA-nya, tie-break alfabet.
+     *
+     * Saat melihat SEMUA AREA, area asal trip didahulukan di paling atas — operator
+     * yang menyeberang tetap melihat area yang sedang ia kerjakan lebih dulu.
+     *
+     * @return array{0: Collection, 1: array<int, array<string, mixed>>}
+     */
+    private function kiosksByRoute(callable $base, array $visitedKioskIds, Collection $perClusterTotals): array
+    {
+        $query = $base()->with('cluster:id,name');
+
+        if (! empty($visitedKioskIds)) {
+            $ids = implode(',', array_map('intval', $visitedKioskIds));
+            $query->orderByRaw("CASE WHEN kiosks.id IN ($ids) THEN 1 ELSE 0 END asc");
+        }
+
+        $startingId = (int) ($this->trip->starting_cluster_id ?? 0);
+        if ($this->viewClusterId === null && $startingId > 0) {
+            $query->orderByRaw('CASE WHEN kiosks.cluster_id = ? THEN 0 ELSE 1 END asc', [$startingId]);
+        }
+
+        $kiosks = $query
+            ->orderBy(Cluster::query()->select('name')->whereColumn('clusters.id', 'kiosks.cluster_id'))
+            ->orderByRaw('sort_order IS NULL')
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->limit($this->kioskLimit)
+            ->get();
+
+        return [$kiosks, $this->groupByArea($kiosks, $perClusterTotals)];
+    }
+
+    /**
+     * Urutan JARAK (pelengkap, operator menekan "Urutkan Jarak").
+     *
+     * 🔴 DUA hal yang diperbaiki 29 Juli 2026:
+     *
+     * (a) KIOS TANPA GPS TAK BOLEH HILANG. Dulu kios tanpa koordinat diberi jarak
+     *     PHP_FLOAT_MAX lalu tenggelam ke ekor daftar dan terpotong batas batch —
+     *     senyap. Cakupan GPS baru ~12% (119 dari 1014 kios), jadi 88% kedai lenyap
+     *     dari layar begitu tombol jarak ditekan. Sekarang mereka punya GRUP SENDIRI
+     *     di bawah, dengan judul yang menyebutkan alasannya.
+     *
+     * (b) PERFORMA. Dulu `$query->get()` TANPA limit + haversine PHP untuk SEMUA kios
+     *     owner (~957 baris ditarik & 957 kali trigonometri tiap render). Sekarang
+     *     bounding box SQL lebih dulu (index `idx_kiosks_geo` — sudah ada sejak awal
+     *     tapi tak pernah dipakai), jadi haversine hanya untuk kios ber-GPS di
+     *     sekitar operator.
+     *
+     * @return array{0: Collection, 1: array<int, array<string, mixed>>}
+     */
+    private function kiosksByDistance(callable $base, array $visitedKioskIds, Collection $perClusterTotals): array
+    {
+        $lat = (float) $this->userLat;
+        $lng = (float) $this->userLng;
+
+        // 1 derajat lintang ≈ 111 km; bujur menyusut mengikuti cos(lintang).
+        $latDelta = self::GEO_BBOX_KM / 111.0;
+        $lngDelta = self::GEO_BBOX_KM / (111.0 * max(cos(deg2rad($lat)), 0.01));
+
+        $nearby = $base()
+            ->with('cluster:id,name')
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->whereBetween('latitude', [$lat - $latDelta, $lat + $latDelta])
+            ->whereBetween('longitude', [$lng - $lngDelta, $lng + $lngDelta])
+            ->get()
+            ->sort(function ($a, $b) use ($visitedKioskIds, $lat, $lng) {
+                $visitedA = in_array($a->id, $visitedKioskIds, true) ? 1 : 0;
+                $visitedB = in_array($b->id, $visitedKioskIds, true) ? 1 : 0;
+                if ($visitedA !== $visitedB) {
+                    return $visitedA <=> $visitedB;
+                }
+
+                return $this->calculateDistance($lat, $lng, (float) $a->latitude, (float) $a->longitude)
+                    <=> $this->calculateDistance($lat, $lng, (float) $b->latitude, (float) $b->longitude);
+            })
+            ->values();
+
+        // Batch DIBAGI DUA antar grup, bukan satu batch penuh per grup: jumlah kartu
+        // di layar tetap ±DISPLAY_LIMIT seperti mode rute (janji "DOM ringan di HP"
+        // tak boleh diam-diam jadi dua kali lipat hanya karena tombol jarak ditekan).
+        $perGroup = max(1, intdiv($this->kioskLimit, 2));
+
+        $nearbyTotal = $nearby->count();
+        $nearby = $nearby->take($perGroup);
+
+        // SISANYA: kios tanpa koordinat, atau ber-GPS tapi di luar kotak. Diurut
+        // aturan rute biasa — bukan dibuang.
+        $restQuery = $base()->with('cluster:id,name');
+        if ($nearbyTotal > 0) {
+            $restQuery->whereNotIn('kiosks.id', $nearby->pluck('id')->all());
+        }
+        if (! empty($visitedKioskIds)) {
+            $ids = implode(',', array_map('intval', $visitedKioskIds));
+            $restQuery->orderByRaw("CASE WHEN kiosks.id IN ($ids) THEN 1 ELSE 0 END asc");
+        }
+
+        $rest = $restQuery
+            ->orderBy(Cluster::query()->select('name')->whereColumn('clusters.id', 'kiosks.cluster_id'))
+            ->orderByRaw('sort_order IS NULL')
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->limit($perGroup)
+            ->get();
+
+        $groups = [];
+        if ($nearby->isNotEmpty()) {
+            $groups[] = [
+                'key' => 'geo',
+                'label' => 'Terdekat dari lokasimu',
+                'note' => $nearbyTotal.' kios ber-GPS dalam '.self::GEO_BBOX_KM.' km',
+                'kiosks' => $nearby,
+            ];
+        }
+        if ($rest->isNotEmpty()) {
+            $groups[] = [
+                'key' => 'nogeo',
+                'label' => 'Tanpa lokasi GPS / di luar jangkauan',
+                'note' => 'Tidak bisa diurut jarak — urutan rute biasa',
+                'kiosks' => $rest,
+            ];
+        }
+
+        return [$nearby->concat($rest)->values(), $groups];
+    }
+
+    /**
+     * Pecah daftar jadi grup per AREA, urutannya mengikuti urutan kartu (jadi area
+     * asal tetap di atas). Judul pemisah hanya berguna kalau areanya lebih dari satu —
+     * penilaian itu diserahkan ke view lewat jumlah grup.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function groupByArea(Collection $kiosks, Collection $perClusterTotals): array
+    {
+        $groups = [];
+        $startingId = (int) ($this->trip->starting_cluster_id ?? 0);
+
+        foreach ($kiosks->groupBy('cluster_id') as $clusterId => $rows) {
+            $clusterId = (int) $clusterId;
+            $total = (int) ($perClusterTotals[$clusterId] ?? $rows->count());
+            $label = $rows->first()->cluster?->name ?? 'Tanpa area';
+
+            $groups[] = [
+                'key' => 'area-'.$clusterId,
+                'label' => $label.($clusterId === $startingId ? ' · area awal' : ''),
+                'note' => $total.' kios'.($rows->count() < $total ? ' — '.$rows->count().' tampil' : ''),
+                'kiosks' => $rows,
+            ];
+        }
+
+        return $groups;
     }
 
     /**
@@ -344,6 +538,71 @@ class ActiveTrip extends Component
     public function updatedSearch(): void
     {
         $this->kioskLimit = self::DISPLAY_LIMIT;
+    }
+
+    public function openAreaPicker(): void
+    {
+        $this->isAreaPickerOpen = true;
+    }
+
+    public function closeAreaPicker(): void
+    {
+        $this->isAreaPickerOpen = false;
+    }
+
+    /**
+     * LINTAS AREA DI TENGAH TRIP (permintaan owner 29 Juli 2026).
+     *
+     * Operator selesai menyeser area awal tapi dodol masih sisa → lanjut ke kedai
+     * area lain TANPA mengakhiri trip. Kalau harus akhiri lalu mulai trip baru,
+     * komisi & data pengantaran terpecah jadi dua trip.
+     *
+     * Yang berubah HANYA daftar yang tampil. Trip tidak diubah, tidak diakhiri,
+     * `starting_cluster_id` tidak disentuh (tetap jadi catatan "area awal").
+     *
+     * 🔒 Cluster diverifikasi milik owner operator — jangan percaya id dari klien.
+     */
+    public function switchArea(?int $clusterId): void
+    {
+        $this->resetErrorBag('general');
+
+        if ($clusterId !== null) {
+            $ownerId = auth()->user()->owner_id;
+
+            $milikOwner = Cluster::whereKey($clusterId)
+                ->where('is_active', true)
+                ->when($ownerId !== null, fn ($q) => $q->where('owner_id', $ownerId))
+                ->exists();
+
+            if (! $milikOwner) {
+                $this->addError('general', 'Area itu bukan milik Anda.');
+
+                return;
+            }
+        }
+
+        $this->viewClusterId = $clusterId;
+        $this->kioskLimit = self::DISPLAY_LIMIT; // ganti area → balik ke batch pertama
+        $this->isAreaPickerOpen = false;
+    }
+
+    /**
+     * Area milik owner + jumlah kios aktif per area, untuk panel "Lihat Area Lain".
+     * Hanya di-query saat panelnya dibuka — trip satu-area tak membayar apa pun.
+     *
+     * @return \Illuminate\Support\Collection<int, Cluster>
+     */
+    private function availableAreas(): Collection
+    {
+        $ownerId = auth()->user()->owner_id;
+
+        return Cluster::query()
+            ->where('is_active', true)
+            ->excludeWalkInSentinel()
+            ->when($ownerId !== null, fn ($q) => $q->where('owner_id', $ownerId))
+            ->withCount(['kiosks' => fn ($q) => $q->where('is_active', true)->excludeWalkInSentinel()])
+            ->orderBy('name')
+            ->get();
     }
 
     /**
@@ -2138,6 +2397,9 @@ class ActiveTrip extends Component
     {
         // Data daftar kios dihitung di sini (view-local), TIDAK disimpan sebagai
         // state → snapshot Livewire tetap kecil walau kios owner ratusan/ribuan.
-        return view('livewire.operator.active-trip', $this->kioskViewData());
+        return view('livewire.operator.active-trip', $this->kioskViewData() + [
+            // Daftar area cuma di-query kalau panelnya memang dibuka.
+            'availableAreas' => $this->isAreaPickerOpen ? $this->availableAreas() : collect(),
+        ]);
     }
 }
