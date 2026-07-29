@@ -1,4 +1,9 @@
-<div class="max-w-md mx-auto pb-24">
+{{-- data-stale-page-guard: halaman ini TIDAK BOLEH tersaji basi. Tombol BACK memulihkan
+     HTML dari snapshotCache milik wire:navigate TANPA request ke server, jadi header
+     no-store tak menolong. Guard di partials/stale-page-guard memicu $refresh saat
+     halaman tiba lewat back/forward → render ulang di server → kartu "trip berjalan"
+     muncul walau DOM-nya tadi berisi form. --}}
+<div class="max-w-md mx-auto pb-24" data-stale-page-guard>
     {{-- Banner offline: operator harus tahu koneksi putus, bukan spinner selamanya --}}
     <div wire:offline class="fixed top-0 inset-x-0 z-[60] bg-red-600 text-white text-center text-sm font-semibold py-2.5 shadow-md">
         Koneksi internet terputus. Periksa sinyal, lalu coba lagi.
@@ -13,8 +18,70 @@
             Kembali ke Dashboard
         </a>
         <h1 class="text-2xl font-bold text-slate-900 mt-2">Mulai Trip</h1>
-        <p class="text-slate-500 text-sm">Pilih area awal yang akan dikunjungi</p>
+        <p class="text-slate-500 text-sm">
+            {{ $activeTrip ? 'Ada trip yang masih berjalan' : 'Pilih area awal yang akan dikunjungi' }}
+        </p>
     </div>
+
+    @if ($cancelMessage !== '')
+        <div class="mb-4 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-800">
+            {{ $cancelMessage }}
+        </div>
+    @endif
+
+    @if ($activeTrip)
+        {{-- ══ KARTU TRIP BERJALAN ══
+             Menggantikan redirect diam-diam. Operator HARUS melihat trip mana yang
+             sedang berjalan (nomor, AREA, jam mulai, mika dibawa) sebelum memutuskan. --}}
+        @if ($conflictMessage !== '')
+            <div class="mb-4 rounded-xl border-2 border-red-300 bg-red-50 p-4">
+                <p class="text-sm font-semibold text-red-800">{{ $conflictMessage }}</p>
+            </div>
+        @endif
+
+        <div class="rounded-xl border-2 border-amber-400 bg-amber-50 p-5">
+            <div class="flex items-center gap-2">
+                <span class="inline-block w-3 h-3 rounded-full bg-green-500 flex-shrink-0"></span>
+                <h2 class="font-bold text-lg text-slate-900">Kamu masih punya trip berjalan</h2>
+            </div>
+
+            <p class="mt-3 text-slate-800">
+                <span class="font-bold">Trip #{{ $activeTrip->trip_number_of_day }}</span> —
+                <span class="font-semibold text-amber-800">{{ $activeTrip->startingCluster?->name ?? 'Semua Kios' }}</span>,
+                mulai {{ $activeTrip->started_at?->format('H:i') ?? '—' }},
+                bawa {{ $activeTrip->qty_carried_total }} mika.
+            </p>
+
+            <div class="mt-5 space-y-2.5">
+                <a href="{{ route('operator.trip.active', $activeTrip->id) }}" wire:navigate
+                   class="block w-full text-center py-4 rounded-xl font-bold text-lg bg-amber-600 hover:bg-amber-700 text-white shadow-md active:scale-[0.98]">
+                    Lanjutkan Trip →
+                </a>
+
+                @if ($canCancelActiveTrip)
+                    {{-- Hanya muncul kalau trip BENAR-BENAR kosong (0 kunjungan, 0 delivery,
+                         0 komisi). Guard yang sama diulang server-side di cancelActiveTrip(). --}}
+                    <button type="button"
+                            wire:click="cancelActiveTrip"
+                            wire:loading.attr="disabled" wire:target="cancelActiveTrip"
+                            wire:confirm="Batalkan Trip #{{ $activeTrip->trip_number_of_day }}? Trip ini belum ada kunjungan sama sekali, jadi aman dibatalkan. Trip akan DIARSIPKAN (bukan dihapus permanen) dan kamu bisa mulai trip baru."
+                            class="w-full py-3 rounded-xl font-semibold text-slate-700 bg-white border-2 border-slate-300 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-50">
+                        <span wire:loading.remove wire:target="cancelActiveTrip">Batalkan Trip Ini</span>
+                        <span wire:loading wire:target="cancelActiveTrip">Membatalkan…</span>
+                    </button>
+                    <p class="text-xs text-slate-500 text-center">
+                        Aman: trip ini belum ada kunjungan. Trip diarsipkan, bukan dihapus permanen.
+                    </p>
+                @else
+                    <p class="text-xs text-slate-600 text-center leading-relaxed">
+                        Trip ini <span class="font-semibold">sudah ada aktivitas</span>, jadi tidak bisa dibatalkan.
+                        Kalau memang mau berhenti, buka tripnya lalu pakai
+                        <span class="font-semibold">Akhiri Trip</span> supaya stok &amp; komisi ikut dibukukan.
+                    </p>
+                @endif
+            </div>
+        </div>
+    @else
 
     {{-- Toggle Trip Bebas --}}
     <div class="flex items-center gap-3 p-4 mb-4 bg-slate-50 rounded-xl border border-slate-200">
@@ -144,4 +211,6 @@
             </button>
         </div>
     @endif
+
+    @endif {{-- tutup: kartu trip berjalan vs form mulai trip --}}
 </div>

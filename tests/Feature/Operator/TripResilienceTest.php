@@ -50,17 +50,29 @@ class TripResilienceTest extends TestCase
     }
 
     /**
-     * Operator tutup browser saat trip aktif → buka /trip/start lagi →
-     * harus diarahkan kembali ke trip aktif yang sama, bukan form trip baru.
+     * Operator tutup browser saat trip aktif → buka /trip/start lagi → layar
+     * menampilkan KARTU trip berjalan, bukan form trip baru.
+     *
+     * 🔴 KONTRAK BERUBAH 29 Juli 2026 (permintaan owner): dulu di sini ada
+     * `assertRedirect(...)` — redirect DIAM-DIAM ke trip aktif. Itu justru akar
+     * kebingungan "pilih Kota 1 → kebuka Pancing": operator dilempar ke trip lain
+     * tanpa penjelasan. Sekarang trip berjalan DISEBUTKAN (nomor + area), dan
+     * operator sendiri yang menekan Lanjutkan / Batalkan.
      */
-    public function test_start_trip_mount_redirects_to_existing_active_trip(): void
+    public function test_start_trip_shows_running_trip_card_instead_of_form(): void
     {
         $trip = $this->makeActiveTrip();
 
         $this->actingAs($this->operator);
 
         Livewire::test(StartTrip::class)
-            ->assertRedirect(route('operator.trip.active', $trip->id));
+            ->assertNoRedirect()
+            ->assertSee('Kamu masih punya trip berjalan')
+            ->assertSee('Trip #'.$trip->trip_number_of_day)
+            ->assertSee($this->cluster->name)
+            ->assertSee('Lanjutkan Trip')
+            // Form mulai trip TIDAK boleh ikut tampil.
+            ->assertDontSee('Berapa mika yang kamu bawa hari ini?');
     }
 
     /**

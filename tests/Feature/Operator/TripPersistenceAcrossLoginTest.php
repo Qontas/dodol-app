@@ -59,9 +59,14 @@ class TripPersistenceAcrossLoginTest extends TestCase
             ->assertSet('activeTrip.id', $trip->id);
 
         // 2) Buka /operator/trip/start (mis. operator lupa & coba mulai trip baru)
-        // → mount() harus REDIRECT ke trip yang sudah ada, BUKAN membiarkan form baru.
+        // → layar menampilkan KARTU trip berjalan, BUKAN form trip baru.
+        // (Kontrak berubah 29 Juli 2026: dulu redirect diam-diam — lihat catatan di
+        // TripResilienceTest::test_start_trip_shows_running_trip_card_instead_of_form.)
         Livewire::test(StartTrip::class)
-            ->assertRedirect(route('operator.trip.active', $trip->id));
+            ->assertNoRedirect()
+            ->assertSee('Kamu masih punya trip berjalan')
+            ->assertSee('Trip #'.$trip->trip_number_of_day)
+            ->assertDontSee('Berapa mika yang kamu bawa hari ini?');
 
         // 3) Buka halaman trip aktif langsung → resume dengan trip yang sama, bukan 404/kosong.
         // (ActiveTrip::mount() sengaja tak memakai {tripId} dari URL — lihat test kedua di

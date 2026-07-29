@@ -13,6 +13,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @include('partials.pwa-head')
     @include('partials.pwa-token-refresh')
+    @include('partials.stale-page-guard')
 </head>
 <body class="font-sans antialiased bg-slate-50 text-slate-900">
 <div class="min-h-screen flex flex-col">

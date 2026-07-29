@@ -19,17 +19,124 @@ class StartTrip extends Component
     // Trip Bebas: antar lintas cluster (semua kios aktif owner), tanpa pilih cluster.
     public bool $tripBebas = false;
 
+    // Pesan saat operator menekan "Mulai Trip" padahal trip lain masih berjalan.
+    // JANGAN diam-diam redirect (lihat catatan besar di startTrip()).
+    public string $conflictMessage = '';
+
+    // Pesan sesudah "Batalkan Trip Ini" berhasil (trip kosong diarsipkan).
+    public string $cancelMessage = '';
+
+    /**
+     * 🔴 mount() SENGAJA TIDAK REDIRECT LAGI (fix 29 Juli 2026).
+     *
+     * Dulu: ada trip aktif → `$this->redirect(..., navigate: true)`. Dua masalah nyata:
+     *
+     * 1. REDIRECT DIAM-DIAM. Operator memilih "Kota 1" + 75 mika, tekan Mulai, lalu
+     *    mendarat di trip LAIN (Trip Bebas "Semua Kios") tanpa satu kata penjelasan.
+     *    Karena kartu kedai tak berlabel area, ia mengira "kebuka Pancing".
+     * 2. TAK BISA DIANDALKAN SAAT BACK. `wire:navigate` menyimpan HTML halaman di
+     *    `snapshotCache` JavaScript (vendor/livewire/livewire/dist/livewire.js:8127)
+     *    dan memulihkannya pada `popstate` TANPA request ke server. Jadi mount() ini
+     *    tak pernah jalan saat tombol BACK ditekan — dan header `no-store` dari
+     *    middleware `no-store` pun tak berpengaruh, karena tak ada HTTP sama sekali.
+     *
+     * Sekarang: state dievaluasi ulang tiap RENDER (lihat activeTrip computed), jadi
+     * roundtrip Livewire apa pun — termasuk $refresh yang dipicu guard back/forward di
+     * partials/stale-page-guard.blade.php — mengembalikan halaman ke kebenaran.
+     */
     public function mount(): void
     {
-        $existingTrip = Trip::where('operator_id', auth()->id())
-            ->whereDate('trip_date', today())
-            ->whereNotNull('started_at')
-            ->whereNull('ended_at')
-            ->first();
+        // sengaja kosong — guard dipindah ke render (getActiveTripProperty).
+    }
 
-        if ($existingTrip) {
-            $this->redirect(route('operator.trip.active', $existingTrip->id), navigate: true);
+    // Memo per-REQUEST (properti private → tidak ikut snapshot Livewire). Sengaja
+    // BUKAN computed property Livewire: cache-nya tak bisa kita invalidasi sendiri
+    // setelah cancelActiveTrip() menghapus tripnya, dan kartu akan tetap tampil.
+    private ?Trip $resolvedActiveTrip = null;
+    private bool $activeTripResolved = false;
+
+    /**
+     * Trip yang MASIH BERJALAN hari ini milik operator ini, atau null.
+     *
+     * `latest('id')` (bukan `first()` polos = id TERKECIL) supaya kartu di layar
+     * menyebutkan trip yang SAMA dengan yang akan dibuka ActiveTrip::mount() —
+     * kalau tidak, kartunya sendiri jadi berbohong.
+     */
+    public function activeTrip(): ?Trip
+    {
+        if (! $this->activeTripResolved) {
+            $this->resolvedActiveTrip = Trip::with('startingCluster')
+                ->where('operator_id', auth()->id())
+                ->whereDate('trip_date', today())
+                ->whereNotNull('started_at')
+                ->whereNull('ended_at')
+                ->latest('id')
+                ->first();
+            $this->activeTripResolved = true;
         }
+
+        return $this->resolvedActiveTrip;
+    }
+
+    private function forgetActiveTrip(): void
+    {
+        $this->resolvedActiveTrip = null;
+        $this->activeTripResolved = false;
+    }
+
+    /**
+     * Trip boleh DIBATALKAN hanya kalau benar-benar kosong: 0 kunjungan, 0 delivery,
+     * 0 komisi. Sekali ada aktivitas, satu-satunya jalan keluar adalah "Akhiri Trip"
+     * dari dalam trip (supaya stok & komisi ikut dibukukan).
+     */
+    private function tripHasActivity(Trip $trip): bool
+    {
+        return $trip->visits()->exists()
+            || $trip->deliveries()->exists()
+            || $trip->commissions()->exists();
+    }
+
+    public function canCancelActiveTrip(): bool
+    {
+        $trip = $this->activeTrip();
+
+        return $trip !== null && ! $this->tripHasActivity($trip);
+    }
+
+    /**
+     * Batalkan trip yang belum ada aktivitasnya = ARSIPKAN (soft delete, Ronde 1),
+     * BUKAN hapus permanen. Bisa dipulihkan lewat `php artisan trip:restore {id}`.
+     *
+     * 🔒 Guard server-side lengkap — TIDAK bersandar pada tombol yang disembunyikan UI:
+     *    (a) trip harus milik operator ini (query di-scope operator_id),
+     *    (b) trip harus masih berjalan hari ini,
+     *    (c) trip harus benar-benar kosong.
+     */
+    public function cancelActiveTrip(): void
+    {
+        $this->conflictMessage = '';
+        $this->cancelMessage = '';
+
+        $trip = $this->activeTrip();
+
+        if (! $trip) {
+            return; // sudah tidak ada trip berjalan — render berikutnya tampilkan form.
+        }
+
+        if ($this->tripHasActivity($trip)) {
+            $this->conflictMessage = 'Trip #'.$trip->trip_number_of_day.' sudah ada aktivitas '
+                .'(kunjungan/titipan tercatat), jadi tidak bisa dibatalkan. '
+                .'Buka tripnya lalu pakai "Akhiri Trip" supaya stok & komisi ikut dibukukan.';
+
+            return;
+        }
+
+        $nomor = $trip->trip_number_of_day;
+        $trip->delete(); // SOFT DELETE = arsip; data anak (tak ada) tetap utuh.
+        $this->forgetActiveTrip(); // memo harus basi sekarang, kalau tidak kartunya tetap tampil.
+
+        $this->cancelMessage = 'Trip #'.$nomor.' dibatalkan dan diarsipkan. '
+            .'Silakan mulai trip baru dengan area yang benar.';
     }
 
     public function getClustersProperty()
@@ -38,8 +145,12 @@ class StartTrip extends Component
 
         $clusters = Cluster::query()
             ->where('is_active', true)
+            // Cluster sentinel walk-in (__walkin_owner_N) BUKAN area yang bisa dikunjungi;
+            // is_active-nya default true jadi tanpa ini ia nongol sebagai "area" berisi
+            // 1 kios "Penjualan Walk-in".
+            ->excludeWalkInSentinel()
             ->when($ownerId !== null, fn($q) => $q->where('owner_id', $ownerId))
-            ->withCount(['kiosks' => fn($q) => $q->where('is_active', true)])
+            ->withCount(['kiosks' => fn($q) => $q->where('is_active', true)->excludeWalkInSentinel()])
             ->orderBy('name')
             ->get();
 
@@ -139,6 +250,9 @@ class StartTrip extends Component
 
     public function startTrip()
     {
+        $this->conflictMessage = '';
+        $this->cancelMessage = '';
+
         // Trip Bebas: cluster tidak wajib. Trip biasa: cluster wajib dipilih.
         // 🔒 exists di-scope owner operator (samakan pola CreateKiosk) → operator tak
         // bisa mulai trip pakai cluster owner lain walau ID dipaksa dari klien.
@@ -159,23 +273,30 @@ class StartTrip extends Component
             'qtyCarried.min' => 'Isi jumlah mika dulu',
         ]);
 
-        // Proteksi 1: Intersepsi PHP (anti double-submit / double-tap tombol).
+        // Proteksi 1: Intersepsi PHP (anti double-submit / double-tap tombol) +
+        // jaring untuk halaman BASI yang dipulihkan tombol BACK.
         //
-        // 🔴 WAJIB per-HARI INI — sengaja sama persis dengan guard mount() di atas.
+        // 🔴 WAJIB per-HARI INI — sengaja sama persis dengan activeTrip() di atas.
         // BUG 28 Juli 2026: dulu tanpa filter tanggal, jadi satu trip lama yang lupa
-        // di-"Akhiri Trip" (ended_at masih null) MEMBAJAK setiap trip berikutnya:
-        // operator pilih area "Kota 1", ditekan Mulai → intersepsi ini ketemu trip
-        // "Pancing" kemarin → redirect ke sana, trip Kota 1 TAK PERNAH dibuat.
-        // Diulang berapa kali pun hasilnya sama. Scope hari ini menutup itu tanpa
-        // melemahkan proteksi double-submit (dua klik terjadi di hari yang sama).
-        $activeTrip = Trip::where('operator_id', auth()->id())
-            ->whereDate('trip_date', today())
-            ->whereNotNull('started_at')
-            ->whereNull('ended_at')
-            ->first();
+        // di-"Akhiri Trip" (ended_at masih null) MEMBAJAK setiap trip berikutnya.
+        //
+        // 🔴 TIDAK LAGI REDIRECT DIAM-DIAM (fix 29 Juli 2026). Inilah titik yang
+        // membuat owner mengira "pilih Kota 1 → kebuka Pancing": operator menekan
+        // Mulai dari halaman basi hasil BACK, intersepsi ini menemukan Trip Bebas
+        // yang masih berjalan, lalu MELEMPARNYA ke trip itu tanpa sepatah kata.
+        // Sekarang: tidak pindah halaman, tampilkan kartu trip berjalan + kalimat
+        // tegas bahwa trip baru TIDAK dibuat. Operator yang memutuskan.
+        $activeTrip = $this->activeTrip();
 
         if ($activeTrip) {
-            return $this->redirect(route('operator.trip.active', $activeTrip->id), navigate: true);
+            $area = $activeTrip->starting_cluster_id
+                ? ($activeTrip->startingCluster?->name ?? 'area awal')
+                : 'Semua Kios';
+
+            $this->conflictMessage = 'Kamu sudah punya trip berjalan ('.$area.'). '
+                .'Trip baru TIDAK dibuat. Lanjutkan trip itu, atau batalkan dulu kalau salah pilih.';
+
+            return null;
         }
 
         // Nomor trip harian sekarang unik PER OWNER (lihat idx_trip_owner_date_number).
@@ -232,8 +353,17 @@ class StartTrip extends Component
 
     public function render()
     {
+        // Trip berjalan dievaluasi tiap RENDER, bukan sekali di mount(). Itulah yang
+        // membuat halaman basi hasil BACK bisa sembuh sendiri pada roundtrip Livewire
+        // pertama (lihat catatan di mount()).
+        $activeTrip = $this->activeTrip();
+
         return view('livewire.operator.start-trip', [
-            'clusters' => $this->clusters,
+            'activeTrip' => $activeTrip,
+            'canCancelActiveTrip' => $activeTrip !== null && $this->canCancelActiveTrip(),
+            // Daftar area cuma dibutuhkan kalau formnya memang tampil — jangan
+            // bayar query urgensi per-cluster saat layarnya kartu "trip berjalan".
+            'clusters' => $activeTrip ? collect() : $this->clusters,
         ]);
     }
 }
