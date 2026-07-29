@@ -7,6 +7,7 @@ use App\Models\KioskVisit;
 use App\Models\Trip;
 use App\Models\User;
 use App\Support\TripAggregator;
+use App\Support\TripAreas;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -70,9 +71,15 @@ class TripHistoryController extends Controller
             ->orderBy('name')
             ->get(['id', 'name']);
 
+        // Label AREA yang jujur per baris. Sejak operator boleh menyeberang area di
+        // tengah trip, "Kota 1" polos bisa menyembunyikan kunjungan di Pancing.
+        // 2 query BATCH — bukan per-baris (pola sama dengan aggregatesFor()).
+        $areas = TripAreas::for(collect($trips->items())->pluck('id')->all());
+
         return view('owner.trips.index', [
             'trips' => $trips,
             'aggregates' => $aggregates,
+            'areas' => $areas,
             'operators' => $operators,
             'filters' => [
                 'status' => $status,
@@ -155,6 +162,8 @@ class TripHistoryController extends Controller
                 'mika_sisa' => $mikaDibawa - $mikaDrop,
             ],
             'visitRows' => $visitRows,
+            // Label area jujur — ikut menyebut area yang diseberangi, bukan cuma area awal.
+            'area' => TripAreas::forTrip($trip->id),
         ]);
     }
 }

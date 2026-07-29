@@ -27,7 +27,9 @@
                 <div>
                     <span class="text-lg font-bold text-slate-900">Trip #{{ $activeTrip->trip_number_of_day }} — {{ $activeTrip->operator->name }}</span>
                     <p class="text-sm text-slate-500 mt-1">
-                        Area: <span class="text-amber-700 font-semibold">{{ $activeTrip->startingCluster->name ?? 'Semua Kios' }}</span> 
+                        {{-- Label area JUJUR: trip yang menyeberang tidak boleh tertulis
+                             sebagai satu area saja. --}}
+                        Area: <span class="{{ $stats['area_crossed'] ? 'text-sky-700' : 'text-amber-700' }} font-semibold">{{ $stats['area_label'] }}</span>
                         | Mulai: <span class="font-medium text-slate-700">{{ $activeTrip->started_at ? $activeTrip->started_at->format('H:i') : '—' }}</span>
                         | Bawa: <span class="font-medium text-slate-700">{{ $activeTrip->qty_carried_total }} mika</span>
                     </p>

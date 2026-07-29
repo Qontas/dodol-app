@@ -56,6 +56,7 @@
                         <tr>
                             <th class="px-4 py-3 text-left font-medium">Tanggal</th>
                             <th class="px-4 py-3 text-left font-medium">Operator</th>
+                            <th class="px-4 py-3 text-left font-medium">Area</th>
                             <th class="px-4 py-3 text-right font-medium">Kios</th>
                             <th class="px-4 py-3 text-right font-medium">Mika Diantar</th>
                             <th class="px-4 py-3 text-right font-medium">Omset</th>
@@ -67,7 +68,10 @@
                     </thead>
                     <tbody class="divide-y divide-slate-100">
                         @forelse ($trips as $trip)
-                            @php $agg = $aggregates[$trip->id] ?? ['kios' => 0, 'mika_diantar' => 0, 'omset' => 0, 'komisi' => 0, 'untung_bersih' => 0]; @endphp
+                            @php
+                                $agg = $aggregates[$trip->id] ?? ['kios' => 0, 'mika_diantar' => 0, 'omset' => 0, 'komisi' => 0, 'untung_bersih' => 0];
+                                $area = $areas[$trip->id] ?? ['label' => 'Semua Kios', 'crossed' => false];
+                            @endphp
                             <tr class="hover:bg-slate-50">
                                 <td class="px-4 py-3 whitespace-nowrap">
                                     <a href="{{ route('owner.trips.show', $trip) }}" class="font-medium text-amber-700 hover:text-amber-800">
@@ -76,6 +80,15 @@
                                     <span class="block text-xs text-slate-400">Trip #{{ $trip->trip_number_of_day }}</span>
                                 </td>
                                 <td class="px-4 py-3 whitespace-nowrap text-slate-700">{{ $trip->operator?->name ?? '—' }}</td>
+                                {{-- Area JUJUR: kalau trip menyeberang, labelnya menyebutkannya.
+                                     Jangan pernah tertulis "Kota 1" polos untuk trip yang
+                                     kunjungannya juga ada di Pancing. --}}
+                                <td class="px-4 py-3 text-slate-700">
+                                    <span class="{{ $area['crossed'] ? 'font-medium text-sky-800' : '' }}">{{ $area['label'] }}</span>
+                                    @if ($area['crossed'])
+                                        <span class="ml-1 inline-flex rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800 align-middle">lintas</span>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3 text-right text-slate-700">{{ $agg['kios'] }}</td>
                                 <td class="px-4 py-3 text-right text-slate-700">{{ number_format($agg['mika_diantar'], 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right text-slate-900 font-medium">Rp {{ number_format($agg['omset'], 0, ',', '.') }}</td>
@@ -113,7 +126,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="px-4 py-10 text-center text-slate-500">
+                                <td colspan="10" class="px-4 py-10 text-center text-slate-500">
                                     Tidak ada trip yang cocok dengan filter.
                                 </td>
                             </tr>

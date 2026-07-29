@@ -29,8 +29,17 @@
                     <p class="mt-1 text-sm text-slate-600">
                         Trip #{{ $trip->trip_number_of_day }} &middot;
                         Operator: <span class="font-medium text-slate-800">{{ $trip->operator?->name ?? '—' }}</span> &middot;
-                        Area mulai: {{ $trip->startingCluster?->name ?? 'Semua Kios' }}
+                        {{-- Label area JUJUR: ikut menyebut area yang diseberangi
+                             (operator boleh pindah area di tengah trip). --}}
+                        Area: <span class="{{ $area['crossed'] ? 'font-medium text-sky-800' : '' }}">{{ $area['label'] }}</span>
                     </p>
+                    @if ($area['crossed'])
+                        <p class="mt-1 text-xs text-sky-700">
+                            Trip ini menyeberang area — kunjungan tercatat di
+                            {{ count($area['visited']) }} area, semuanya dalam SATU trip
+                            (komisi &amp; stok tetap dihitung sebagai satu trip).
+                        </p>
+                    @endif
                 </div>
                 <div class="flex flex-wrap items-center gap-1.5">
                     <a href="{{ route('owner.trips.export.pdf', $trip) }}"

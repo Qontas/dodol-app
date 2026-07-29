@@ -5,6 +5,7 @@ namespace App\Livewire\Owner;
 use Livewire\Component;
 use App\Models\Trip;
 use App\Models\Kiosk;
+use App\Support\TripAreas;
 
 class LiveTripProgress extends Component
 {
@@ -34,11 +35,31 @@ class LiveTripProgress extends Component
             ->whereHas('cluster', fn ($q) => $q->where('owner_id', auth()->id()))
             ->get(['id', 'cluster_id', 'name']);
 
+        // Area yang RELEVAN per trip (area awal + area yang sudah disentuh). 2 query
+        // batch untuk semua trip sekaligus — bukan per-baris.
+        $areas = TripAreas::for($activeTrips->pluck('id')->all());
+
         $tripStats = [];
         foreach ($activeTrips as $trip) {
+            $area = $areas[$trip->id] ?? null;
+
+            // 🔴 DENOMINATOR "sudah visit X dari Y kios" (fix 29 Juli 2026).
+            //
+            // Dulu: kios di `starting_cluster_id` saja. Sejak operator boleh
+            // menyeberang area di tengah trip, angka itu jadi bohong dua arah —
+            // pembilang bisa melampaui penyebut ("6 dari 5 kios").
+            //
+            // Sekarang: kios di area AWAL + SETIAP area yang sudah benar-benar
+            // disentuh trip ini. Dipilih karena paling tidak membingungkan owner:
+            // selama operator masih di satu area, angkanya PERSIS seperti dulu
+            // ("5 dari 54"); begitu ia menyeberang, target tumbuh hanya sebesar
+            // area yang memang sudah ia masuki — tak pernah melompat ke seluruh
+            // kios bisnis (yang akan membuat progres terlihat runtuh tanpa sebab).
+            $relevant = $area['relevant_cluster_ids'] ?? [];
+
             $kiosksForTrip = $trip->starting_cluster_id
-                ? $ownerKiosks->where('cluster_id', $trip->starting_cluster_id)
-                : $ownerKiosks;
+                ? $ownerKiosks->whereIn('cluster_id', $relevant ?: [$trip->starting_cluster_id])
+                : $ownerKiosks; // Trip Bebas memang menyasar semua kios — tak berubah.
 
             // Settlement titipan yang di-settle pada trip ini. unique() per
             // delivery: visit extension bisa menunjuk delivery yang sama.
@@ -63,6 +84,8 @@ class LiveTripProgress extends Component
             $visitedIds = $trip->visits->pluck('kiosk_id')->all();
 
             $tripStats[$trip->id] = [
+                'area_label' => $area['label'] ?? ($trip->startingCluster->name ?? 'Semua Kios'),
+                'area_crossed' => $area['crossed'] ?? false,
                 'total_kios' => $kiosksForTrip->count(),
                 'unvisited_kiosks' => $kiosksForTrip->reject(fn ($k) => in_array($k->id, $visitedIds, true))->values(),
                 'omset' => $omset,
