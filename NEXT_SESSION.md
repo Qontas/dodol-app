@@ -1,5 +1,156 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 29 Juli 2026*
+*Sesi terakhir: 30 Juli 2026*
+
+## 🔴 EMPAT PERBAIKAN NYAMBUNG DI LAYAR TRIP OPERATOR (30 Juli 2026) — SELESAI & PUSHED
+**+43 test baru, 485 regresi hijau (dari 443). Diverifikasi di Chrome sungguhan: 29/29 PASS.**
+Lima commit atomik: A jalan-keluar / B lintas-area / C laporan-jujur / D kartu / E nomor-trip.
+
+### A. JALAN KELUAR DARI TRIP YANG SALAH (`ec512aa`)
+GEJALA OWNER: mulai Trip Bebas 75 mika → tekan BACK → layar Mulai Trip muncul lagi → pilih
+"Kota 1" → tekan Mulai → yang terbuka daftar kedai yang dia kira Pancing.
+
+**DUGAAN OWNER BENAR, TAPI MEKANISMENYA BUKAN BFCACHE BROWSER.** Diverifikasi di sumber
+Livewire, bukan ditebak: `wire:navigate` punya `snapshotCache` JavaScript sendiri
+(`vendor/livewire/livewire/dist/livewire.js:8127`) yang pada `popstate` menempelkan HTML
+lama ke DOM **tanpa satu pun request ke server**:
+```js
+if (snapshotCache.has(alpine.snapshotIdx)) {
+    let snapshot = snapshotCache.retrieve(alpine.snapshotIdx);
+    handleHtml(snapshot.html, ...)     // ← langsung ditempel ke DOM
+}
+```
+Jadi `mount()` tak pernah jalan, dan middleware `no-store` (routes/web.php:110) yang
+**sudah terpasang** tidak berpengaruh sama sekali — tak ada HTTP untuk difilter. Bagian
+kedua dugaan juga benar: "Proteksi 1" di `startTrip()` menemukan trip bebas aktif lalu
+**redirect DIAM-DIAM** ke sana. Karena kartu kedai tak berlabel area, owner mengira
+"kebuka Pancing".
+
+FIX:
+1. Guard pindah dari `mount()` ke **RENDER**. Ada trip aktif → **KARTU**
+   ("Trip #2 — Semua Kios, mulai 16:35, bawa 75 mika") + [Lanjutkan Trip] / [Batalkan Trip Ini].
+2. `startTrip()` tak lagi redirect saat bentrok — "Kamu sudah punya trip berjalan
+   (Semua Kios). Trip baru TIDAK dibuat." Operator yang memutuskan.
+3. Batalkan = **ARSIP** (soft delete Ronde 1), hanya untuk trip **benar-benar kosong**
+   (0 kunjungan, 0 delivery, 0 komisi). Guard diulang **server-side** — tak bersandar
+   pada tombol yang disembunyikan UI. Trip berisi aktivitas → diarahkan ke "Akhiri Trip".
+4. `partials/stale-page-guard.blade.php` (baru, dipasang di layout operator): memicu
+   `$refresh` saat halaman tiba lewat back/forward (`livewire:navigate` detail.history +
+   `pageshow.persisted`) untuk komponen bertanda `data-stale-page-guard`.
+5. Kartu memakai `latest('id')`, sama dengan `ActiveTrip::mount()`. Dulu `->first()`
+   (id TERKECIL) → kartunya sendiri bisa menyebut trip yang salah.
+
+⚠️ **KONTRAK LAMA DIUBAH**: dua test meng-assert `assertRedirect` dari `mount()`.
+Redirect diam-diam itu justru akarnya, jadi keduanya diperbarui ke perilaku kartu.
+
+### B. LINTAS AREA DI TENGAH TRIP (`7c2a96d`)
+Operator bawa 75 mika, area awal habis, dodol masih sisa → lanjut ke area lain **tanpa
+mengakhiri trip** (kalau akhiri lalu mulai baru: komisi & pengantaran terpecah 2 trip).
+
+**Jalur TULIS ternyata SUDAH siap**: `openVisitModal()` → `ownedKiosk()` hanya memeriksa
+OWNER, tak pernah memeriksa cluster. Yang terkunci selama ini cuma DAFTARNYA.
+
+FIX:
+- `viewClusterId` (baru) memfilter daftar; `starting_cluster_id` kini murni catatan
+  "area awal". `switchArea()` **tidak menyentuh trip** — tak diakhiri, tak diubah.
+  Cluster diverifikasi milik owner (server-side).
+- Panel **"Lihat Area Lain"**: daftar area + jumlah kios, plus **"Semua Area"**.
+  Area asal ditandai "· area awal". Query hanya saat panel dibuka.
+- "Semua Area" mengelompokkan per area **tapi mendahulukan area asal di paling atas**
+  (Kota 1 menang atas Pancing walau kalah abjad).
+- Ganti area **mereset batch** ke 50; "Muat lebih banyak" tetap menjangkau ekor area baru.
+- Pemilihan area **eksplisit**, bukan lewat jarak — cakupan GPS cuma ~12% (119/1014).
+
+**"Urutkan Jarak" — dua perbaikan:**
+  a. **Kios tanpa GPS tak lagi hilang.** Dulu diberi `PHP_FLOAT_MAX` lalu tenggelam ke ekor
+     dan terpotong batas batch — senyap, padahal itu **88% kedai**. Sekarang grup sendiri:
+     "Tanpa lokasi GPS / di luar jangkauan".
+  b. **Performa.** Dulu `$query->get()` TANPA limit + haversine PHP untuk SEMUA kios owner.
+     Sekarang bounding box SQL 25 km lebih dulu (index `idx_kiosks_geo` — sudah ada sejak
+     awal, tak pernah dipakai). **Diukur pada 957 kios (119 ber-GPS, meniru produksi):
+     baris ditarik & dihitung haversine 957 → 119 (−88%).** Batch dibagi dua grup (25+25)
+     supaya kartu di layar tetap ±50, bukan 100.
+
+Bonus: kios sentinel "Penjualan Walk-in" selama ini muncul sebagai **kartu** di Trip Bebas
+(dan cluster sentinelnya sebagai "area" di layar Mulai Trip). Kini dikecualikan.
+
+### C. LAPORAN JUJUR SAAT LINTAS AREA (`427215b`)
+`App\Support\TripAreas` (baru) — area yang **benar-benar disentuh** sebuah trip.
+**2 query BATCH** untuk berapa pun jumlah trip (pola sama dengan `TripAggregator`),
+jangan dipanggil dalam loop. Mengecualikan kunjungan **DIKOREKSI** dan penjualan
+**walk-in** — keduanya bukan "menyeberang area".
+
+- **Riwayat Trip: kolom "Area" BARU** — "Kota 1 + lintas area: Pancing" + badge "lintas".
+  Trip satu-area tetap "Kota 1" polos; Trip Bebas tetap "Semua Kios".
+- **Detail trip**: label sama + keterangan "kunjungan tercatat di N area, tetap SATU trip".
+- **LiveTripProgress**: denominator = kios di area AWAL **+ setiap area yang sudah
+  disentuh**. Dipilih karena paling tidak membingungkan owner: selama operator masih di
+  satu area angkanya PERSIS seperti dulu ("5 dari 54"); begitu menyeberang, target tumbuh
+  hanya sebesar area yang memang dimasuki — tak melompat ke seluruh kios bisnis (yang
+  membuat progres terlihat runtuh tanpa sebab). Trip Bebas tak berubah.
+
+⚠️ **KOMISI/OMSET/UNTUNG/STOK TIDAK DISENTUH.** Dikunci test: dua trip berisi persis
+sama (9 mika, uang sama), bedanya hanya satu kedai di area lain → **semua** angka
+finansial identik (delta 0.0001), plus nilai absolutnya dikunci (omset Rp 108.000,
+komisi Rp 9.000, drop 9 mika). Riwayat Trip tetap bebas N+1 (<30 query untuk 20 baris).
+
+### D. KARTU KEDAI: AREA + TITIPAN (`fb5b6fe`)
+- **Label AREA** kecil menempel di baris pemilik ("Bu Ani · Kota 1") — **tinggi kartu tidak
+  bertambah**. REKOMENDASI YANG DIJALANKAN: **disembunyikan di trip satu-area** (di sana ia
+  cuma mengulang header). Muncul begitu daftar menjangkau >1 area, termasuk mode jarak
+  (yang grupnya geo/non-geo, bukan area).
+- **Judul pemisah per area** ("— KOTA 1 · AREA AWAL — 3 kios") saat multi-area.
+- **TITIPAN, tiga kondisi, satu badge**: konsinyasi bertitipan → **"4 mika"** (hijau);
+  cash-only → "💵 Cash Only" (kuning); booking → "📌 Belum pernah dititip"
+  (badge yang SUDAH ADA, tak diduplikat).
+  REKOMENDASI YANG DIJALANKAN: badge **"Ada Titipan" DIGANTI angkanya** — tempat sama,
+  informasi jauh lebih berguna. ("Ada Titipan" tersisa hanya untuk data lama qty 0.)
+- **QUERY TURUN**: titipan dipasang sebagai `withCount` + `withSum` (subquery
+  **berkorelasi** di query utama, pola sama dengan kolom "Titipan" panel owner) sehingga
+  **menggantikan** query terpisah `pendingKioskIdsFor()`. Diukur: **10 → 9 query, dan
+  KONSTAN** — 9 untuk 5 kios DAN 9 untuk 50 kios. Test mengunci (3 vs 43 kios, selisih 0).
+
+### E. 🔴 NOMOR TRIP HARUS MENGHITUNG TRIP TERARSIP (`c54f978`)
+**DITEMUKAN VERIFIKASI BROWSER, BUKAN DARI TEST.** Alur "Batalkan trip kosong → mulai trip
+Kota 1" GAGAL di browser sungguhan: operator terlempar ke dashboard tanpa trip, tanpa
+penjelasan.
+
+AKAR: index unik `idx_trip_owner_date_number` **tetap memegang** baris yang diarsipkan —
+soft delete tak melepaskan nomornya. Tapi `max('trip_number_of_day')` lewat model Trip
+kena global scope SoftDeletes → nomor 1 dipakai ulang → duplicate key → ditelan
+`catch (\Throwable)` → fallback null → redirect dashboard.
+
+Kenapa lolos test: fixture kebetulan memberi trip lama nomor **2**, jadi trip baru dapat
+nomor 1 dan tak pernah bertabrakan. Test kini memakai nomor **1 dengan sengaja**, plus
+satu test khusus untuk bentuk murninya.
+
+⚠️ **BUKAN bug baru sesi ini** — jalur "owner mengarsipkan trip dari panel, lalu operator
+mulai trip di hari yang sama" sudah bisa gagal begini **sejak fitur arsip trip (16 Juli
+2026)**. Fitur "Batalkan Trip" cuma membuatnya mudah dijangkau.
+
+FIX: `Trip::withTrashed()` saat menghitung nomor berikutnya + fallback mutlak tak lagi
+diam (operator diberi tahu kalau trip gagal dibuat, bukan dilempar ke dashboard).
+
+### BUKTI BROWSER (Chrome sungguhan, viewport HP 420px — `verify-lintas-area.cjs`)
+**29/29 PASS.** Screenshot di `.claude/skills/verify-browser/shots/lintas-*.png`.
+
+| Yang diuji | Hasil |
+|---|---|
+| Trip Bebas 75 mika → **BACK** → /operator/trip/start | **KARTU** "Kamu masih punya trip berjalan", bukan form |
+| Kartu menyebut area + mika | "Trip #1 — **Semua Kios**, mulai 17:38, bawa **75 mika**" |
+| Batalkan trip kosong | "dibatalkan dan diarsipkan", form kembali |
+| Mulai trip **Kota 1** | daftar berisi Kedai Bu Ani + Warung Cash, **tanpa** Sidorukun/Bilal 3 |
+| Kartu kedai | "**4 mika**" / "**Cash Only**" / "**Belum pernah dititip**"; "Ada Titipan" hilang |
+| "Lihat Area Lain" → Pancing | kedai Pancing tampil, **Trip #2 tetap #2**, masih di halaman trip |
+| Header | "Area awal: Kota 1" + "👀 Sedang lihat: …" |
+| "Semua Area" | pemisah "KOTA 1 · AREA AWAL 3 kios"; label kartu "Bu Ani · Kota 1"; **area awal di atas** |
+
+### CATATAN UNTUK SESI BERIKUTNYA
+- Layar trip di viewport 420px: tombol "+ Kios Baru" dan "Urutkan Jarak" berdesakan sampai
+  membungkus dua baris. **Pre-existing**, bukan dari sesi ini (baris "Lihat Area Lain"
+  berada di baris sendiri di atasnya). Kandidat rapikan berikutnya.
+- `GEO_BBOX_KM = 25` (ActiveTrip). Kalau suatu saat hampir semua kios ber-GPS, kecilkan.
+- Test query-count yang mengukur daftar terpaginasi WAJIB memakai nama/urutan eksplisit
+  (pelajaran 28 Juli, masih berlaku).
 
 ## FIX TOOLTIP MATI DI TABEL — dipindah ke elemen pembungkus (29 Juli 2026) — SELESAI & PUSHED
 **+2 test baru, 443 regresi hijau (dari 441). Diverifikasi di Chrome: tooltip BENAR-BENAR muncul.**
