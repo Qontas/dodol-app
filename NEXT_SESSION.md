@@ -144,10 +144,22 @@ diam (operator diberi tahu kalau trip gagal dibuat, bukan dilempar ke dashboard)
 | Header | "Area awal: Kota 1" + "👀 Sedang lihat: …" |
 | "Semua Area" | pemisah "KOTA 1 · AREA AWAL 3 kios"; label kartu "Bu Ani · Kota 1"; **area awal di atas** |
 
+### F. RAPIKAN TOMBOL "KIOS BARU" & "URUTKAN JARAK"
+Judul "DAFTAR KUNJUNGAN" + dua tombol dulu berebut SATU baris (~388px di HP 420px), jadi
+ketiganya sama-sama membungkus dua baris dan terlihat gepeng. Sekarang judul di baris
+sendiri, dua tombol di baris berikutnya dengan **lebar sama rata** (`grid-cols-2`) dan
+`whitespace-nowrap`. Label mode aktif dipendekkan dari "Terurut Jarak Terdekat" (22 huruf,
+pasti membungkus di setengah lebar layar) jadi **"Terdekat Dulu"**; "+ Kios Baru" jadi
+"Kios Baru" karena ikon `+` sudah ada di sebelahnya.
+
+Diukur di browser — target sentuh 44px tetap terjaga, **tak ada teks yang membungkus**:
+
+| viewport | Kios Baru | Urutkan Jarak | mode aktif "Terdekat Dulu" |
+|---|---|---|---|
+| 360px | 144×44, 1 baris | 144×44, 1 baris | 144×44, 1 baris |
+| 420px | 174×44, 1 baris | 174×44, 1 baris | 174×44, 1 baris |
+
 ### CATATAN UNTUK SESI BERIKUTNYA
-- Layar trip di viewport 420px: tombol "+ Kios Baru" dan "Urutkan Jarak" berdesakan sampai
-  membungkus dua baris. **Pre-existing**, bukan dari sesi ini (baris "Lihat Area Lain"
-  berada di baris sendiri di atasnya). Kandidat rapikan berikutnya.
 - `GEO_BBOX_KM = 25` (ActiveTrip). Kalau suatu saat hampir semua kios ber-GPS, kecilkan.
 - Test query-count yang mengukur daftar terpaginasi WAJIB memakai nama/urutan eksplisit
   (pelajaran 28 Juli, masih berlaku).
