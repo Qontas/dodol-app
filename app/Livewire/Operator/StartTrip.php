@@ -304,7 +304,15 @@ class StartTrip extends Component
         // Fallback ke operator_id kalau owner_id null (data lama / operator tanpa owner).
         $ownerId = auth()->user()->owner_id;
 
-        $numberQuery = Trip::whereDate('trip_date', today());
+        // 🔴 withTrashed WAJIB (ketahuan dari verifikasi browser 29 Juli 2026).
+        // Index unik `idx_trip_owner_date_number` (owner, tanggal, nomor) tetap
+        // MEMEGANG baris yang diarsipkan — soft delete tidak melepaskan nomornya.
+        // Tanpa withTrashed, global scope SoftDeletes menyembunyikan trip terarsip
+        // dari max(), nomor terpakai dipakai ulang, INSERT kena duplicate key, lalu
+        // ditelan catch di bawah → operator terlempar ke dashboard TANPA trip dan
+        // tanpa penjelasan. Persis terjadi pada alur "Batalkan Trip → mulai trip
+        // baru hari yang sama", dan sudah bisa terjadi sejak fitur arsip trip.
+        $numberQuery = Trip::withTrashed()->whereDate('trip_date', today());
         if ($ownerId !== null) {
             $numberQuery->where('owner_id', $ownerId);
         } else {
@@ -343,9 +351,14 @@ class StartTrip extends Component
                 ->first();
         }
 
-        // Pengaman jika trip gagal dibuat dan gagal diambil (fallback mutlak)
-        if (!$trip) {
-            return redirect()->route('operator.dashboard');
+        // Pengaman mutlak: trip gagal dibuat DAN gagal diambil. JANGAN diam-diam
+        // melempar ke dashboard — itu persis bentuk kegagalan senyap yang sedang
+        // diberantas sesi ini. Operator harus tahu tripnya tidak jadi.
+        if (! $trip) {
+            $this->conflictMessage = 'Trip gagal dibuat. Coba tekan Mulai Trip sekali lagi; '
+                .'kalau tetap gagal, hubungi owner.';
+
+            return null;
         }
 
         return $this->redirect(route('operator.trip.active', $trip->id), navigate: true);

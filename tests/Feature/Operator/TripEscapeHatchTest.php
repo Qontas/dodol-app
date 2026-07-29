@@ -147,7 +147,12 @@ class TripEscapeHatchTest extends TestCase
     public function test_end_to_end_cancel_then_start_kota1_opens_kota1_kiosks(): void
     {
         [$owner, $operator, $kota1, $pancing] = $this->scaffold();
-        $this->tripBebas($owner, $operator);
+        // 🔴 nomor 1 DISENGAJA (ketahuan dari verifikasi browser): trip yang diarsipkan
+        // TETAP memegang nomornya di index unik idx_trip_owner_date_number. Kalau
+        // penomoran trip baru tak menghitung trip terarsip, nomor 1 dipakai ulang →
+        // duplicate key → operator terlempar ke dashboard tanpa trip. Dengan nomor 2
+        // (default helper) tabrakan itu tak pernah terjadi dan bug lolos.
+        $this->tripBebas($owner, $operator, number: 1);
 
         Kiosk::factory()->create(['cluster_id' => $kota1->id, 'name' => 'Kedai Kota Satu', 'sort_order' => 1]);
         Kiosk::factory()->create(['cluster_id' => $pancing->id, 'name' => 'Bilal 3', 'sort_order' => 50]);
@@ -170,6 +175,45 @@ class TripEscapeHatchTest extends TestCase
             ->assertSet('trip.id', $baru->id)
             ->assertSee('Kedai Kota Satu')
             ->assertDontSee('Bilal 3');
+
+        // Nomor trip baru MELEWATI nomor yang masih dipegang trip terarsip.
+        $this->assertSame(2, $baru->trip_number_of_day);
+    }
+
+    /**
+     * Bentuk murni bug penomoran di atas: trip yang DIARSIPKAN tetap memegang
+     * nomornya di index unik `idx_trip_owner_date_number` (soft delete tidak
+     * melepaskan baris). Penomoran trip berikutnya WAJIB menghitung trip terarsip,
+     * kalau tidak INSERT-nya kena duplicate key dan trip tak pernah terbentuk.
+     *
+     * Ini juga menutup jalur yang sudah ada sejak fitur arsip trip: owner
+     * mengarsipkan trip dari panel, lalu operator mulai trip di hari yang sama.
+     */
+    public function test_archived_trip_still_reserves_its_number(): void
+    {
+        [$owner, $operator, $kota1] = $this->scaffold();
+
+        $lama = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'trip_date' => today(), 'trip_number_of_day' => 1,
+            'starting_cluster_id' => $kota1->id,
+            'started_at' => now()->subHours(2), 'ended_at' => now()->subHour(),
+        ]);
+        $lama->delete(); // diarsipkan (mis. dari panel owner)
+
+        $this->actingAs($operator);
+
+        Livewire::test(StartTrip::class)
+            ->set('selectedClusterId', $kota1->id)
+            ->set('qtyCarried', 50)
+            ->call('startTrip')
+            ->assertRedirect();
+
+        $baru = Trip::whereNull('ended_at')->first();
+
+        $this->assertNotNull($baru, 'Trip baru harus terbentuk, bukan gagal diam-diam.');
+        $this->assertSame(2, $baru->trip_number_of_day, 'Nomor 1 masih dipegang trip terarsip.');
+        $this->assertSame($kota1->id, $baru->starting_cluster_id);
     }
 
     /**
