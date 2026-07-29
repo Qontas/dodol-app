@@ -317,6 +317,14 @@ class ActiveTrip extends Component
 
         $displayedIds = $kiosks->pluck('id')->all();
 
+        // Titipan BERJALAN per kios: jumlah mika + ada/tidaknya. Keduanya sudah ikut
+        // di query utama sebagai subquery berkorelasi (lihat withCardAggregates) →
+        // 0 query tambahan, dan MENGGANTIKAN query terpisah pendingKioskIdsFor()
+        // yang dulu dipakai badge "Ada Titipan".
+        $pendingKioskIds = $kiosks
+            ->filter(fn ($k) => (int) ($k->pending_titipan_count ?? 0) > 0)
+            ->pluck('id')->all();
+
         // BADGE "belum pernah dititip" = kedai BOOKING (belum ada dodol; belum cash-only,
         // belum punya jatah). Diturunkan dari kolom yang SUDAH termuat di tiap kios
         // (is_cash_only + default_qty_mika, lihat Kiosk::isBooking) → 0 query tambahan,
@@ -332,8 +340,12 @@ class ActiveTrip extends Component
             'kioskGroups' => $groups,
             'visitedKioskIds' => $visitedKioskIds,
             'correctedKioskIds' => $correctedKioskIds,
-            'pendingKioskIds' => $this->pendingKioskIdsFor($displayedIds),
+            'pendingKioskIds' => $pendingKioskIds,
             'bookingKioskIds' => $bookingKioskIds,
+            // Label area di KARTU hanya saat daftar memang menjangkau lebih dari satu
+            // area. Di trip satu-area ia cuma mengulang header dan menaikkan tinggi
+            // kartu. Di mode jarak label ini WAJIB: grupnya geo/non-geo, bukan area.
+            'showAreaOnCard' => $kiosks->pluck('cluster_id')->unique()->count() > 1,
             'kioskFlags' => $this->computeKioskFlags($kiosks),
             'lastOperatorPerKiosk' => $this->lastOperatorFor($displayedIds),
             'totalMatched' => $totalMatched,
@@ -378,7 +390,7 @@ class ActiveTrip extends Component
      */
     private function kiosksByRoute(callable $base, array $visitedKioskIds, Collection $perClusterTotals): array
     {
-        $query = $base()->with('cluster:id,name');
+        $query = $this->withCardAggregates($base());
 
         if (! empty($visitedKioskIds)) {
             $ids = implode(',', array_map('intval', $visitedKioskIds));
@@ -429,8 +441,7 @@ class ActiveTrip extends Component
         $latDelta = self::GEO_BBOX_KM / 111.0;
         $lngDelta = self::GEO_BBOX_KM / (111.0 * max(cos(deg2rad($lat)), 0.01));
 
-        $nearby = $base()
-            ->with('cluster:id,name')
+        $nearby = $this->withCardAggregates($base())
             ->whereNotNull('latitude')
             ->whereNotNull('longitude')
             ->whereBetween('latitude', [$lat - $latDelta, $lat + $latDelta])
@@ -458,7 +469,7 @@ class ActiveTrip extends Component
 
         // SISANYA: kios tanpa koordinat, atau ber-GPS tapi di luar kotak. Diurut
         // aturan rute biasa — bukan dibuang.
-        $restQuery = $base()->with('cluster:id,name');
+        $restQuery = $this->withCardAggregates($base());
         if ($nearbyTotal > 0) {
             $restQuery->whereNotIn('kiosks.id', $nearby->pluck('id')->all());
         }
@@ -606,21 +617,27 @@ class ActiveTrip extends Component
     }
 
     /**
-     * Kios (dari himpunan TAMPIL) yang masih punya titipan belum di-settle.
-     * Satu query whereIn, hindari N+1.
+     * Data KARTU yang butuh agregat per kios, dipasang sebagai SUBQUERY BERKORELASI
+     * di query utama — bukan query terpisah per baris. Daftar bisa ratusan kios, jadi
+     * ini titik paling rawan N+1.
+     *
+     *  - `cluster:id,name`      → label area di kartu & judul pemisah (1 eager load).
+     *  - `pending_titipan_mika` → berapa mika titipan berjalan (angka di kartu).
+     *  - `pending_titipan_count`→ ada/tidaknya titipan (menggantikan query terpisah
+     *                             pendingKioskIdsFor yang dulu dipanggil tiap render).
+     *
+     * Pola withSum ini sama persis dengan kolom "Titipan" di panel owner
+     * (KioskResource::getEloquentQuery) — satu aturan, bukan dua yang bisa menyimpang.
      */
-    private function pendingKioskIdsFor(array $kioskIds): array
+    private function withCardAggregates(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
     {
-        if (empty($kioskIds)) {
-            return [];
-        }
-
-        return Delivery::whereIn('kiosk_id', $kioskIds)
-            ->doesntHave('settlement')
-            ->pluck('kiosk_id')
-            ->unique()
-            ->values()
-            ->all();
+        return $query
+            ->with('cluster:id,name')
+            ->withCount(['deliveries as pending_titipan_count' => fn ($q) => $q->doesntHave('settlement')])
+            ->withSum(
+                ['deliveries as pending_titipan_mika' => fn ($q) => $q->doesntHave('settlement')],
+                'qty_delivered',
+            );
     }
 
     /**

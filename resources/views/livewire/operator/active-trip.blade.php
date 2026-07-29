@@ -176,6 +176,10 @@
             @php
                 $isVisited = in_array($kiosk->id, $visitedKioskIds);
                 $hasPending = in_array($kiosk->id, $pendingKioskIds);
+                // Mika titipan berjalan — dari subquery berkorelasi di query utama
+                // (withCardAggregates), 0 query per kartu.
+                $titipanMika = (int) ($kiosk->pending_titipan_mika ?? 0);
+                $isBooking = in_array($kiosk->id, $bookingKioskIds);
             @endphp
             <div wire:key="kiosk-{{ $kiosk->id }}"
                  @if(!$isVisited) wire:click="openVisitModal({{ $kiosk->id }})" @endif
@@ -183,7 +187,16 @@
                         {{ $isVisited ? 'opacity-50 cursor-default border-slate-200' : 'cursor-pointer border-slate-200 active:bg-slate-50 hover:border-amber-300' }}">
                 <div>
                     <p class="font-bold text-slate-900">{{ $kiosk->name }}</p>
-                    <p class="text-sm text-slate-500">{{ $kiosk->owner_name ?? '—' }}</p>
+                    <p class="text-sm text-slate-500">
+                        {{ $kiosk->owner_name ?? '—' }}
+                        {{-- Label AREA di baris pemilik (tak menambah tinggi kartu).
+                             Hanya saat daftar menjangkau lebih dari satu area — di trip
+                             satu-area ia cuma mengulang header. --}}
+                        @if($showAreaOnCard && $kiosk->cluster)
+                            <span class="text-slate-400">·</span>
+                            <span class="text-slate-500 font-medium">{{ $kiosk->cluster->name }}</span>
+                        @endif
+                    </p>
                     <div class="flex flex-wrap gap-2 mt-1">
                         @if($isVisited)
                             <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✓ Dikunjungi</span>
@@ -193,10 +206,18 @@
                         @if(in_array($kiosk->id, $correctedKioskIds))
                             <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">✎ Dikoreksi</span>
                         @endif
-                        @if($hasPending)
+
+                        {{-- TITIPAN — tiga kondisi, satu badge (tak menambah tinggi kartu).
+                             Angka mika menggantikan badge lama "Ada Titipan": tempat sama,
+                             informasi jauh lebih berguna ("4 mika" vs "ada"). --}}
+                        @if($kiosk->is_cash_only)
+                            <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-semibold">💵 Cash Only</span>
+                        @elseif($hasPending && $titipanMika > 0)
+                            <span class="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full font-semibold">{{ $titipanMika }} mika</span>
+                        @elseif($hasPending)
+                            {{-- Titipan ada tapi qty 0 (data lama) — jangan diam. --}}
                             <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Ada Titipan</span>
-                        @endif
-                        @if(in_array($kiosk->id, $bookingKioskIds) && !$hasPending)
+                        @elseif($isBooking)
                             <span class="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-semibold">📌 Belum pernah dititip</span>
                         @endif
 
