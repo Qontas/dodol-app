@@ -88,6 +88,14 @@ class StartTrip extends Component
      * Trip boleh DIBATALKAN hanya kalau benar-benar kosong: 0 kunjungan, 0 delivery,
      * 0 komisi. Sekali ada aktivitas, satu-satunya jalan keluar adalah "Akhiri Trip"
      * dari dalam trip (supaya stok & komisi ikut dibukukan).
+     *
+     * 🔴 JANGAN LONGGARKAN SYARAT INI. Sejak batal = hapus PERMANEN (30 Juli 2026),
+     * ketatnya syarat inilah satu-satunya yang membuat hapus permanen aman. Ketiga
+     * tabel yang diperiksa di sini SAMA PERSIS dengan ketiga tabel yang ikut terhapus
+     * lewat FK ON DELETE CASCADE dari `trips` (commissions, deliveries, kiosk_visits
+     * — diverifikasi di information_schema, bukan diasumsikan). Selama ketiganya
+     * kosong, forceDelete tidak bisa menghancurkan apa pun. Menambah relasi baru yang
+     * cascade dari `trips`? Tambahkan pemeriksaannya di sini juga.
      */
     private function tripHasActivity(Trip $trip): bool
     {
@@ -104,8 +112,21 @@ class StartTrip extends Component
     }
 
     /**
-     * Batalkan trip yang belum ada aktivitasnya = ARSIPKAN (soft delete, Ronde 1),
-     * BUKAN hapus permanen. Bisa dipulihkan lewat `php artisan trip:restore {id}`.
+     * Batalkan trip yang belum ada aktivitasnya = **HAPUS PERMANEN** (forceDelete).
+     *
+     * 🔴 KEPUTUSAN OWNER 30 Juli 2026 — dulu ini soft delete (arsip), dan itu salah
+     * untuk kasus ini. Untuk trip yang BENAR-BENAR KOSONG arsip tak melindungi apa pun
+     * (tak ada data untuk dijaga), TAPI baris arsipnya TETAP MEMEGANG nomor trip di
+     * index unik `idx_trip_owner_date_number`. Akibatnya operator yang salah pencet
+     * dua kali lalu mulai trip beneran dapat "Trip #3" padahal itu trip PERTAMANYA
+     * hari itu — nomor melompat dan laporan owner berisi trip hantu tanpa isi.
+     *
+     * Aman karena syarat "hanya trip kosong" ketat (lihat tripHasActivity) dan
+     * ketiga tabel yang diperiksa persis sama dengan set FK cascade dari `trips`.
+     *
+     * ⚠️ INI HANYA jalur "Batalkan Trip" milik OPERATOR. Tombol Arsipkan trip di
+     * panel OWNER (Ronde 1) TETAP soft delete + bisa `php artisan trip:restore` —
+     * di sana tripnya BERISI, jadi nomornya memang harus tetap dipegang.
      *
      * 🔒 Guard server-side lengkap — TIDAK bersandar pada tombol yang disembunyikan UI:
      *    (a) trip harus milik operator ini (query di-scope operator_id),
@@ -132,10 +153,15 @@ class StartTrip extends Component
         }
 
         $nomor = $trip->trip_number_of_day;
-        $trip->delete(); // SOFT DELETE = arsip; data anak (tak ada) tetap utuh.
+
+        // HAPUS PERMANEN — bukan arsip. Baris trip hilang dari DB sehingga nomornya
+        // dilepas dari index unik dan bisa dipakai trip berikutnya. Cascade hanya
+        // menyentuh commissions/deliveries/kiosk_visits yang sudah dipastikan KOSONG
+        // oleh guard di atas.
+        $trip->forceDelete();
         $this->forgetActiveTrip(); // memo harus basi sekarang, kalau tidak kartunya tetap tampil.
 
-        $this->cancelMessage = 'Trip #'.$nomor.' dibatalkan dan diarsipkan. '
+        $this->cancelMessage = 'Trip #'.$nomor.' dibatalkan. '
             .'Silakan mulai trip baru dengan area yang benar.';
     }
 

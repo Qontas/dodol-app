@@ -1,6 +1,68 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 30 Juli 2026*
 
+## 🔴 "BATALKAN TRIP" PADA TRIP KOSONG → HAPUS PERMANEN (30 Juli 2026) — SELESAI & PUSHED
+**+2 test (487 hijau, dari 485). Browser: 13/13 PASS skenario batal + 29/29 regresi A/B/C/D.**
+
+MASALAH: `cancelActiveTrip()` memakai soft delete. Untuk trip **benar-benar kosong** itu tak
+melindungi apa pun — tak ada data untuk dijaga — **tapi barisnya tetap memegang nomor trip**
+di index unik `idx_trip_owner_date_number`. Operator yang salah pencet 2x lalu mulai trip
+beneran dapat **"Trip #3"** padahal itu trip pertamanya hari itu. Nomor melompat & laporan
+owner berisi trip hantu tanpa isi.
+
+**KEPUTUSAN OWNER: batal trip KOSONG = `forceDelete()`.**
+
+### Verifikasi FK cascade SEBELUM eksekusi (dibuktikan, bukan diasumsikan)
+Dibaca dari `information_schema` pada DB hidup, bukan dari migration:
+
+| tabel | kolom | → | ON DELETE |
+|---|---|---|---|
+| `commissions` | trip_id | trips | **CASCADE** |
+| `deliveries` | trip_id | trips | **CASCADE** |
+| `kiosk_visits` | trip_id | trips | **CASCADE** |
+
+**Set cascade = SAMA PERSIS dengan yang diperiksa `tripHasActivity()`** (visits, deliveries,
+commissions). Selama ketiganya kosong, forceDelete tak bisa menghancurkan apa pun.
+Rantai tingkat 2 (`settlements`, `delivery_origins` ← deliveries CASCADE;
+`kiosk_visits.new_delivery_id`/`settled_delivery_id` ← deliveries SET NULL;
+`deliveries.kiosk_visit_id`, `kiosk_visits.correction_of_visit_id` SET NULL) semuanya
+menggantung di deliveries/kiosk_visits yang **nol**, jadi tak tersentuh.
+
+**Tak ada relasi lain yang bisa jadi orphan**: seluruh skema disapu untuk kolom `%trip%` —
+satu-satunya di luar 3 FK itu adalah `fuel_logs.trip_count_snapshot` + `cost_per_trip`,
+**angka snapshot manual tanpa FK** (generated column dari snapshot itu sendiri), tak
+dihitung ulang dari tabel trips. View `v_warehouse_stock` tak menyebut trips. Tak ada
+tabel audit/log yang menunjuk trips.
+
+### Yang berubah
+- `cancelActiveTrip()`: `$trip->delete()` → `$trip->forceDelete()`, **setelah** guard lolos.
+- Teks tak lagi bohong: konfirmasi "…akan **DIHAPUS** dan nomornya bisa dipakai lagi. Tidak
+  bisa dibatalkan."; sukses "Trip #N **dibatalkan**." (tanpa "diarsipkan/bisa dipulihkan").
+
+### Yang SENGAJA TIDAK berubah (pengaman — jangan disentuh)
+1. Syarat batal tetap **ketat** (0 kunjungan, 0 delivery, 0 komisi) + guard **server-side**.
+   Ketatnya syarat inilah satu-satunya yang membuat hapus permanen aman. Kalau nanti ada
+   relasi baru yang cascade dari `trips`, **tambahkan pemeriksaannya di `tripHasActivity()`**.
+2. Penomoran trip tetap `Trip::withTrashed()` (fix `c54f978`) — itu untuk kasus **berbeda**:
+   trip **BERISI** yang diarsipkan owner dari panel harus tetap memegang nomornya.
+3. Tombol Arsipkan trip di **panel owner** (Ronde 1) tetap **soft delete** + `trip:restore`.
+
+Dua jalur itu dikunci test terpisah yang saling menjelaskan:
+`test_two_cancelled_empty_trips_do_not_burn_trip_numbers` (kosong → nomor dipakai ulang)
+vs `test_archived_trip_from_owner_panel_still_reserves_its_number` (berisi → nomor ditahan,
+soft delete, `restore()` masih memulihkan berikut kunjungannya).
+
+### Bukti
+- **Nomor kembali 1**: salah pencet 2x lalu trip beneran → **Trip #1** (test + browser).
+  Cek DB sesudahnya: **1 baris** trip hari itu (Trip #1, `deleted_at` NULL, 1 kunjungan) — 0 hantu.
+- **Benar-benar hilang**: `Trip::withTrashed()->find($id)` = null + `assertDatabaseMissing`.
+- **Tak ada data anak hilang**: test membandingkan `count()` RAW DB atas 6 tabel
+  (trips/deliveries/kiosk_visits/commissions/settlements/delivery_origins) sebelum-sesudah —
+  hanya `trips` turun 1, sisanya **identik**; pointer `kiosk_visits.new_delivery_id` trip
+  tetangga tak ternulkan.
+- **Trip berisi ditolak**: tombol tak muncul + `cancelActiveTrip()` dipanggil paksa tetap
+  menolak, diarahkan ke "Akhiri Trip".
+
 ## 🔴 EMPAT PERBAIKAN NYAMBUNG DI LAYAR TRIP OPERATOR (30 Juli 2026) — SELESAI & PUSHED
 **+43 test baru, 485 regresi hijau (dari 443). Diverifikasi di Chrome sungguhan: 29/29 PASS.**
 Lima commit atomik: A jalan-keluar / B lintas-area / C laporan-jujur / D kartu / E nomor-trip.

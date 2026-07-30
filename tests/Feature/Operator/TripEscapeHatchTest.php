@@ -12,6 +12,7 @@ use App\Models\ProductVariant;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -117,10 +118,14 @@ class TripEscapeHatchTest extends TestCase
     }
 
     /**
-     * A2 — "Batalkan Trip Ini" untuk trip KOSONG: mengarsipkan (soft delete), bukan
-     * menghapus permanen, lalu operator bisa mulai trip yang benar.
+     * A2 — "Batalkan Trip Ini" untuk trip KOSONG: **HAPUS PERMANEN**, bukan arsip.
+     *
+     * 🔴 KONTRAK BERUBAH 30 Juli 2026 (keputusan owner). Dulu test ini meng-assert
+     * `assertSoftDeleted`. Arsip tak melindungi apa pun untuk trip kosong (tak ada
+     * data untuk dijaga) TAPI barisnya tetap memegang nomor trip di index unik →
+     * nomor melompat & laporan owner berisi trip hantu tanpa isi.
      */
-    public function test_cancel_archives_an_empty_trip_and_frees_the_operator(): void
+    public function test_cancel_permanently_deletes_an_empty_trip_and_frees_the_operator(): void
     {
         [$owner, $operator, $kota1] = $this->scaffold();
         $trip = $this->tripBebas($owner, $operator);
@@ -129,15 +134,129 @@ class TripEscapeHatchTest extends TestCase
 
         Livewire::test(StartTrip::class)
             ->call('cancelActiveTrip')
-            ->assertSee('dibatalkan dan diarsipkan')
+            ->assertSee('dibatalkan')
+            // Tak boleh lagi menjanjikan arsip/pemulihan — itu jadi bohong.
+            ->assertDontSee('diarsipkan')
             // Kartu hilang, form kembali — bukan sisa memo basi.
             ->assertDontSee('Kamu masih punya trip berjalan')
             ->assertSee('Berapa mika yang kamu bawa hari ini?');
 
-        // ARSIP, bukan hapus permanen: baris masih ada, cuma deleted_at terisi.
-        $this->assertSoftDeleted('trips', ['id' => $trip->id]);
+        // BENAR-BENAR hilang dari DB — bukan soft delete.
+        $this->assertNull(Trip::withTrashed()->find($trip->id));
+        $this->assertSame(0, Trip::withTrashed()->count());
+        $this->assertDatabaseMissing('trips', ['id' => $trip->id]);
+    }
+
+    /**
+     * 🔴 INTI PERMINTAAN OWNER: salah pencet DUA KALI lalu mulai trip beneran →
+     * trip itu dapat nomor **1**, bukan 3. Dulu dua baris arsip menahan nomor 1 & 2.
+     */
+    public function test_two_cancelled_empty_trips_do_not_burn_trip_numbers(): void
+    {
+        [$owner, $operator, $kota1] = $this->scaffold();
+
+        $this->actingAs($operator);
+
+        // Salah pencet #1 — Trip Bebas, langsung dibatalkan.
+        Livewire::test(StartTrip::class)
+            ->set('tripBebas', true)
+            ->set('qtyCarried', 75)
+            ->call('startTrip');
+        $this->assertSame(1, Trip::withTrashed()->first()->trip_number_of_day);
+        Livewire::test(StartTrip::class)->call('cancelActiveTrip');
+
+        // Salah pencet #2 — sekali lagi.
+        Livewire::test(StartTrip::class)
+            ->set('tripBebas', true)
+            ->set('qtyCarried', 75)
+            ->call('startTrip');
+        Livewire::test(StartTrip::class)->call('cancelActiveTrip');
+
+        $this->assertSame(0, Trip::withTrashed()->count(), 'Tak boleh ada sisa trip hantu.');
+
+        // Trip BENERAN, area Kota 1.
+        Livewire::test(StartTrip::class)
+            ->set('selectedClusterId', $kota1->id)
+            ->set('qtyCarried', 75)
+            ->call('startTrip')
+            ->assertRedirect();
+
+        $beneran = Trip::whereNull('ended_at')->first();
+
+        $this->assertNotNull($beneran);
+        $this->assertSame(
+            1,
+            $beneran->trip_number_of_day,
+            'Trip pertama beneran hari itu HARUS "Trip #1", bukan #3 — nomor tak boleh dibakar trip kosong.'
+        );
+        $this->assertSame($kota1->id, $beneran->starting_cluster_id);
         $this->assertSame(1, Trip::withTrashed()->count());
-        $this->assertSame(0, Trip::count()); // global scope SoftDeletes menyembunyikannya
+    }
+
+    /**
+     * forceDelete tak boleh menyeret data milik trip/kios LAIN. Diperiksa di RAW DB
+     * (bukan lewat model) karena yang diuji adalah perilaku FK cascade.
+     *
+     * Set FK yang cascade dari `trips` = commissions, deliveries, kiosk_visits —
+     * sama persis dengan yang diperiksa tripHasActivity(). Test ini mengunci bahwa
+     * trip TETANGGA yang berisi data tetap utuh sesudahnya.
+     */
+    public function test_force_delete_leaves_other_trips_data_untouched(): void
+    {
+        [$owner, $operator, $kota1] = $this->scaffold();
+
+        // Trip TETANGGA yang BERISI (hari lalu, sudah selesai) — tak boleh tersentuh.
+        $tetangga = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'trip_date' => today()->subDay(), 'trip_number_of_day' => 1,
+            'starting_cluster_id' => $kota1->id,
+            'started_at' => now()->subDay(), 'ended_at' => now()->subDay()->addHours(3),
+        ]);
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $kota1->id]);
+        $variant = ProductVariant::factory()->create(['is_active' => true]);
+
+        $delivery = Delivery::create([
+            'kiosk_id' => $kiosk->id, 'trip_id' => $tetangga->id,
+            'product_variant_id' => $variant->id,
+            'source_type' => 'new_procurement', 'delivery_type' => 'consignment',
+            'qty_delivered' => 4, 'unit_price' => 12000,
+        ]);
+        $visit = KioskVisit::create([
+            'trip_id' => $tetangga->id, 'kiosk_id' => $kiosk->id,
+            'visited_at' => now()->subDay(), 'visit_action' => 'drop_only',
+            'new_delivery_id' => $delivery->id,
+        ]);
+
+        // Trip KOSONG hari ini yang akan dibatalkan.
+        $kosong = $this->tripBebas($owner, $operator, number: 1);
+
+        $sebelum = [
+            'trips' => DB::table('trips')->count(),
+            'deliveries' => DB::table('deliveries')->count(),
+            'kiosk_visits' => DB::table('kiosk_visits')->count(),
+            'commissions' => DB::table('commissions')->count(),
+            'settlements' => DB::table('settlements')->count(),
+            'delivery_origins' => DB::table('delivery_origins')->count(),
+        ];
+
+        $this->actingAs($operator);
+        Livewire::test(StartTrip::class)->call('cancelActiveTrip');
+
+        // Hanya SATU baris yang hilang, dan itu barisnya sendiri.
+        $this->assertSame($sebelum['trips'] - 1, DB::table('trips')->count());
+        foreach (['deliveries', 'kiosk_visits', 'commissions', 'settlements', 'delivery_origins'] as $tabel) {
+            $this->assertSame(
+                $sebelum[$tabel],
+                DB::table($tabel)->count(),
+                "Tabel '{$tabel}' berubah akibat forceDelete trip KOSONG — tak boleh."
+            );
+        }
+
+        // Data trip tetangga utuh, termasuk pointer SET NULL yang rawan ternulkan.
+        $this->assertDatabaseMissing('trips', ['id' => $kosong->id]);
+        $this->assertDatabaseHas('trips', ['id' => $tetangga->id]);
+        $this->assertSame($delivery->id, DB::table('kiosk_visits')->where('id', $visit->id)->value('new_delivery_id'));
+        $this->assertSame($tetangga->id, (int) DB::table('deliveries')->where('id', $delivery->id)->value('trip_id'));
     }
 
     /**
@@ -147,11 +266,8 @@ class TripEscapeHatchTest extends TestCase
     public function test_end_to_end_cancel_then_start_kota1_opens_kota1_kiosks(): void
     {
         [$owner, $operator, $kota1, $pancing] = $this->scaffold();
-        // 🔴 nomor 1 DISENGAJA (ketahuan dari verifikasi browser): trip yang diarsipkan
-        // TETAP memegang nomornya di index unik idx_trip_owner_date_number. Kalau
-        // penomoran trip baru tak menghitung trip terarsip, nomor 1 dipakai ulang →
-        // duplicate key → operator terlempar ke dashboard tanpa trip. Dengan nomor 2
-        // (default helper) tabrakan itu tak pernah terjadi dan bug lolos.
+        // nomor 1 DISENGAJA: inilah nomor yang akan dipakai ulang trip berikutnya
+        // setelah trip kosong ini DIHAPUS PERMANEN.
         $this->tripBebas($owner, $operator, number: 1);
 
         Kiosk::factory()->create(['cluster_id' => $kota1->id, 'name' => 'Kedai Kota Satu', 'sort_order' => 1]);
@@ -176,20 +292,25 @@ class TripEscapeHatchTest extends TestCase
             ->assertSee('Kedai Kota Satu')
             ->assertDontSee('Bilal 3');
 
-        // Nomor trip baru MELEWATI nomor yang masih dipegang trip terarsip.
-        $this->assertSame(2, $baru->trip_number_of_day);
+        // Nomor 1 DIPAKAI ULANG: trip kosong tadi dihapus permanen, jadi tak menahan
+        // nomor apa pun. Operator melihat "Trip #1" — memang trip pertamanya hari itu.
+        $this->assertSame(1, $baru->trip_number_of_day);
+        $this->assertSame(1, Trip::withTrashed()->count());
     }
 
     /**
-     * Bentuk murni bug penomoran di atas: trip yang DIARSIPKAN tetap memegang
-     * nomornya di index unik `idx_trip_owner_date_number` (soft delete tidak
-     * melepaskan baris). Penomoran trip berikutnya WAJIB menghitung trip terarsip,
-     * kalau tidak INSERT-nya kena duplicate key dan trip tak pernah terbentuk.
+     * 🔴 DUA JALUR YANG SENGAJA BERBEDA — jangan disatukan.
      *
-     * Ini juga menutup jalur yang sudah ada sejak fitur arsip trip: owner
-     * mengarsipkan trip dari panel, lalu operator mulai trip di hari yang sama.
+     * Trip BERISI yang diarsipkan owner dari panel (Ronde 1, soft delete) TETAP
+     * memegang nomornya di index unik `idx_trip_owner_date_number`, jadi penomoran
+     * trip berikutnya WAJIB `Trip::withTrashed()` — kalau tidak, INSERT kena
+     * duplicate key dan trip tak pernah terbentuk (fix c54f978).
+     *
+     * Bandingkan dengan `test_two_cancelled_empty_trips_do_not_burn_trip_numbers`:
+     * trip KOSONG yang dibatalkan operator DIHAPUS PERMANEN, jadi nomornya justru
+     * HARUS dipakai ulang. Perbedaannya: di sini ada DATA yang harus dijaga.
      */
-    public function test_archived_trip_still_reserves_its_number(): void
+    public function test_archived_trip_from_owner_panel_still_reserves_its_number(): void
     {
         [$owner, $operator, $kota1] = $this->scaffold();
 
@@ -199,7 +320,20 @@ class TripEscapeHatchTest extends TestCase
             'starting_cluster_id' => $kota1->id,
             'started_at' => now()->subHours(2), 'ended_at' => now()->subHour(),
         ]);
-        $lama->delete(); // diarsipkan (mis. dari panel owner)
+
+        // Trip ini BERISI — persis alasan kenapa jalur owner tetap arsip.
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $kota1->id]);
+        KioskVisit::create([
+            'trip_id' => $lama->id, 'kiosk_id' => $kiosk->id,
+            'visited_at' => now()->subHours(2), 'visit_action' => 'check_only',
+        ]);
+
+        $lama->delete(); // diarsipkan dari panel owner = SOFT delete
+
+        // Masih ada barisnya, cuma disembunyikan global scope.
+        $this->assertSoftDeleted('trips', ['id' => $lama->id]);
+        $this->assertNotNull(Trip::withTrashed()->find($lama->id));
+        $this->assertDatabaseHas('kiosk_visits', ['trip_id' => $lama->id]);
 
         $this->actingAs($operator);
 
@@ -214,6 +348,11 @@ class TripEscapeHatchTest extends TestCase
         $this->assertNotNull($baru, 'Trip baru harus terbentuk, bukan gagal diam-diam.');
         $this->assertSame(2, $baru->trip_number_of_day, 'Nomor 1 masih dipegang trip terarsip.');
         $this->assertSame($kota1->id, $baru->starting_cluster_id);
+
+        // Dan trip terarsip itu masih BISA DIPULIHKAN — arsip tetap arsip.
+        Trip::withTrashed()->find($lama->id)->restore();
+        $this->assertNotNull(Trip::find($lama->id));
+        $this->assertDatabaseHas('kiosk_visits', ['trip_id' => $lama->id]);
     }
 
     /**

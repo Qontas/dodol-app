@@ -60,17 +60,20 @@
 
                 @if ($canCancelActiveTrip)
                     {{-- Hanya muncul kalau trip BENAR-BENAR kosong (0 kunjungan, 0 delivery,
-                         0 komisi). Guard yang sama diulang server-side di cancelActiveTrip(). --}}
+                         0 komisi). Guard yang sama diulang server-side di cancelActiveTrip().
+                         Teks WAJIB menyebut "DIHAPUS", bukan "diarsipkan": sejak 30 Juli 2026
+                         trip kosong dihapus permanen supaya nomornya tidak tersangkut. --}}
                     <button type="button"
                             wire:click="cancelActiveTrip"
                             wire:loading.attr="disabled" wire:target="cancelActiveTrip"
-                            wire:confirm="Batalkan Trip #{{ $activeTrip->trip_number_of_day }}? Trip ini belum ada kunjungan sama sekali, jadi aman dibatalkan. Trip akan DIARSIPKAN (bukan dihapus permanen) dan kamu bisa mulai trip baru."
+                            wire:confirm="Batalkan Trip #{{ $activeTrip->trip_number_of_day }}? Trip ini belum ada kunjungan sama sekali, jadi akan DIHAPUS dan nomornya bisa dipakai lagi. Tidak bisa dibatalkan."
                             class="w-full py-3 rounded-xl font-semibold text-slate-700 bg-white border-2 border-slate-300 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-50">
                         <span wire:loading.remove wire:target="cancelActiveTrip">Batalkan Trip Ini</span>
                         <span wire:loading wire:target="cancelActiveTrip">Membatalkan…</span>
                     </button>
                     <p class="text-xs text-slate-500 text-center">
-                        Aman: trip ini belum ada kunjungan. Trip diarsipkan, bukan dihapus permanen.
+                        Aman: trip ini belum ada kunjungan sama sekali. Trip dihapus dan nomornya
+                        dipakai ulang, jadi penomoran tidak melompat.
                     </p>
                 @else
                     <p class="text-xs text-slate-600 text-center leading-relaxed">
