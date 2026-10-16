@@ -1,5 +1,133 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 30 Juli 2026*
+*Sesi terakhir: 16 Oktober 2026*
+
+## 🔴 `php artisan owner:reset-data {ownerId}` — command baru, BELUM dijalankan di produksi (16 Okt 2026) — SELESAI & PUSHED (lokal)
+**+7 test baru, 494 regresi hijau (dari 487).** Satu commit atomik. Dibangun & dibuktikan dengan
+test lokal saja — **`--force` TIDAK pernah dijalankan dari sesi ini**, owner_id=2 (Ismi) tidak
+pernah disentuh.
+
+### Latar
+Data kedai hasil import milik owner Aidil (`owner_id=5`) kacau; owner mau hapus total data
+operasional lalu input ulang dari nol — TANPA menyentuh akun Aidil/Arnis sendiri atau data
+owner lain (terutama Ismi, `owner_id=2`). Command ini menyediakan jalan dry-run-dulu-wajib +
+konfirmasi ketik-ulang-email sebelum eksekusi permanen.
+
+### FK map — DIVERIFIKASI `information_schema` pada DB hidup (bukan ditebak dari migration)
+100% cocok dengan migration, plus 3 FK ekstra di luar cakupan (`imports`/`exports`/
+`failed_import_rows` → `users`, tak relevan untuk reset data operasional, tidak mengganggu).
+
+| tabel anak.kolom | → tabel induk | ON DELETE |
+|---|---|---|
+| `clusters.owner_id` → `users.id` | CASCADE |
+| `suppliers.owner_id` → `users.id` | CASCADE |
+| `products.owner_id` → `users.id` | CASCADE |
+| `procurement_batches.owner_id` → `users.id` | CASCADE |
+| `procurement_batches.product_variant_id` → `product_variants.id` | **RESTRICT** |
+| `procurement_batches.supplier_id` → `suppliers.id` | **RESTRICT** |
+| `trips.owner_id` → `users.id` | CASCADE |
+| `trips.operator_id` → `users.id` | **RESTRICT** |
+| `trips.starting_cluster_id` → `clusters.id` | SET NULL |
+| `kiosks.cluster_id` → `clusters.id` | **RESTRICT** |
+| `product_variants.product_id` → `products.id` | **RESTRICT** |
+| `deliveries.kiosk_id` → `kiosks.id` | CASCADE |
+| `deliveries.trip_id` → `trips.id` | CASCADE |
+| `deliveries.product_variant_id` → `product_variants.id` | **RESTRICT** |
+| `deliveries.procurement_batch_id` → `procurement_batches.id` | **RESTRICT** (nullable) |
+| `deliveries.kiosk_visit_id` → `kiosk_visits.id` | SET NULL (nullable) |
+| `settlements.delivery_id` → `deliveries.id` | CASCADE (unique) |
+| `kiosk_visits.trip_id` → `trips.id` | CASCADE |
+| `kiosk_visits.kiosk_id` → `kiosks.id` | CASCADE |
+| `kiosk_visits.new_delivery_id` / `settled_delivery_id` → `deliveries.id` | SET NULL |
+| `kiosk_visits.correction_of_visit_id` → `kiosk_visits.id` (self) | SET NULL |
+| `commissions.trip_id` → `trips.id` | CASCADE |
+| `commissions.operator_id` → `users.id` | **RESTRICT** |
+| `delivery_origins.delivery_id` / `settlement_id` → `deliveries` / `settlements` | CASCADE |
+| `fuel_logs.operator_id` → `users.id` | SET NULL (nullable) |
+
+Karena baris `users` milik Aidil/Arnis **tidak pernah dihapus**, FK `CASCADE → users.id` di atas
+tidak pernah terpicu lewat user — tiap tabel owner-scoped dihapus EKSPLISIT lewat
+`owner_id`/`cluster_id`/`trip_id`/`kiosk_id`, bukan mengandalkan cascade. Satu-satunya baris
+`users` yang DIHAPUS: akun sistem `operator.migrasi.owner{id}@cemilanqontas.id` (ia dipakai
+sebagai `trips.operator_id`/`commissions.operator_id` RESTRICT oleh trip migrasi sentinel,
+jadi dihapus setelah trip & komisinya).
+
+### Kode baru
+- **`App\Support\OwnerDataReset`** (`app/Support/OwnerDataReset.php`) — satu sumber kebenaran:
+  `resolveScope($ownerId)` (hitung semua ID set via `DB::table()` MENTAH — sengaja bukan
+  Eloquent, supaya tak bergantung `OwnerScope`/konteks `auth()` CLI dan hasilnya identik
+  dry-run vs eksekusi; `trips` ikut TERARSIP karena query mentah tak kena global scope
+  SoftDeletes), `summarize($ownerId)` (dry-run — read only), `execute($ownerId)` (14 langkah
+  hapus anak→induk dalam SATU `DB::transaction`, urutan sama persis dengan yang diverifikasi
+  FK map di atas). `summarize()` dan `execute()` dikunci test harus **identik**.
+- **`php artisan owner:reset-data {ownerId} [--force]`** (`app/Console/Commands/OwnerResetData.php`)
+  — tolak kalau `ownerId` bukan `role=owner`; tanpa `--force` SELALU dry-run (tabel ringkasan +
+  jumlah foto R2 berpotensi orphan + status akun migrasi, `return self::SUCCESS`, TIDAK ADA
+  MUTASI); dengan `--force` → peringatan IRREVERSIBLE + `$this->ask(...)` **ketik ulang email
+  owner** persis (case-sensitive) → salah/batal = `self::FAILURE` tanpa mutasi; benar →
+  `OwnerDataReset::execute()` + tabel ringkasan SESUDAH.
+- **Tidak ada penghapusan file R2** — `photo_paths_count` hanya DIHITUNG & DILAPORKAN
+  (`kiosks.photo_path` non-null milik owner itu, sebelum baris kiosk dihapus). Tidak ada
+  `Storage::disk(...)->delete()` di mana pun dalam command ini.
+
+### Test (`tests/Feature/Console/OwnerResetDataCommandTest.php`, 7 test baru, 92 assertion)
+Helper `world($tag)` bikin tenant LENGKAP (owner+operator+cluster+kiosk+supplier+product+
+variant+batch+trip+delivery+settlement+visit+commission+fuel_log+delivery_origin+trip
+terarsip+sentinel walk-in+sentinel migrasi). Dibuktikan:
+1. Dry-run (tanpa `--force`) — **0 perubahan** di 14 tabel/kategori (raw count sebelum==sesudah).
+2. `--force` + email salah → `self::FAILURE`, **0 mutasi**.
+3. `--force` + email benar → owner A **NOL** di seluruh tabel bisnis + akun migrasi terhapus;
+   owner B **delta 0** di SEMUA tabel (tenant lain tak tersentuh sama sekali); akun owner A
+   & operatornya (BUKAN migrasi) tetap ada, kolom tarif (`hpp_per_mika`/`komisi_per_mika`)
+   & `is_active` tak berubah; sentinel walk-in (cluster+kiosk) & sentinel migrasi (user)
+   dibuktikan hilang via `assertDatabaseMissing` (bukan diasumsikan).
+4. `ownerId` bukan role `owner` → ditolak, user tak tersentuh.
+5. Setelah reset, owner bisa langsung `Cluster::create`/`Kiosk::create`/`Trip::create` baru
+   tanpa bentrok unique index (trip migrasi/terarsip benar-benar hilang, bukan cuma soft-deleted).
+6. `OwnerDataReset::summarize()` == `OwnerDataReset::execute()` persis di semua kategori — satu
+   sumber kebenaran terkunci.
+7. Regresi smoke (dry-run tak mengganggu baseline trip lain).
+
+**Hasil regresi penuh: `php artisan test` → 494 passed (2122 assertions)**, dari baseline 487 —
+0 regresi di manapun.
+
+### ⚠️ INSTRUKSI PRODUKSI UNTUK OWNER (belum dijalankan dari sesi ini — owner jalankan sendiri)
+1. **Backup dulu** (dump DB Railway) sebelum apa pun di bawah ini.
+2. **Catat angka owner 2 (Ismi) SEBELUM** — read-only, di console Railway:
+   ```bash
+   php artisan tinker --execute="
+   foreach (['clusters','suppliers','products','procurement_batches','trips'] as \$t) {
+       echo \$t.': '.\DB::table(\$t)->where('owner_id', 2)->count().PHP_EOL;
+   }
+   \$kioskIds = \DB::table('kiosks')->whereIn('cluster_id', \DB::table('clusters')->where('owner_id', 2)->pluck('id'))->pluck('id');
+   echo 'kiosks: '.count(\$kioskIds).PHP_EOL;
+   echo 'deliveries: '.\DB::table('deliveries')->whereIn('kiosk_id', \$kioskIds)->orWhereIn('trip_id', \DB::table('trips')->where('owner_id',2)->pluck('id'))->count().PHP_EOL;
+   "
+   ```
+3. **Dry-run dulu** (WAJIB, tidak mengubah apa pun):
+   ```bash
+   php artisan owner:reset-data 5
+   ```
+   Periksa tabel ringkasan — pastikan jumlahnya masuk akal (kedai/trip/dll milik Aidil),
+   BUKAN nol-semua (kalau nol, jangan lanjut — ada yang salah, lapor dulu).
+4. **Eksekusi permanen HANYA setelah owner yakin backup aman:**
+   ```bash
+   php artisan owner:reset-data 5 --force
+   ```
+   Akan diminta ketik ulang email Aidil persis untuk konfirmasi.
+5. **Cek ulang angka owner 2 (Ismi) SESUDAH** — jalankan snippet langkah 2 lagi, harus **IDENTIK**
+   persis dengan sebelum. Kalau ada yang berubah, STOP dan lapor — jangan lanjut apa pun.
+6. Foto kedai Aidil di R2 (jumlahnya dilaporkan command ini) jadi ORPHAN (file tetap ada di R2,
+   baris DB-nya hilang) — command ini **tidak** menghapusnya. Hapus manual di R2 kalau mau,
+   atau biarkan (tidak mengganggu fungsi apa pun).
+
+### ⚠️ CATATAN LINGKUNGAN: MariaDB lokal pindah datadir (16 Okt 2026)
+Datadir lama `C:\xampp\mysql\data` bermasalah (lihat error sebelumnya) — datadir baru dibuat
+khusus untuk dodol-app: **`C:\xampp\mysql\data_dodol2`**, dengan `my.ini` diperbaiki
+(`innodb_data_home_dir`/`innodb_log_group_home_dir` diarahkan ulang ke datadir baru). Datadir
+LAMA (`C:\xampp\mysql\data`) + backup `C:\data_backup_16okt` **SENGAJA DIBIARKAN UTUH** — berisi
+3 project lokal lain yang TIDAK terkait dodol-app (`db_skripsi_final`, `db_skripsi_final_baru`,
+`db_proyek_keamanan`); pemulihannya adalah tugas TERPISAH, belum diminta, jangan disentuh dari
+sesi dodol-app manapun kecuali diminta eksplisit.
 
 ## 🔴 "BATALKAN TRIP" PADA TRIP KOSONG → HAPUS PERMANEN (30 Juli 2026) — SELESAI & PUSHED
 **+2 test (487 hijau, dari 485). Browser: 13/13 PASS skenario batal + 29/29 regresi A/B/C/D.**
