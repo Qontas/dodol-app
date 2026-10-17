@@ -298,6 +298,59 @@ class User extends Authenticatable implements FilamentUser
         return (float) ($this->komisi_kios_baru_per_mika ?? 1000);
     }
 
+    /**
+     * Nama bisnis owner ini — dipakai header panel/laporan/export. Fallback nama
+     * lama yang dulu hardcode di layout/branding sebelum field ini ada.
+     */
+    public function getBusinessNameValue(): string
+    {
+        return $this->business_name ?? 'Cemilan Qontas';
+    }
+
+    /**
+     * Default "idealnya dikunjungi tiap berapa hari" untuk KIOS BARU yang dibuat
+     * owner ini. Fallback 10 — sama dengan default form KioskResource (15 Juli
+     * 2026, lihat komentarnya) yang jadi sumber kebenaran, BUKAN default kolom DB.
+     */
+    public function getDefaultTargetVisitIntervalDaysValue(): int
+    {
+        return (int) ($this->default_target_visit_interval_days ?? 10);
+    }
+
+    /**
+     * Default "peringatan kalau belum dikunjungi" untuk kios baru. Fallback 14.
+     */
+    public function getDefaultWarningVisitIntervalDaysValue(): int
+    {
+        return (int) ($this->default_warning_visit_interval_days ?? 14);
+    }
+
+    /**
+     * Default "batas kios laris (hari)" untuk kios baru. Fallback 7.
+     */
+    public function getDefaultFastMoverThresholdDaysValue(): int
+    {
+        return (int) ($this->default_fast_mover_threshold_days ?? 7);
+    }
+
+    /**
+     * Lama (hari) status "kios baru" dihitung dari first_titip_date — dipakai badge
+     * ⭐ dan penentuan komisi kios baru. Fallback 30 (perilaku hardcode lama).
+     */
+    public function getKiosBaruDaysValue(): int
+    {
+        return (int) ($this->kios_baru_days ?? 30);
+    }
+
+    /**
+     * Default jatah titipan (mika) untuk kios konsinyasi baru. Fallback 1 — sama
+     * dengan perilaku live sekarang (CreateKiosk operator), BUKAN 4.
+     */
+    public function getDefaultQtyMikaValue(): int
+    {
+        return (int) ($this->default_qty_mika ?? 1);
+    }
+
     public function canAccessPanel(Panel $panel): bool
     {
         return in_array($this->role, ['owner', 'super_admin'], true) && $this->is_active;

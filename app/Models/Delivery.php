@@ -26,6 +26,7 @@ class Delivery extends Model
         'qty_delivered',
         'unit_price',
         'cost_snapshot',
+        'units_per_pack_snapshot',
         'notes',
     ];
 
@@ -34,6 +35,7 @@ class Delivery extends Model
         'delivery_type' => 'string',
         'unit_price' => 'decimal:2',
         'cost_snapshot' => 'decimal:2',
+        'units_per_pack_snapshot' => 'integer',
     ];
 
     public function kiosk(): BelongsTo
@@ -62,11 +64,39 @@ class Delivery extends Model
             ->withPivot('biji_count');
     }
 
+    /**
+     * Total biji dari qty_delivered (mika) × isi-per-mika SNAPSHOT delivery ini —
+     * bukan isi produk saat ini (owner bisa ubah isi kapan saja, titipan lama harus
+     * tetap pakai isi saat dititip). Fallback 15 defensif untuk baris lolos NULL
+     * (seharusnya tak terjadi setelah backfill, lihat deliveries:backfill-snapshot).
+     */
+    public function getQtyBijiDeliveredAttribute(): int
+    {
+        return (int) $this->qty_delivered * $this->unitsPerPackSnapshotOrFallback();
+    }
+
+    /**
+     * Harga jual per BIJI, diturunkan dari unit_price (harga per mika, snapshot saat
+     * delivery dibuat) ÷ isi-per-mika snapshot. Ini pengganti konstanta global lama
+     * HARGA_PER_BIJI=800 — sekarang per-delivery, bukan per-aplikasi.
+     */
+    public function getHargaPerBijiAttribute(): float
+    {
+        $units = $this->unitsPerPackSnapshotOrFallback();
+
+        return $units > 0 ? ((float) $this->unit_price / $units) : 0.0;
+    }
+
+    private function unitsPerPackSnapshotOrFallback(): int
+    {
+        return max(1, (int) ($this->units_per_pack_snapshot ?? 15));
+    }
+
     public function validateOrigins(): void
     {
         $origins = $this->originSettlements()->get();
         $sum = (int) $origins->sum(fn ($s) => $s->pivot->biji_count);
-        $expected = (int) $this->qty_delivered * 15;
+        $expected = (int) $this->qty_delivered * $this->unitsPerPackSnapshotOrFallback();
         $id = $this->id ?? 'new';
 
         if ($this->source_type === 'fresh_return_redeploy') {
@@ -77,7 +107,7 @@ class Delivery extends Model
             }
             if ($sum !== $expected) {
                 throw new InvalidArgumentException(
-                    "Delivery #{$id} (fresh_return_redeploy) sum(biji_count)={$sum} must equal qty_delivered*15={$expected}"
+                    "Delivery #{$id} (fresh_return_redeploy) sum(biji_count)={$sum} must equal qty_delivered*units_per_pack_snapshot={$expected}"
                 );
             }
         }

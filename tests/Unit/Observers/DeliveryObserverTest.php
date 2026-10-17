@@ -80,7 +80,7 @@ class DeliveryObserverTest extends TestCase
         $origin = Settlement::factory()->create();
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/sum\(biji_count\)=50 must equal qty_delivered\*15=75/');
+        $this->expectExceptionMessageMatches('/sum\(biji_count\)=50 must equal qty_delivered\*units_per_pack_snapshot=75/');
 
         Delivery::factory()
             ->freshReturn($origin->id, 50)

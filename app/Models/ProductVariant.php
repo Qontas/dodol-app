@@ -27,12 +27,14 @@ class ProductVariant extends Model
         'name',
         'units_per_pack',
         'sale_price_per_pack',
+        'cost_per_pack',
         'sku',
         'is_active',
     ];
 
     protected $casts = [
         'sale_price_per_pack' => 'decimal:2',
+        'cost_per_pack' => 'decimal:2',
         'is_active' => 'boolean',
     ];
 

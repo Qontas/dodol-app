@@ -26,14 +26,15 @@ class DeliveryFactory extends Factory
             'delivery_type' => 'consignment',
             'qty_delivered' => 5,
             'unit_price' => 12000,
-            'cost_snapshot' => 10000,
+            'cost_snapshot' => 9500,
+            'units_per_pack_snapshot' => 15,
         ];
     }
 
     /**
      * State untuk fresh_return_redeploy. Otomatis attach 1 origin settlement
-     * dengan biji_count = qty_delivered * 15 (memenuhi Rule B accounting).
-     * Override $bijiCount untuk test skenario violation.
+     * dengan biji_count = qty_delivered * units_per_pack_snapshot (memenuhi Rule B
+     * accounting). Override $bijiCount untuk test skenario violation.
      */
     public function freshReturn(?int $settlementId = null, ?int $bijiCount = null): self
     {
@@ -42,7 +43,7 @@ class DeliveryFactory extends Factory
             'procurement_batch_id' => null,
         ])->afterCreating(function (Delivery $delivery) use ($settlementId, $bijiCount) {
             $settlementId = $settlementId ?? Settlement::factory()->create()->id;
-            $biji = $bijiCount ?? ((int) $delivery->qty_delivered * 15);
+            $biji = $bijiCount ?? ((int) $delivery->qty_delivered * (int) ($delivery->units_per_pack_snapshot ?? 15));
             $delivery->originSettlements()->attach($settlementId, ['biji_count' => $biji]);
             $delivery->validateOrigins();
         });

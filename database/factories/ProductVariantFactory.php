@@ -17,6 +17,7 @@ class ProductVariantFactory extends Factory
             'name' => 'Mika 15 biji',
             'units_per_pack' => 15,
             'sale_price_per_pack' => 12000,
+            'cost_per_pack' => 9500,
             'sku' => 'TEST-' . fake()->unique()->numerify('SKU####'),
             'is_active' => true,
         ];
