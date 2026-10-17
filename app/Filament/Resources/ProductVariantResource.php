@@ -70,6 +70,15 @@ class ProductVariantResource extends Resource
                     ->placeholder('12000')
                     ->helperText('Harga jual ke kios per pack/mika'),
 
+                Forms\Components\TextInput::make('cost_per_pack')
+                    ->label('HPP per Pack')
+                    ->numeric()
+                    ->required()
+                    ->minValue(0)
+                    ->prefix('Rp')
+                    ->placeholder('9500')
+                    ->helperText('Harga pokok produksi per pack/mika — dasar hitung untung kotor. Dicatat (snapshot) di setiap titipan baru; ubah nilai ini TIDAK mengubah titipan yang sudah berjalan.'),
+
                 Forms\Components\TextInput::make('sku')
                     ->label('SKU')
                     ->maxLength(100)
@@ -111,6 +120,12 @@ class ProductVariantResource extends Resource
                     ->label('Harga Jual')
                     ->money('IDR')
                     ->sortable(),
+
+                Tables\Columns\TextColumn::make('cost_per_pack')
+                    ->label('HPP')
+                    ->money('IDR')
+                    ->sortable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('sku')
                     ->label('SKU')

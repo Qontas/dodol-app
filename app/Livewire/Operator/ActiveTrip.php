@@ -1826,7 +1826,8 @@ class ActiveTrip extends Component
                         'delivery_type' => 'cash_sale',
                         'qty_delivered' => $drop,
                         'unit_price' => $variant->sale_price_per_pack,
-                        'cost_snapshot' => null,
+                        'cost_snapshot' => $variant->cost_per_pack,
+                        'units_per_pack_snapshot' => $variant->units_per_pack,
                     ]);
 
                     $totalBiji = $drop * self::BIJI_PER_MIKA;
@@ -1916,7 +1917,8 @@ class ActiveTrip extends Component
                         'delivery_type' => 'cash_sale',
                         'qty_delivered' => $cashMika, // PENUH — komisi tidak dikurangi BS
                         'unit_price' => $variant->sale_price_per_pack,
-                        'cost_snapshot' => null,
+                        'cost_snapshot' => $variant->cost_per_pack,
+                        'units_per_pack_snapshot' => $variant->units_per_pack,
                     ]);
 
                     Settlement::create([
@@ -2126,7 +2128,8 @@ class ActiveTrip extends Component
                         'delivery_type' => 'consignment',
                         'qty_delivered' => $drop,
                         'unit_price' => $variant->sale_price_per_pack,
-                        'cost_snapshot' => null,
+                        'cost_snapshot' => $variant->cost_per_pack,
+                        'units_per_pack_snapshot' => $variant->units_per_pack,
                     ]);
                     $newDeliveryId = $newDelivery->id;
                     $createdDeliveryIds[] = $newDelivery->id;
@@ -2144,7 +2147,8 @@ class ActiveTrip extends Component
                             'delivery_type' => 'bs_redistribution',
                             'qty_delivered' => $bsMika,
                             'unit_price' => $variant->sale_price_per_pack,
-                            'cost_snapshot' => 0,
+                            'cost_snapshot' => 0, // HPP 0 sengaja — loss sudah dihitung di kios asal
+                            'units_per_pack_snapshot' => $variant->units_per_pack,
                         ]);
                         $createdDeliveryIds[] = $bsDelivery->id;
 
@@ -2273,7 +2277,8 @@ class ActiveTrip extends Component
                     'delivery_type' => 'cash_sale',
                     'qty_delivered' => $mika,
                     'unit_price' => $variant->sale_price_per_pack,
-                    'cost_snapshot' => null,
+                    'cost_snapshot' => $variant->cost_per_pack,
+                    'units_per_pack_snapshot' => $variant->units_per_pack,
                 ]);
 
                 $totalBiji = $mika * self::BIJI_PER_MIKA;

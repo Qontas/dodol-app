@@ -52,7 +52,8 @@ class ConsignmentDrop
             'delivery_type' => 'consignment',
             'qty_delivered' => $qtyMika,
             'unit_price' => $variant->sale_price_per_pack,
-            'cost_snapshot' => null,
+            'cost_snapshot' => $variant->cost_per_pack,
+            'units_per_pack_snapshot' => $variant->units_per_pack,
             'notes' => $notes,
         ]);
     }
