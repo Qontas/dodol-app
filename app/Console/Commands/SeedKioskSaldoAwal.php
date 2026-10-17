@@ -204,7 +204,8 @@ class SeedKioskSaldoAwal extends Command
                         'delivery_type' => 'consignment',
                         'qty_delivered' => $s['qty'],
                         'unit_price' => $variant->sale_price_per_pack,
-                        'cost_snapshot' => null,
+                        'cost_snapshot' => $variant->cost_per_pack,
+                        'units_per_pack_snapshot' => $variant->units_per_pack,
                         'notes' => 'Saldo awal migrasi (titipan lapangan sebelum sistem).',
                     ]);
                     // created_at = tanggal spreadsheet (set sebelum save → tidak ditimpa).
@@ -281,7 +282,7 @@ class SeedKioskSaldoAwal extends Command
             ['Dilewati — kios sudah punya delivery', $skipHasDelivery],
             ['Dilewati — nama tak match kios', count($skipUnmatched)],
             ['Total mika saldo awal', $totalMika],
-            ['Estimasi nilai tunggakan (Rp)', number_format($totalMika * 15 * 800, 0, ',', '.')],
+            ['Estimasi nilai tunggakan (Rp)', number_format($totalMika * (float) $variant->sale_price_per_pack, 0, ',', '.')],
             ['Tanggal trip migrasi (paling awal)', $earliest?->toDateString() ?? '—'],
             ['Varian dipakai', $variant->name.' @ Rp '.number_format((float) $variant->sale_price_per_pack, 0, ',', '.')],
         ]);
