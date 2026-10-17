@@ -157,6 +157,61 @@ class LiveTripProgressTest extends TestCase
     }
 
     /**
+     * 🔴 CEGAH KESAN KUNJUNGAN DOBEL LINTAS OPERATOR DI DASHBOARD (18 Okt 2026):
+     * kios yang sudah dikunjungi HARI INI oleh trip operator LAIN (meski trip itu
+     * sudah ditutup, atau trip aktif lain milik owner yang sama) tidak boleh
+     * nongol di "Kios Belum Dikunjungi" trip yang masih berjalan — sama prinsipnya
+     * dengan guard ActiveTrip::pendingDeliveryBlocksSettleToday().
+     */
+    public function test_unvisited_kiosks_excludes_kiosk_visited_today_by_another_trip_same_owner(): void
+    {
+        $tripAdri = $this->makeActiveTripWithActivity(); // operator = $this->operator
+
+        $kioskDisambangiMadan = Kiosk::factory()->create([
+            'cluster_id' => $this->cluster->id, 'name' => 'Kios Disambangi Madan',
+        ]);
+
+        // Madan — operator LAIN, trip TERPISAH, sudah DITUTUP hari ini (tidak ikut
+        // whereNull('ended_at') → harus tetap ikut terhitung dari query cross-trip).
+        $madan = User::factory()->create([
+            'role' => 'operator', 'is_active' => true, 'owner_id' => $this->owner->id,
+        ]);
+        $tripMadan = Trip::factory()->create([
+            'owner_id' => $this->owner->id, 'operator_id' => $madan->id,
+            'starting_cluster_id' => $this->cluster->id, 'trip_number_of_day' => 2,
+            'qty_carried_total' => 50, 'started_at' => now()->subHour(), 'ended_at' => now(),
+            'trip_date' => today()->format('Y-m-d'),
+        ]);
+        $deliveryMadan = Delivery::factory()->create([
+            'kiosk_id' => $kioskDisambangiMadan->id, 'trip_id' => $tripMadan->id,
+            'qty_delivered' => 3, 'product_variant_id' => $this->variant->id,
+        ]);
+        KioskVisit::create([
+            'trip_id' => $tripMadan->id, 'kiosk_id' => $kioskDisambangiMadan->id,
+            'visited_at' => now()->subMinutes(30), 'visit_action' => 'drop_only',
+            'new_delivery_id' => $deliveryMadan->id, 'extension_granted' => false,
+        ]);
+
+        // Kios yang betul-betul belum disentuh siapa pun hari ini — kontrol negatif.
+        $belumDisambangi = Kiosk::factory()->create([
+            'cluster_id' => $this->cluster->id, 'name' => 'Kios Belum Disentuh',
+        ]);
+
+        $this->actingAs($this->owner);
+
+        $component = Livewire::test(LiveTripProgress::class);
+        $component->assertSee('Kios Belum Disentuh')
+            ->assertDontSee('Kios Disambangi Madan');
+
+        $unvisited = $component->viewData('tripStats')[$tripAdri->id]['unvisited_kiosks'];
+        $this->assertFalse(
+            $unvisited->contains('id', $kioskDisambangiMadan->id),
+            'Kios yang sudah disambangi Madan hari ini harus tersingkir dari daftar belum-dikunjungi trip Adri.'
+        );
+        $this->assertTrue($unvisited->contains('id', $belumDisambangi->id));
+    }
+
+    /**
      * Anti N+1 untuk halaman yang di-poll tiap 30 detik: jumlah query konstan
      * (eager load), tidak bertambah mengikuti jumlah kios/kunjungan.
      */

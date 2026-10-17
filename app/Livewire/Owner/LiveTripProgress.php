@@ -5,6 +5,7 @@ namespace App\Livewire\Owner;
 use Livewire\Component;
 use App\Models\Trip;
 use App\Models\Kiosk;
+use App\Models\KioskVisit;
 use App\Support\TripAreas;
 
 class LiveTripProgress extends Component
@@ -38,6 +39,20 @@ class LiveTripProgress extends Component
         // Area yang RELEVAN per trip (area awal + area yang sudah disentuh). 2 query
         // batch untuk semua trip sekaligus — bukan per-baris.
         $areas = TripAreas::for($activeTrips->pluck('id')->all());
+
+        // 🔴 Kios yang sudah dikunjungi HARI INI oleh TRIP MANAPUN milik owner ini —
+        // termasuk trip operator lain, atau trip yang sudah ditutup hari ini (tidak
+        // ikut $activeTrips). 1 query batch dipakai bersama SEMUA trip aktif di bawah
+        // (bukan per-trip) supaya "belum dikunjungi" tak menghitung kios yang
+        // sebenarnya sudah didatangi operator lain pagi ini — cegah kesan kunjungan
+        // dobel lintas operator di dashboard owner (18 Okt 2026, sama prinsipnya
+        // dengan guard ActiveTrip::pendingDeliveryBlocksSettleToday()).
+        $visitedTodayByAnyTripKioskIds = KioskVisit::active()
+            ->whereDate('visited_at', today())
+            ->whereHas('trip', fn ($q) => $q->where('owner_id', auth()->id()))
+            ->pluck('kiosk_id')
+            ->unique()
+            ->all();
 
         $tripStats = [];
         foreach ($activeTrips as $trip) {
@@ -91,7 +106,13 @@ class LiveTripProgress extends Component
 
             $komisi = $mikaKomisi * $komisiPerMika;
 
-            $visitedIds = $trip->visits->pluck('kiosk_id')->all();
+            // Visited sendiri + visited HARI INI oleh trip lain (lintas operator) —
+            // digabung di sini, bukan dua array terpisah, supaya pemakai di bawah
+            // (unvisited_kiosks) tak perlu tahu soal cross-operator sama sekali.
+            $visitedIds = array_values(array_unique(array_merge(
+                $trip->visits->pluck('kiosk_id')->all(),
+                $visitedTodayByAnyTripKioskIds,
+            )));
 
             $tripStats[$trip->id] = [
                 'area_label' => $area['label'] ?? ($trip->startingCluster->name ?? 'Semua Kios'),
