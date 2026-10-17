@@ -300,6 +300,26 @@ class ActiveTrip extends Component
         $correctedKioskIds = $tripVisits->whereNotNull('corrected_at')
             ->pluck('kiosk_id')->unique()->values()->all();
 
+        // Kedai dg kunjungan AKTIF HARI INI dari TRIP LAIN (operator lain, atau
+        // operator sama di trip kedua) — diturunkan ke bawah daftar seperti kedai
+        // yang sudah dikunjungi trip sendiri (18 Okt 2026, cegah kunjungan dobel
+        // lintas operator). Query TERPISAH dari lastOperatorFor() (yang baru
+        // menghitung utk kios yg SUDAH masuk batch tampil) karena sortir ini harus
+        // terjadi SEBELUM LIMIT — menunggu batch tampil berarti kedai yang mau
+        // didorong ke bawah itu sudah "lolos" ke atas lebih dulu.
+        $otherTripVisitedTodayIds = KioskVisit::whereNull('corrected_at')
+            ->where('trip_id', '!=', $this->trip->id)
+            ->whereDate('visited_at', today())
+            ->whereHas('trip', function ($q) use ($ownerId) {
+                // Trip pakai BelongsToOwner (OwnerScope otomatis) + SoftDeletes,
+                // tapi filter owner_id tetap ditulis eksplisit — gaya defensif
+                // yang sama dipakai di seluruh file ini (availableAreas(), dst).
+                $q->when($ownerId !== null, fn ($qq) => $qq->where('owner_id', $ownerId));
+            })
+            ->pluck('kiosk_id')->unique()->values()->all();
+
+        $sortToBottomIds = array_values(array_unique(array_merge($visitedKioskIds, $otherTripVisitedTodayIds)));
+
         // Total per AREA dalam satu query GROUP BY. Dipakai dua hal sekaligus:
         // judul pemisah ("— Pancing (12 kios) —") dan totalMatched — jadi ini
         // MENGGANTIKAN query count lama, bukan menambah.
@@ -310,9 +330,9 @@ class ActiveTrip extends Component
         $totalMatched = (int) $perClusterTotals->sum();
 
         if ($this->sortedByDistance && $this->userLat !== null && $this->userLng !== null) {
-            [$kiosks, $groups] = $this->kiosksByDistance($base, $visitedKioskIds, $perClusterTotals);
+            [$kiosks, $groups] = $this->kiosksByDistance($base, $sortToBottomIds, $perClusterTotals);
         } else {
-            [$kiosks, $groups] = $this->kiosksByRoute($base, $visitedKioskIds, $perClusterTotals);
+            [$kiosks, $groups] = $this->kiosksByRoute($base, $sortToBottomIds, $perClusterTotals);
         }
 
         $displayedIds = $kiosks->pluck('id')->all();
@@ -642,13 +662,18 @@ class ActiveTrip extends Component
 
     /**
      * Operator terakhir yang mengunjungi tiap kios (untuk himpunan TAMPIL).
-     * Satu query join+group, hindari N+1.
+     * Satu query join+group, hindari N+1 — trip_id ikut diambil lewat trik
+     * SUBSTRING_INDEX(GROUP_CONCAT(...)) yang sama dipakai utk operator_name,
+     * jadi JAM kunjungan + penanda "trip lain hari ini" didapat TANPA query
+     * tambahan (18 Okt 2026 — info pengantaran terakhir per kedai).
      */
     private function lastOperatorFor(array $kioskIds): array
     {
         if (empty($kioskIds)) {
             return [];
         }
+
+        $ownTripId = $this->trip->id;
 
         return KioskVisit::whereIn('kiosk_id', $kioskIds)
             ->whereNull('kiosk_visits.corrected_at')
@@ -657,12 +682,27 @@ class ActiveTrip extends Component
             ->join('users', 'trips.operator_id', '=', 'users.id')
             ->groupBy('kiosk_visits.kiosk_id')
             ->selectRaw('kiosk_visits.kiosk_id, MAX(kiosk_visits.visited_at) as last_visited_at, '
-                .'SUBSTRING_INDEX(GROUP_CONCAT(users.name ORDER BY kiosk_visits.visited_at DESC), ",", 1) as operator_name')
+                .'SUBSTRING_INDEX(GROUP_CONCAT(users.name ORDER BY kiosk_visits.visited_at DESC), ",", 1) as operator_name, '
+                .'SUBSTRING_INDEX(GROUP_CONCAT(kiosk_visits.trip_id ORDER BY kiosk_visits.visited_at DESC), ",", 1) as last_trip_id')
             ->get()
-            ->mapWithKeys(fn ($row) => [$row->kiosk_id => [
-                'name' => $row->operator_name,
-                'date' => \Carbon\Carbon::parse($row->last_visited_at)->translatedFormat('d M Y'),
-            ]])
+            ->mapWithKeys(function ($row) use ($ownTripId) {
+                $visitedAt = \Carbon\Carbon::parse($row->last_visited_at);
+                $isToday = $visitedAt->isToday();
+
+                return [$row->kiosk_id => [
+                    'name' => $row->operator_name,
+                    'visited_at' => $visitedAt,
+                    // "Hari ini, 10:42" kalau kunjungan hari ini, selain itu tanggal+jam
+                    // lengkap — operator baca cepat tanpa menghitung selisih tanggal.
+                    'label' => $isToday
+                        ? 'Hari ini, '.$visitedAt->format('H:i')
+                        : $visitedAt->translatedFormat('d M Y, H:i'),
+                    // Badge "sudah diantar hari ini" HANYA utk kunjungan hari ini dari
+                    // TRIP LAIN (operator lain, atau operator sama di trip kedua) —
+                    // kunjungan trip sendiri sudah punya makna lewat badge "✓ Dikunjungi".
+                    'is_other_trip_today' => $isToday && (int) $row->last_trip_id !== (int) $ownTripId,
+                ]];
+            })
             ->all();
     }
 

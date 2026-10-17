@@ -203,9 +203,20 @@
                             <span class="text-slate-500 font-medium">{{ $kiosk->cluster->name }}</span>
                         @endif
                     </p>
+                    @php
+                        // Kedai sudah diantar TRIP LAIN hari ini (operator lain, atau operator
+                        // sama di trip kedua) — HANYA relevan kalau bukan "✓ Dikunjungi" trip
+                        // sendiri (makna itu tak berubah, lihat lastOperatorFor()).
+                        $otherTripToday = !$isVisited
+                            && ($lastOperatorPerKiosk[$kiosk->id]['is_other_trip_today'] ?? false);
+                    @endphp
                     <div class="flex flex-wrap gap-2 mt-1">
                         @if($isVisited)
                             <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✓ Dikunjungi</span>
+                        @elseif($otherTripToday)
+                            <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-semibold">
+                                ⚠️ Sudah diantar {{ $lastOperatorPerKiosk[$kiosk->id]['name'] }} hari ini {{ $lastOperatorPerKiosk[$kiosk->id]['visited_at']->format('H:i') }}
+                            </span>
                         @else
                             <span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Belum</span>
                         @endif
@@ -247,7 +258,7 @@
 
                     @if(isset($lastOperatorPerKiosk[$kiosk->id]))
                         <p class="text-xs text-slate-400 mt-1">
-                            👤 {{ $lastOperatorPerKiosk[$kiosk->id]['name'] }} • {{ $lastOperatorPerKiosk[$kiosk->id]['date'] }}
+                            👤 {{ $lastOperatorPerKiosk[$kiosk->id]['name'] }} • {{ $lastOperatorPerKiosk[$kiosk->id]['label'] }}
                         </p>
                     @endif
                 </div>
