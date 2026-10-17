@@ -1,5 +1,70 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 16 Oktober 2026*
+*Sesi terakhir: 18 Oktober 2026*
+
+## 🔴 KUNJUNGAN DOBEL LINTAS OPERATOR — tampilan+badge, blokir tagih, dashboard (18 Okt 2026) — SELESAI & PUSHED
+**504 test hijau (dari 497 baseline).** 2 commit atomik (pakai `KioskCardInfoTest` dari sesi
+sebelumnya untuk item a+b, commit terpisah untuk ini — lihat hash di bawah).
+
+### Latar
+Skenario nyata: Adri jalan trip pagi, titip 5 mika di Kedai X. Siang itu Madan (operator lain,
+trip terpisah) kebetulan lewat Kedai X yang sama dan membuka modalnya — titipan Adri yang
+ditaruh beberapa jam lalu belum tentu laku. Sebelum fix ini, Madan bisa langsung "Tagih + Titip
+Ulang"/"Ganti ke Cash" atas titipan itu → tagihan fiktif + stok/komisi dobel kalau kedai ditambah
+titip lagi (komisi basis DROP, lihat [[komisi-rian-basis-drop]]).
+
+### (a)+(b) Tampilan kartu + badge — commit `81aa1e3`
+- Kartu kios: info "terakhir dikunjungi operator X" sekarang pakai tanggal+jam ("Hari ini,
+  HH:MM" utk hari ini). Tetap 1 query batch (query count TIDAK naik — lihat
+  `KioskCardInfoTest::test_kiosk_list_query_count_does_not_grow_per_row`).
+- Badge baru "⚠️ Sudah diantar {nama} hari ini {jam}" utk kios yang dikunjungi trip LAIN
+  (operator lain, ATAU operator sama trip kedua) hari ini — kios ini didorong ke BAWAH daftar
+  (sort SEBELUM `LIMIT`/`take()`, lihat `$sortToBottomIds` di `ActiveTrip.php`). Badge "✓
+  Dikunjungi" tetap exclusive utk kunjungan trip SENDIRI saja.
+
+### (c) Blokir KERAS tagih atas titipan trip lain hari ini — commit `b1acb07`
+**File:** `app/Livewire/Operator/ActiveTrip.php` (`pendingDeliveryBlocksSettleToday()`, dipanggil
+dari `chooseAction()` + `persistVisitFromState()`) + `active-trip.blade.php` (sembunyikan tombol +
+kotak merah TETAP, bukan "Lanjutkan?").
+
+- Aturan: titipan yg BARU ditaruh HARI INI oleh TRIP LAIN dari trip yg sedang berjalan sekarang —
+  baik operator lain, ATAU operator sama di trip kedua hari itu — TIDAK bisa ditagih
+  (`tagih_titip`/`ganti_cash`). **Titip Cash & Lewati tetap SELALU boleh.** Titipan hari
+  sebelumnya tidak terpengaruh.
+- Dua layer: UI (`chooseAction()` coret pilihan dari whitelist `$valid` + Blade sembunyikan
+  tombol) + SERVER anti-tamper (`persistVisitFromState()` tolak `drop_and_settle`/`settle_only`
+  walau request Livewire diubah langsung — kecuali `$isCorrection`).
+- Pesan error exact: *"Kedai ini sudah diantar {nama} hari ini jam {jam}. Titipannya baru
+  ditaruh, belum bisa ditagih. Pilih Titip Cash kalau kedai minta tambahan, atau Lewati."*
+- **Keputusan desain penting:** "hari ini" dibaca dari `trip_date` TRIP ASAL titipan (business
+  date), **BUKAN** `created_at` mentah delivery. Alasan: saldo awal/migrasi (`OpeningBalance`,
+  trip sentinel tahun 2000) & delivery lama lain punya `created_at` = waktu baris itu DIBUAT di
+  DB (hari ini, saat migrasi/seed/test jalan), bukan kapan titipan itu REAL ditaruh di lapangan —
+  kalau pakai `created_at` mentah, kios lama/data lampau salah ikut terblokir (ketemu lewat
+  regresi: 5 test lama gagal sebelum fix ini, root cause-nya persis ini). Trip asal yang tak bisa
+  diresolve (data legacy/BS yatim) juga TIDAK diblokir (fail-safe, bukan crash).
+- Test baru: `tests/Feature/Operator/CrossTripDoubleVisitBlockTest.php` (6 test) — skenario
+  Adri/Madan, operator sama trip kedua, titip cash & lewati tetap boleh saat diblokir, titipan
+  hari sebelumnya tak terpengaruh, badge+sort kartu (regresi cepat item a+b).
+
+### (d) Dashboard owner — kios disambangi trip lain tak dobel di "belum dikunjungi" — commit `dce48cc`
+**File:** `app/Livewire/Owner/LiveTripProgress.php` (`wire:poll.30s`, TIDAK diubah intervalnya).
+- Sebelumnya "Kios Belum Dikunjungi" per trip hanya exclude kunjungan trip itu SENDIRI — kios yg
+  pagi ini sudah didatangi operator lain (trip terpisah, aktif ATAU sudah ditutup hari ini) masih
+  muncul "belum dikunjungi" di trip operator lain → kesan salah kunjungan dobel di dashboard owner.
+- Fix: 1 query batch baru (`KioskVisit::active()->whereDate('visited_at', today())->whereHas(
+  'trip', fn ($q) => $q->where('owner_id', ...))`) dipakai bersama SEMUA trip aktif (bukan
+  per-trip — tetap bukan N+1), digabung ke `$visitedIds` tiap trip SEBELUM hitung
+  `unvisited_kiosks`. Sengaja query TERPISAH dari `whereNull('ended_at')` scope `$activeTrips`
+  karena harus tetap tangkap trip operator lain yg SUDAH ended hari ini.
+- Test baru: `test_unvisited_kiosks_excludes_kiosk_visited_today_by_another_trip_same_owner` —
+  kios yg disambangi trip lain (termasuk yg sudah ditutup) tersingkir dari daftar trip yg masih
+  jalan; kios yg benar2 belum disentuh tetap muncul. Query-count test (bounded ≤15) tetap lolos.
+
+### Catatan untuk sesi berikutnya
+- Belum ada follow-up — item (a)-(d) brief ini SELESAI semua, 504 test hijau, pushed ke
+  `origin/main`. Kalau owner lapor kasus baru kunjungan dobel yang tak tertangkap 3 guard di
+  atas (kartu, blokir tagih, dashboard), cek dulu apakah skenario itu PAKAI `trip_date` yg sama
+  dgn "hari ini" — guard ini semua business-date based, bukan wall-clock.
 
 ## 🔴 `php artisan owner:reset-data {ownerId}` — command baru, BELUM dijalankan di produksi (16 Okt 2026) — SELESAI & PUSHED (lokal)
 **+7 test baru, 494 regresi hijau (dari 487).** Satu commit atomik. Dibangun & dibuktikan dengan
