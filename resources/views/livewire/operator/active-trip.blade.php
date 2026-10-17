@@ -845,6 +845,8 @@
                     @endif
 
                     @if($pendingDelivery)
+                        @php $blokirTagihHariIni = $this->pendingDeliveryBlocksSettleToday(); @endphp
+
                         <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 flex justify-between items-center text-sm">
                             <span class="font-medium text-amber-800">Titipan sebelumnya</span>
                             <span class="font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} mika ({{ $pendingDelivery->qty_biji_delivered }} biji)</span>
@@ -860,14 +862,29 @@
                             </div>
                         @endif
 
+                        {{-- 🔒 Kunjungan dobel lintas operator: titipan ini baru ditaruh TRIP LAIN
+                             hari ini. Kotak penjelasan TETAP, bukan tombol "Lanjutkan?" — supaya
+                             operator yang buru-buru tak bisa klik lewat. --}}
+                        @if($blokirTagihHariIni)
+                            <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
+                                🔒 <span class="font-semibold">
+                                    Kedai ini sudah diantar {{ $pendingDelivery->trip?->operator?->name ?? 'operator lain' }} hari ini jam {{ $pendingDelivery->created_at->format('H:i') }}.
+                                </span>
+                                Titipannya baru ditaruh, belum bisa ditagih. Pilih <b>Titip Cash</b> kalau kedai minta tambahan, atau <b>Lewati</b>.
+                            </div>
+                        @endif
+
                         <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Mau ngapain di kedai ini?</p>
                         <div class="space-y-3">
-                            {{-- 1 — siklus normal --}}
-                            <button type="button" wire:click="chooseAction('tagih_titip')"
-                                class="w-full text-left p-4 rounded-xl bg-amber-600 text-white shadow-sm active:bg-amber-700">
-                                <span class="font-bold text-base block">💰 Tagih + Titip Ulang</span>
-                                <span class="text-xs text-amber-100 mt-0.5 block">Siklus normal. Tagih yang laku (jatah dikurangi BS), titip lagi sejumlah jatah.</span>
-                            </button>
+                            {{-- 1 — siklus normal. DISEMBUNYIKAN saat titipan baru ditaruh trip lain
+                                 hari ini (kotak merah di atas sudah menjelaskan alasannya). --}}
+                            @unless($blokirTagihHariIni)
+                                <button type="button" wire:click="chooseAction('tagih_titip')"
+                                    class="w-full text-left p-4 rounded-xl bg-amber-600 text-white shadow-sm active:bg-amber-700">
+                                    <span class="font-bold text-base block">💰 Tagih + Titip Ulang</span>
+                                    <span class="text-xs text-amber-100 mt-0.5 block">Siklus normal. Tagih yang laku (jatah dikurangi BS), titip lagi sejumlah jatah.</span>
+                                </button>
+                            @endunless
                             {{-- 2 — naruh cash ekstra, tidak nagih --}}
                             <button type="button" wire:click="chooseAction('titip_cash')"
                                 class="w-full text-left p-4 rounded-xl bg-white border-2 border-emerald-300 active:bg-emerald-50">
@@ -881,12 +898,16 @@
                                 <span class="text-xs text-slate-500 mt-0.5 block">Kedai belum habis, belum mau ditambah. Cuma catat sisa, lanjut.</span>
                             </button>
                             {{-- 4 — GANTI KE CASH (baru): tagih titipan terakhir, tak titip lagi, kedai
-                                 tetap didatangi tapi mode cash. "Ganti" (lanjut) ≠ "Hentikan" (berhenti). --}}
-                            <button type="button" wire:click="chooseAction('ganti_cash')"
-                                class="w-full text-left p-4 rounded-xl bg-white border-2 border-sky-300 active:bg-sky-50">
-                                <span class="font-bold text-base text-sky-700 block">🔄 Ganti ke Cash (baru)</span>
-                                <span class="text-xs text-slate-500 mt-0.5 block">Ambil bayaran titipan terakhir. Kedai tetap didatangi, tapi mulai sekarang beli tunai (tidak dititip lagi).</span>
-                            </button>
+                                 tetap didatangi tapi mode cash. "Ganti" (lanjut) ≠ "Hentikan" (berhenti).
+                                 DISEMBUNYIKAN jg saat blokir (alasan sama: menagih titipan yang baru
+                                 ditaruh). --}}
+                            @unless($blokirTagihHariIni)
+                                <button type="button" wire:click="chooseAction('ganti_cash')"
+                                    class="w-full text-left p-4 rounded-xl bg-white border-2 border-sky-300 active:bg-sky-50">
+                                    <span class="font-bold text-base text-sky-700 block">🔄 Ganti ke Cash (baru)</span>
+                                    <span class="text-xs text-slate-500 mt-0.5 block">Ambil bayaran titipan terakhir. Kedai tetap didatangi, tapi mulai sekarang beli tunai (tidak dititip lagi).</span>
+                                </button>
+                            @endunless
                         </div>
 
                         {{-- Hentikan Kedai (stop titipan) — satu pintu, pilih cara di layar berikutnya --}}

@@ -854,7 +854,11 @@ class ActiveTrip extends Component
 
         $this->isCashOnly = (bool) ($this->selectedKiosk?->is_cash_only);
 
-        $this->pendingDelivery = Delivery::where('kiosk_id', $kioskId)
+        // trip.operator dieager-load SEKALI di sini (bukan di Blade/guard) supaya
+        // nama operator utk badge/pesan blokir (lihat pendingDeliveryBlocksSettleToday())
+        // tak memicu lazy-load berulang saat modal dirender/disimpan.
+        $this->pendingDelivery = Delivery::with('trip.operator')
+            ->where('kiosk_id', $kioskId)
             ->doesntHave('settlement')
             ->latest('id')
             ->first();
@@ -895,6 +899,36 @@ class ActiveTrip extends Component
 
         $this->resetErrorBag();
         $this->isVisitModalOpen = true;
+    }
+
+    /**
+     * 🔴 CEGAH KUNJUNGAN DOBEL LINTAS OPERATOR (18 Okt 2026): true kalau titipan
+     * berjalan ($pendingDelivery) di kedai ini BARU DITARUH HARI INI oleh TRIP LAIN
+     * dari trip yang sedang berjalan sekarang — baik operator lain, ATAU operator
+     * yang sama di trip kedua hari itu. Titipan itu belum tentu laku; menagihnya
+     * sekarang = tagihan fiktif + stok/komisi dobel kalau kedai ini ikut dititip lagi.
+     *
+     * Dipakai di TIGA tempat (satu sumber kebenaran, bukan tiga aturan terpisah):
+     * chooseAction() (coret pilihan dari UI), Blade (sembunyikan tombol + kotak
+     * penjelasan), persistVisitFromState() (tolak server-side — jangan andalkan UI).
+     *
+     * Kunjungan dari HARI SEBELUMNYA tidak terpengaruh (siklus normal tetap jalan).
+     *
+     * "Hari ini" dibaca dari trip_date trip ASAL titipan (business date), BUKAN
+     * created_at mentah — supaya saldo awal/migrasi (OpeningBalance, trip sentinel
+     * tahun 2000) dan data lampau tak ikut terblokir hanya karena baris-nya memang
+     * BARU DIBUAT hari ini di database (migrasi/seed/backfill), padahal titipannya
+     * sendiri bukan dari trip operasional hari ini. 🔒 Trip asal yang tak bisa
+     * diresolve (data legacy/BS yatim) juga TIDAK diblokir (fail-safe, bukan crash).
+     */
+    public function pendingDeliveryBlocksSettleToday(): bool
+    {
+        $deliveryTrip = $this->pendingDelivery?->trip;
+
+        return $this->pendingDelivery !== null
+            && $deliveryTrip !== null
+            && (int) $deliveryTrip->id !== (int) $this->trip->id
+            && $deliveryTrip->trip_date?->isToday();
     }
 
     /**
@@ -1019,6 +1053,15 @@ class ActiveTrip extends Component
         $valid = $this->pendingDelivery
             ? ['tagih_titip', 'titip_cash', 'cek', 'ganti_cash']
             : ['titip_cash', 'cek', 'mulai_titipan'];
+
+        // 🔒 Titipan berjalan ini baru ditaruh TRIP LAIN hari ini — tagih_titip &
+        // ganti_cash (keduanya menagih $pendingDelivery) dicoret dari pilihan.
+        // Guard SEBENARNYA ada di persistVisitFromState() (anti-tamper, tak bisa
+        // dilewati dgn memanggil chooseAction langsung dari request Livewire yang
+        // diubah); ini hanya mencegah operator sampai ke form yang toh akan ditolak.
+        if ($this->pendingDeliveryBlocksSettleToday()) {
+            $valid = array_values(array_diff($valid, ['tagih_titip', 'ganti_cash']));
+        }
 
         if (! in_array($action, $valid, true)) {
             return;
@@ -1865,6 +1908,23 @@ class ActiveTrip extends Component
         // saat koreksi (operator boleh mengoreksi drop ke angka berapa pun, jatah kios
         // tak ikut berubah). Sinyal: $correctionOfVisitId terisi.
         $isCorrection = $correctionOfVisitId !== null;
+
+        // 🔒 CEGAH TAGIH ATAS TITIPAN YANG BARU DITARUH TRIP LAIN HARI INI — guard
+        // KERAS (bukan "Lanjutkan?", sama prinsipnya dgn blokir titip≠jatah): operator
+        // yang buru-buru akan klik lewat peringatan lunak. Berlaku utk drop_and_settle
+        // (tagih_titip) & settle_only (ganti_cash) — KEDUANYA menagih $pendingDelivery.
+        // $isCorrection DIKECUALIKAN: koreksi membetulkan angka visit LAMA, bukan
+        // settle baru atas titipan orang lain. Defensif thd data lama/saldo awal/
+        // BS-redistribusi via trip_date (bukan created_at) — lihat docblock
+        // pendingDeliveryBlocksSettleToday().
+        if ($isSettleAction && ! $isCorrection && $this->pendingDeliveryBlocksSettleToday()) {
+            $operatorName = $this->pendingDelivery->trip?->operator?->name ?? 'operator lain';
+            $jam = $this->pendingDelivery->created_at->format('H:i');
+            $this->addError('general', "Kedai ini sudah diantar {$operatorName} hari ini jam {$jam}. "
+                .'Titipannya baru ditaruh, belum bisa ditagih. Pilih Titip Cash kalau kedai minta tambahan, atau Lewati.');
+
+            return null;
+        }
 
         // === SKENARIO KIOS CASH ONLY (jalur legacy/koreksi) ===
         // Setiap kunjungan = penjualan cash langsung lunas, tanpa konsinyasi. Kini kedai
