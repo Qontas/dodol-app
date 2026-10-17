@@ -40,8 +40,10 @@ class SettlementObserver
             + (int) $settlement->qty_returned_fresh
             + (int) $settlement->qty_returned_expired;
 
-        // qty_delivered disimpan dalam MIKA, qty settlement dalam BIJI (1 mika = 15 biji)
-        $expected = (int) $delivery->qty_delivered * 15;
+        // qty_delivered disimpan dalam MIKA, qty settlement dalam BIJI — isi per mika
+        // dibaca dari SNAPSHOT delivery ini (bukan konstanta 15 global), lihat
+        // Delivery::getQtyBijiDeliveredAttribute().
+        $expected = $delivery->qty_biji_delivered;
 
         if ($actualSum !== $expected) {
             throw new InvalidArgumentException(

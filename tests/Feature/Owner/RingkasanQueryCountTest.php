@@ -68,15 +68,22 @@ class RingkasanQueryCountTest extends TestCase
 
                 // 1. pluck settled_delivery_ids (bulan ini + lalu)
                 $pluckIds = str_contains($sql, 'settled_delivery_id') && str_contains($sql, 'kiosk_visits') && str_contains($sql, 'exists');
-                // 2. settlement selectRaw omset+qty_sold (bulan ini + lalu)
-                $settlementSum = str_contains($sql, 'sum(amount_paid)') && str_contains($sql, 'sum(qty_sold)');
+                // 2. join settlements→deliveries per BARIS (amount_paid+qty_sold+unit_price,
+                //    bulan ini + lalu) — pengganti SUM(amount_paid)+SUM(qty_sold) agregat lama;
+                //    sekarang harus per-baris karena unit_price/cost_snapshot milik delivery,
+                //    tapi TETAP 1 query per bulan (bukan N+1). Dibedakan dari query serupa
+                //    widget "Kerugian Titipan" (yang cuma select qty_returned_expired, tanpa
+                //    amount_paid/qty_sold/unit_price) DAN dari query TripAggregator::for()
+                //    milik completedAgg (shape sama tapi select tambahan settlements.delivery_id
+                //    di kolom pertama, untuk grouping per-delivery-nya sendiri — bukan Ringkasan).
+                $saleRowsJoin = str_contains($sql, 'amount_paid') && str_contains($sql, 'qty_sold') && str_contains($sql, 'unit_price') && str_contains($sql, 'inner join `deliveries`') && ! str_contains($sql, 'select `settlements`.`delivery_id`,');
                 // 4. komisi per-operator (1x)
                 $perOperator = str_contains($sql, 'as operator_name');
                 // 3. drop-sum komisi (bulan ini + lalu) — sum(qty_delivered) via whereHas year(),
                 //    beda dari accessor per-trip (trip_id = ?, tanpa year). Kecualikan per-operator.
                 $dropSum = str_contains($sql, 'sum(`qty_delivered`)') && str_contains($sql, 'year(') && ! $perOperator;
 
-                return $pluckIds || $settlementSum || $dropSum || $perOperator;
+                return $pluckIds || $saleRowsJoin || $dropSum || $perOperator;
             })->count();
         };
 
@@ -85,7 +92,7 @@ class RingkasanQueryCountTest extends TestCase
 
         // Konstan: 6x lebih banyak trip → jumlah query widget Ringkasan SAMA (agregat, no N+1).
         $this->assertSame($few, $many, "Query widget Ringkasan harus konstan (few=$few, many=$many)");
-        // 7 query: 2 pluck-id + 2 settlement-sum + 2 drop-sum + 1 per-operator (bulan ini & lalu).
+        // 7 query: 2 pluck-id + 2 join settlement+delivery per-baris + 2 drop-sum + 1 per-operator (bulan ini & lalu).
         $this->assertSame(7, $many, "Widget Ringkasan = $many query");
     }
 }

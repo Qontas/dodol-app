@@ -356,13 +356,15 @@
                     @enderror
                 </div>
 
-                {{-- Total otomatis: mika × 15 biji × Rp 800 --}}
+                {{-- Total otomatis: mika × harga per mika VARIAN AKTIF (bukan konstanta
+                     15/800 global) — lihat ActiveTrip::previewVariant(). --}}
+                @php $pv = $this->previewVariant(); @endphp
                 <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
                     <p class="text-xs text-amber-700 font-semibold uppercase tracking-wide">Total Harga (Lunas Cash)</p>
                     <p class="text-2xl font-bold text-amber-800 mt-1">
-                        Rp {{ number_format(max(0, (int) $walkInMika) * 15 * 800, 0, ',', '.') }}
+                        Rp {{ number_format(max(0, (int) $walkInMika) * $pv->sale_price_per_pack, 0, ',', '.') }}
                     </p>
-                    <p class="text-[11px] text-amber-600 mt-1">{{ max(0, (int) $walkInMika) }} mika × 15 biji × Rp 800</p>
+                    <p class="text-[11px] text-amber-600 mt-1">{{ max(0, (int) $walkInMika) }} mika × {{ $pv->units_per_pack }} biji × Rp {{ number_format($pv->sale_price_per_pack / max(1, $pv->units_per_pack), 0, ',', '.') }}</p>
                 </div>
             </div>
 
@@ -631,7 +633,7 @@
                 @if($pendingDelivery)
                     <div class="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm">
                         <span class="text-base">🏪</span>
-                        <span class="text-amber-800">Kedai ini: <b>ada titipan {{ $pendingDelivery->qty_delivered }} mika</b> ({{ $pendingDelivery->qty_delivered * 15 }} biji).</span>
+                        <span class="text-amber-800">Kedai ini: <b>ada titipan {{ $pendingDelivery->qty_delivered }} mika</b> ({{ $pendingDelivery->qty_biji_delivered }} biji).</span>
                     </div>
                 @elseif($isCashOnly)
                     <div class="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm">
@@ -727,7 +729,7 @@
                             <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
                                 <div class="flex justify-between items-center mb-4">
                                     <span class="text-xs font-bold text-amber-800 uppercase tracking-wider">Titipan Sebelumnya</span>
-                                    <span class="text-sm font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} Mika ({{ $pendingDelivery->qty_delivered * 15 }} Biji)</span>
+                                    <span class="text-sm font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} Mika ({{ $pendingDelivery->qty_biji_delivered }} Biji)</span>
                                 </div>
                                 <div class="grid grid-cols-2 gap-4 mb-4">
                                     <div>
@@ -763,7 +765,7 @@
                         @if($stopMode === 'tanpa_tagih')
                             <div class="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
                                 @if($pendingDelivery)
-                                    ⚠️ Titipan {{ $pendingDelivery->qty_delivered }} mika ({{ $pendingDelivery->qty_delivered * 15 }} biji) akan dicatat sebagai <b>kerugian</b> — semua dianggap dodol basi/hilang, uang Rp 0. Pembukuan tetap jujur (titipan tidak menggantung).
+                                    ⚠️ Titipan {{ $pendingDelivery->qty_delivered }} mika ({{ $pendingDelivery->qty_biji_delivered }} biji) akan dicatat sebagai <b>kerugian</b> — semua dianggap dodol basi/hilang, uang Rp 0. Pembukuan tetap jujur (titipan tidak menggantung).
                                 @else
                                     Kedai ini tidak punya titipan aktif — langsung dihentikan tanpa kerugian.
                                 @endif
@@ -834,7 +836,7 @@
                     @if($pendingDelivery)
                         <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 flex justify-between items-center text-sm">
                             <span class="font-medium text-amber-800">Titipan sebelumnya</span>
-                            <span class="font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} mika ({{ $pendingDelivery->qty_delivered * 15 }} biji)</span>
+                            <span class="font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} mika ({{ $pendingDelivery->qty_biji_delivered }} biji)</span>
                         </div>
 
                         {{-- Banner Titipan Tertunda: titipan ini sebelumnya ditandai "belum bisa bayar". --}}
@@ -959,7 +961,7 @@
                         <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
                             <div class="flex justify-between items-center mb-4">
                                 <span class="text-xs font-bold text-amber-800 uppercase tracking-wider">Titipan Sebelumnya</span>
-                                <span class="text-sm font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} Mika ({{ $pendingDelivery->qty_delivered * 15 }} Biji)</span>
+                                <span class="text-sm font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} Mika ({{ $pendingDelivery->qty_biji_delivered }} Biji)</span>
                             </div>
 
                             <div class="grid grid-cols-2 gap-4 mb-4">
@@ -1084,11 +1086,15 @@
                          kedai bayar (biji ditaruh − BS), BS jadi kerugian owner. --}}
                     @if($chosenAction === 'titip_cash')
                         @php
-                            $bijiDitaruhCash = (int) $dropBaru * 15;
+                            // Isi & harga per biji dari VARIAN AKTIF (bukan konstanta 15/800
+                            // global) — lihat ActiveTrip::previewVariant().
+                            $pvCash = $this->previewVariant();
+                            $hargaPerBijiCash = $pvCash->sale_price_per_pack / max(1, $pvCash->units_per_pack);
+                            $bijiDitaruhCash = (int) $dropBaru * $pvCash->units_per_pack;
                             $bsCash = max(0, (int) $qtyBsCash);
                             $bsLebihCash = $bsCash > $bijiDitaruhCash;
                             $bijiBayarCash = max(0, $bijiDitaruhCash - $bsCash);
-                            $cashDiterima = $bijiBayarCash * 800;
+                            $cashDiterima = round($bijiBayarCash * $hargaPerBijiCash);
                         @endphp
                         @if($pendingDelivery)
                             <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
@@ -1142,7 +1148,7 @@
                                     <span class="text-lg font-bold text-emerald-800">Rp {{ number_format($cashDiterima, 0, ',', '.') }}</span>
                                 </div>
                                 <p class="text-[11px] text-emerald-700">
-                                    ({{ $bijiDitaruhCash }}@if($bsCash > 0) − {{ min($bsCash, $bijiDitaruhCash) }}@endif) biji × Rp 800. Jatah kedai TETAP {{ $jatah }} mika.
+                                    ({{ $bijiDitaruhCash }}@if($bsCash > 0) − {{ min($bsCash, $bijiDitaruhCash) }}@endif) biji × Rp {{ number_format($hargaPerBijiCash, 0, ',', '.') }}. Jatah kedai TETAP {{ $jatah }} mika.
                                 </p>
                             </div>
                         @endif
@@ -1262,8 +1268,9 @@
                 $needDrop = in_array($chosenAction, ['tagih_titip', 'titip_cash', 'mulai_titipan'], true) && (int) $dropBaru < 1;
                 // MULAI TITIPAN: jatah seterusnya wajib >=1.
                 $needJatahMulai = $chosenAction === 'mulai_titipan' && (int) $jatahMulai < 1;
-                // AKSI 2: BS (biji) tak boleh melebihi biji yang ditaruh (dropBaru × 15).
-                $bsOverCash = $chosenAction === 'titip_cash' && (int) $qtyBsCash > (int) $dropBaru * 15;
+                // AKSI 2: BS (biji) tak boleh melebihi biji yang ditaruh (dropBaru ×
+                // isi-per-mika VARIAN AKTIF, bukan konstanta 15 global).
+                $bsOverCash = $chosenAction === 'titip_cash' && (int) $qtyBsCash > (int) $dropBaru * $this->previewVariant()->units_per_pack;
                 $saveDisabled = $needDrop || $needJatahMulai || $blokirFooter || $bsOverCash;
                 $saveLabel = $blokirFooter
                     ? 'Betulkan titip = jatah dulu'

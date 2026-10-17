@@ -40,6 +40,9 @@ class Trip extends Model
         'ended_at' => 'datetime',
     ];
 
+    /** Cache instance untuk salesSnapshotTotals() — lihat docblock method-nya. */
+    private ?array $salesSnapshotTotalsCache = null;
+
     public function operator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'operator_id');
@@ -78,15 +81,7 @@ class Trip extends Model
 
     public function getMikaTerjualAttribute(): float
     {
-        $settledDeliveryIds = $this->visits()
-            ->active()
-            ->whereNotNull('settled_delivery_id')
-            ->pluck('settled_delivery_id');
-
-        $qtySoldBiji = (float) Settlement::whereIn('delivery_id', $settledDeliveryIds)
-            ->sum('qty_sold');
-
-        return $qtySoldBiji / 15;
+        return $this->salesSnapshotTotals()['mika_terjual'];
     }
 
     public function getMikaKiosBaruAttribute(): float
@@ -123,18 +118,13 @@ class Trip extends Model
 
     /**
      * HPP per mika dari owner trip ini. Fallback Rp 9.500 kalau owner belum di-set.
+     * Sekarang HANYA dipakai sebagai fallback baris delivery lolos cost_snapshot NULL
+     * (lihat salesSnapshotTotals()) — HPP "nyata" per transaksi dibaca dari snapshot
+     * delivery, bukan dari users.hpp_per_mika lagi.
      */
     private function getHpp(): float
     {
         return (float) ($this->owner?->hpp_per_mika ?? 9500);
-    }
-
-    /**
-     * Untung kotor per mika = harga jual (Rp 12.000) - HPP.
-     */
-    private function getUntungPerMika(): float
-    {
-        return 12000 - $this->getHpp();
     }
 
     /**
@@ -146,14 +136,72 @@ class Trip extends Model
         return (float) ($this->owner?->komisi_per_mika ?? 1000);
     }
 
+    /**
+     * mika_terjual/hpp_estimasi/untung_kotor dihitung SEKALI, per-BARIS delivery
+     * snapshot (units_per_pack_snapshot/unit_price/cost_snapshot) — bukan lagi
+     * qty_sold-total/15 dikali HPP-flat-owner. Perlu per-baris karena satu trip bisa
+     * menyentuh delivery dengan isi/harga/HPP snapshot berbeda-beda (owner ganti varian,
+     * atau produk berbeda). Hasil di-cache di instance karena 3 accessor di bawah
+     * memanggil helper ini — tanpa cache jadi 3 query identik per Trip per request.
+     *
+     * Fallback cost_snapshot NULL → HPP owner saat ini (getHpp(), default 9500) — jalur
+     * delivery lama sebelum snapshot ada; seharusnya sudah tak terjadi lagi setelah
+     * deliveries:backfill-snapshot dijalankan, defensif saja.
+     *
+     * @return array{mika_terjual: float, hpp_estimasi: float, untung_kotor: float}
+     */
+    private function salesSnapshotTotals(): array
+    {
+        if ($this->salesSnapshotTotalsCache !== null) {
+            return $this->salesSnapshotTotalsCache;
+        }
+
+        $settledDeliveryIds = $this->visits()
+            ->active()
+            ->whereNotNull('settled_delivery_id')
+            ->pluck('settled_delivery_id');
+
+        $rows = Settlement::whereIn('delivery_id', $settledDeliveryIds)
+            ->join('deliveries', 'deliveries.id', '=', 'settlements.delivery_id')
+            ->get([
+                'settlements.qty_sold',
+                'deliveries.unit_price',
+                'deliveries.cost_snapshot',
+                'deliveries.units_per_pack_snapshot',
+            ]);
+
+        $fallbackHpp = $this->getHpp();
+
+        $mikaTerjual = 0.0;
+        $hppEstimasi = 0.0;
+        $untungKotor = 0.0;
+
+        foreach ($rows as $row) {
+            $units = max(1, (int) ($row->units_per_pack_snapshot ?? 15));
+            $mikaRow = ((float) $row->qty_sold) / $units;
+            $cost = $row->cost_snapshot !== null ? (float) $row->cost_snapshot : $fallbackHpp;
+            $price = (float) $row->unit_price;
+
+            $mikaTerjual += $mikaRow;
+            $hppEstimasi += $mikaRow * $cost;
+            $untungKotor += $mikaRow * ($price - $cost);
+        }
+
+        return $this->salesSnapshotTotalsCache = [
+            'mika_terjual' => $mikaTerjual,
+            'hpp_estimasi' => $hppEstimasi,
+            'untung_kotor' => $untungKotor,
+        ];
+    }
+
     public function getHppEstimasiAttribute(): float
     {
-        return $this->mika_terjual * $this->getHpp();
+        return $this->salesSnapshotTotals()['hpp_estimasi'];
     }
 
     public function getUntungKotorAttribute(): float
     {
-        return $this->mika_terjual * $this->getUntungPerMika();
+        return $this->salesSnapshotTotals()['untung_kotor'];
     }
 
     /**

@@ -62,14 +62,24 @@ class LiveTripProgress extends Component
                 : $ownerKiosks; // Trip Bebas memang menyasar semua kios — tak berubah.
 
             // Settlement titipan yang di-settle pada trip ini. unique() per
-            // delivery: visit extension bisa menunjuk delivery yang sama.
-            $settlements = $trip->visits
+            // delivery: visit extension bisa menunjuk delivery yang sama. Delivery
+            // dibawa SERTA settlement (bukan cuma settlement sendiri) karena
+            // mika_terjual per baris butuh units_per_pack_snapshot MILIK delivery itu —
+            // bukan konstanta 15 global (sudah di-eager-load, tanpa query baru).
+            $settledPairs = $trip->visits
                 ->filter(fn ($v) => $v->settledDelivery?->settlement)
                 ->unique('settled_delivery_id')
-                ->map(fn ($v) => $v->settledDelivery->settlement);
+                ->map(fn ($v) => [
+                    'settlement' => $v->settledDelivery->settlement,
+                    'delivery' => $v->settledDelivery,
+                ]);
 
-            $omset = (float) $settlements->sum('amount_paid');
-            $mikaTerjual = $settlements->sum('qty_sold') / 15;
+            $omset = (float) $settledPairs->sum(fn ($p) => (float) $p['settlement']->amount_paid);
+            $mikaTerjual = (float) $settledPairs->sum(function ($p) {
+                $units = max(1, (int) ($p['delivery']->units_per_pack_snapshot ?? 15));
+
+                return ((float) $p['settlement']->qty_sold) / $units;
+            });
 
             // Komisi berjalan (Opsi Y — basis DROP): tarif x mika yang DILETAKKAN,
             // exclude BS daur-ulang. Sama dengan accessor Trip::komisi_rian /
@@ -89,6 +99,7 @@ class LiveTripProgress extends Component
                 'total_kios' => $kiosksForTrip->count(),
                 'unvisited_kiosks' => $kiosksForTrip->reject(fn ($k) => in_array($k->id, $visitedIds, true))->values(),
                 'omset' => $omset,
+                'mika_terjual' => $mikaTerjual,
                 'komisi' => $komisi,
                 'sorted_visits' => $trip->visits->sortByDesc('visited_at')->values(),
             ];

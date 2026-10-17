@@ -61,7 +61,6 @@ class TripHistoryController extends Controller
         $owner = auth()->user();
         $aggregates = $this->aggregatesFor(
             collect($trips->items())->pluck('id')->all(),
-            $owner->getHppPerMikaValue(),
             $owner->getKomisiPerMikaValue(),
         );
 
@@ -99,10 +98,10 @@ class TripHistoryController extends Controller
      * @param  array<int>  $tripIds
      * @return array<int, array<string, float|int>>
      */
-    private function aggregatesFor(array $tripIds, float $hpp, float $komisiPerMika): array
+    private function aggregatesFor(array $tripIds, float $komisiPerMika): array
     {
         $out = [];
-        foreach (TripAggregator::for($tripIds, $hpp, $komisiPerMika) as $id => $a) {
+        foreach (TripAggregator::for($tripIds, $komisiPerMika) as $id => $a) {
             $out[$id] = [
                 'kios' => $a['active_visits'],
                 'mika_diantar' => $a['mika_diantar'],

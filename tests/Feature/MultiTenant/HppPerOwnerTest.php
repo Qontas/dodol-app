@@ -33,11 +33,16 @@ class HppPerOwnerTest extends TestCase
             'starting_cluster_id' => $cluster->id,
         ]);
 
+        // cost_snapshot diisi dari HPP owner SAAT delivery dibuat (bukan konstanta factory
+        // 9500) — supaya helper ini tetap benar dipakai baik oleh test HPP default maupun
+        // HPP custom owner: hpp_estimasi sekarang dibaca dari snapshot per-delivery.
         $delivery = Delivery::factory()->create([
             'kiosk_id' => $kiosk->id,
             'trip_id' => $trip->id,
             'product_variant_id' => $variant->id,
             'qty_delivered' => 10,
+            'cost_snapshot' => $owner->getHppPerMikaValue(),
+            'units_per_pack_snapshot' => 15,
         ]);
 
         Settlement::factory()->create([

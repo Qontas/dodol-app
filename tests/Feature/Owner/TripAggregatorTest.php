@@ -91,9 +91,10 @@ class TripAggregatorTest extends TestCase
         $tripA = $this->buildRichTrip(today());
         $tripB = $this->buildRichTrip(today()->subDay());
 
-        $hpp = $this->owner->getHppPerMikaValue();
+        // $hpp tak lagi dipakai TripAggregator::for() — HPP sekarang dibaca per-delivery
+        // dari cost_snapshot, bukan diteruskan flat per batch. Signature tinggal 2 argumen.
         $komisi = $this->owner->getKomisiPerMikaValue();
-        $batch = TripAggregator::for([$tripA->id, $tripB->id], $hpp, $komisi);
+        $batch = TripAggregator::for([$tripA->id, $tripB->id], $komisi);
 
         foreach ([$tripA, $tripB] as $trip) {
             $trip->refresh();
@@ -130,6 +131,6 @@ class TripAggregatorTest extends TestCase
 
     public function test_empty_trip_ids_returns_empty(): void
     {
-        $this->assertSame([], TripAggregator::for([], 9500, 1000));
+        $this->assertSame([], TripAggregator::for([], 1000));
     }
 }

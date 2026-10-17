@@ -22,11 +22,10 @@ class TripAggregator
 {
     /**
      * @param  array<int>  $tripIds
-     * @param  float  $hpp             HPP per mika owner (Trip::getHpp fallback 9500)
      * @param  float  $komisiPerMika   tarif komisi per mika drop (fallback 1000)
      * @return array<int, array<string, float|int>>
      */
-    public static function for(array $tripIds, float $hpp, float $komisiPerMika): array
+    public static function for(array $tripIds, float $komisiPerMika): array
     {
         $tripIds = array_values(array_unique(array_map('intval', $tripIds)));
         if (empty($tripIds)) {
@@ -58,11 +57,23 @@ class TripAggregator
         }
         $allDeliveryIds = collect($deliveryIdsByTrip)->flatMap(fn ($ids) => array_values($ids))->unique()->all();
 
-        // (3) Settlement per delivery (amount_paid + qty_sold), dijumlah per trip di PHP.
+        // (3) Settlement per delivery (amount_paid + qty_sold) JOIN deliveries untuk ambil
+        //     snapshot isi/harga/HPP milik delivery itu sendiri — bukan lagi satu HPP flat
+        //     per pemanggil (owner bisa punya >1 varian/isi). Kolom qualified "deliveries.x"
+        //     muncul sebagai atribut TANPA prefix pada baris hasil, maka keyBy('delivery_id')
+        //     (bukan 'settlements.delivery_id').
         $settlements = empty($allDeliveryIds)
             ? collect()
-            : Settlement::whereIn('delivery_id', $allDeliveryIds)
-                ->get(['delivery_id', 'amount_paid', 'qty_sold'])
+            : Settlement::whereIn('settlements.delivery_id', $allDeliveryIds)
+                ->join('deliveries', 'deliveries.id', '=', 'settlements.delivery_id')
+                ->get([
+                    'settlements.delivery_id',
+                    'settlements.amount_paid',
+                    'settlements.qty_sold',
+                    'deliveries.unit_price',
+                    'deliveries.cost_snapshot',
+                    'deliveries.units_per_pack_snapshot',
+                ])
                 ->keyBy('delivery_id');
 
         // (4) Jumlah kunjungan AKTIF per trip (basis kios_lama_count).
@@ -97,19 +108,30 @@ class TripAggregator
             $mikaDiantar = (int) ($deliveryAgg[$id]->mika_diantar ?? 0);
             $dropKomisi = (float) ($deliveryAgg[$id]->drop_komisi ?? 0);
 
+            // Akumulasi PER-BARIS delivery snapshot (units_per_pack_snapshot/unit_price/
+            // cost_snapshot) — bukan lagi qty_sold-total/15 dikali HPP-flat satu pemanggil,
+            // supaya benar untuk trip yang menyentuh >1 isi/harga/HPP sekaligus. Identik
+            // Trip::salesSnapshotTotals() (jangan menyimpang rumusnya).
             $omset = 0.0;
-            $qtySold = 0.0;
+            $mikaTerjual = 0.0;
+            $hppEstimasi = 0.0;
+            $untungKotor = 0.0;
             foreach ($deliveryIdsByTrip[$id] ?? [] as $deliveryId) {
-                if ($s = $settlements->get($deliveryId)) {
-                    $omset += (float) $s->amount_paid;
-                    $qtySold += (float) $s->qty_sold;
+                if (! ($s = $settlements->get($deliveryId))) {
+                    continue;
                 }
+
+                $units = max(1, (int) ($s->units_per_pack_snapshot ?? 15));
+                $mikaRow = ((float) $s->qty_sold) / $units;
+                $cost = $s->cost_snapshot !== null ? (float) $s->cost_snapshot : 9500.0;
+                $price = (float) $s->unit_price;
+
+                $omset += (float) $s->amount_paid;
+                $mikaTerjual += $mikaRow;
+                $hppEstimasi += $mikaRow * $cost;
+                $untungKotor += $mikaRow * ($price - $cost);
             }
 
-            // Rumus IDENTIK accessor Trip (jangan diubah).
-            $mikaTerjual = $qtySold / 15;
-            $hppEstimasi = $mikaTerjual * $hpp;
-            $untungKotor = $mikaTerjual * (12000 - $hpp);
             $komisi = $dropKomisi * $komisiPerMika;
 
             $activeCount = (int) ($activeVisits[$id] ?? 0);

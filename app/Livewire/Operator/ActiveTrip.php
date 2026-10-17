@@ -1302,8 +1302,10 @@ class ActiveTrip extends Component
         $this->extensionGranted = false;
         $this->returnFresh = 0;
         $this->uangDiterima = 0;
+        // Isi per mika dari SNAPSHOT titipan lama ini (bukan konstanta 15 global) —
+        // lihat Delivery::getQtyBijiDeliveredAttribute().
         $this->returnExpired = $this->pendingDelivery
-            ? (int) $this->pendingDelivery->qty_delivered * self::BIJI_PER_MIKA
+            ? $this->pendingDelivery->qty_biji_delivered
             : 0;
         // Tandai settlement titipan lama sebagai kerugian (write-off) agar owner
         // dashboard bisa membedakannya dari tagih biasa yang semua diretur basi.
@@ -1352,10 +1354,12 @@ class ActiveTrip extends Component
     public function hitungTagihan()
     {
         if ($this->pendingDelivery) {
-            $totalBijiDititip = $this->pendingDelivery->qty_delivered * self::BIJI_PER_MIKA;
+            // Isi & harga per biji dari SNAPSHOT titipan lama ini (bukan konstanta
+            // 15/800 global) — lihat Delivery::qty_biji_delivered/harga_per_biji.
+            $totalBijiDititip = $this->pendingDelivery->qty_biji_delivered;
             $this->terjual = $totalBijiDititip - ((int)$this->returnFresh + (int)$this->returnExpired);
             $this->terjual = max(0, $this->terjual);
-            $this->tagihan = $this->terjual * self::HARGA_PER_BIJI;
+            $this->tagihan = (int) round($this->terjual * $this->pendingDelivery->harga_per_biji);
             // Default uang diterima = tagihan penuh (operator bisa override manual)
             $this->uangDiterima = $this->tagihan;
         }
@@ -1449,6 +1453,25 @@ class ActiveTrip extends Component
         }
 
         return $variant;
+    }
+
+    /**
+     * Varian aktif untuk PREVIEW kalkulasi SEBELUM delivery dibuat (modal walk-in
+     * cash & titip cash) — bungkus resolveActiveVariant(), tapi AMAN dipanggil
+     * dari Blade tiap render: balikkan isi/harga FALLBACK (konstanta historis
+     * lama) bila operator belum punya varian aktif, supaya modal preview tetap
+     * tampil. Validasi SEBENARNYA tetap di resolveActiveVariant() saat submit.
+     */
+    public function previewVariant(): object
+    {
+        try {
+            return $this->resolveActiveVariant();
+        } catch (\RuntimeException $e) {
+            return (object) [
+                'units_per_pack' => self::BIJI_PER_MIKA,
+                'sale_price_per_pack' => self::BIJI_PER_MIKA * self::HARGA_PER_BIJI,
+            ];
+        }
     }
 
     public function saveVisit()
@@ -1830,8 +1853,11 @@ class ActiveTrip extends Component
                         'units_per_pack_snapshot' => $variant->units_per_pack,
                     ]);
 
-                    $totalBiji = $drop * self::BIJI_PER_MIKA;
-                    $amountDue = $totalBiji * self::HARGA_PER_BIJI;
+                    // Isi & harga dari VARIAN AKTIF (bukan konstanta 15/800 global).
+                    // amount_due dihitung langsung mika×harga (bukan lewat biji) —
+                    // lebih presisi, tanpa risiko pembulatan per-biji.
+                    $totalBiji = $drop * $variant->units_per_pack;
+                    $amountDue = (int) round($drop * $variant->sale_price_per_pack);
 
                     Settlement::create([
                         'delivery_id' => $delivery->id,
@@ -1884,27 +1910,30 @@ class ActiveTrip extends Component
                 return null;
             }
 
-            $totalBiji = $cashMika * self::BIJI_PER_MIKA;
-            $bsBiji = max(0, (int) $this->qtyBsCash);
-            if ($bsBiji > $totalBiji) {
-                $this->addError('general', 'BS (biji) tidak boleh melebihi biji yang ditaruh ('.$totalBiji.').');
-                return null;
-            }
-
-            $bijiBayar = $totalBiji - $bsBiji;              // biji yang dibayar kedai
-            $amountDue = $bijiBayar * self::HARGA_PER_BIJI; // cash yang diterima
-
-            // KEDAI BOOKING → jenis final = CASH: Titip Cash pertama pada kedai booking
-            // (belum ada dodol, belum cash-only) menetapkan kedai jadi cash-only seterusnya.
-            // Kedai konsinyasi biasa (punya jatah) yang naruh cash-ekstra TIDAK berubah.
-            $bookingJadiCash = $this->selectedKiosk->isBooking();
-
+            // Isi & harga per biji dari VARIAN AKTIF (bukan konstanta 15/800 global) —
+            // BS dicatat per biji, jadi di sini TETAP butuh harga-per-biji turunan
+            // (bukan shortcut mika-langsung), lihat ProductVariant::harga_per_biji.
             try {
                 $variant = $this->resolveActiveVariant();
             } catch (\RuntimeException $e) {
                 $this->addError('general', $e->getMessage());
                 return null;
             }
+
+            $totalBiji = $cashMika * $variant->units_per_pack;
+            $bsBiji = max(0, (int) $this->qtyBsCash);
+            if ($bsBiji > $totalBiji) {
+                $this->addError('general', 'BS (biji) tidak boleh melebihi biji yang ditaruh ('.$totalBiji.').');
+                return null;
+            }
+
+            $bijiBayar = $totalBiji - $bsBiji;                               // biji yang dibayar kedai
+            $amountDue = (int) round($bijiBayar * $variant->harga_per_biji); // cash yang diterima
+
+            // KEDAI BOOKING → jenis final = CASH: Titip Cash pertama pada kedai booking
+            // (belum ada dodol, belum cash-only) menetapkan kedai jadi cash-only seterusnya.
+            // Kedai konsinyasi biasa (punya jatah) yang naruh cash-ekstra TIDAK berubah.
+            $bookingJadiCash = $this->selectedKiosk->isBooking();
 
             try {
                 DB::transaction(function () use ($cashMika, $bsBiji, $bijiBayar, $amountDue, $variant, $correctionOfVisitId, $bookingJadiCash) {
@@ -2035,7 +2064,8 @@ class ActiveTrip extends Component
         // --- Hitung ulang terjual & tagihan dari server (jangan percaya client),
         //     TANPA menimpa uangDiterima yang diinput operator ---
         if ($createSettlement) {
-            $totalBiji = (int) $this->pendingDelivery->qty_delivered * self::BIJI_PER_MIKA;
+            // Isi & harga per biji dari SNAPSHOT titipan lama ini — lihat hitungTagihan().
+            $totalBiji = $this->pendingDelivery->qty_biji_delivered;
 
             if (($fresh + $expired) > $totalBiji) {
                 $this->addError('general', 'Total retur melebihi jumlah titipan sebelumnya.');
@@ -2043,7 +2073,7 @@ class ActiveTrip extends Component
             }
 
             $this->terjual = max(0, $totalBiji - $fresh - $expired);
-            $this->tagihan = $this->terjual * self::HARGA_PER_BIJI;
+            $this->tagihan = (int) round($this->terjual * $this->pendingDelivery->harga_per_biji);
         }
 
         if ((int) $this->uangDiterima < 0) {
@@ -2281,8 +2311,11 @@ class ActiveTrip extends Component
                     'units_per_pack_snapshot' => $variant->units_per_pack,
                 ]);
 
-                $totalBiji = $mika * self::BIJI_PER_MIKA;
-                $amountDue = $totalBiji * self::HARGA_PER_BIJI;
+                // Isi dari VARIAN AKTIF; amount_due dihitung langsung mika×harga
+                // (shortcut mika-langsung, bukan konstanta 15/800 global) — presisi,
+                // tanpa risiko pembulatan per-biji.
+                $totalBiji = $mika * $variant->units_per_pack;
+                $amountDue = (int) round($mika * $variant->sale_price_per_pack);
 
                 Settlement::create([
                     'delivery_id' => $delivery->id,
@@ -2324,7 +2357,13 @@ class ActiveTrip extends Component
         $totalMikaCash = (int) Delivery::where('trip_id', $this->trip->id)
             ->where('delivery_type', 'cash_sale')
             ->sum('qty_delivered');
-        $totalAmountCash = $totalMikaCash * self::BIJI_PER_MIKA * self::HARGA_PER_BIJI;
+        // SUM(qty_delivered × unit_price) PER DELIVERY — bukan lagi mika×15×800 flat,
+        // karena satu trip bisa menyentuh >1 isi/harga sekaligus (lihat
+        // Trip::salesSnapshotTotals()).
+        $totalAmountCash = (float) Delivery::where('trip_id', $this->trip->id)
+            ->where('delivery_type', 'cash_sale')
+            ->selectRaw('COALESCE(SUM(qty_delivered * unit_price), 0) as total')
+            ->value('total');
 
         $this->tripSummary = [
             'kios_visited' => KioskVisit::active()->where('trip_id', $this->trip->id)->count(),

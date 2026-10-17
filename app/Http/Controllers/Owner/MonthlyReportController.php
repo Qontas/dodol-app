@@ -41,7 +41,6 @@ class MonthlyReportController extends Controller
         $owner = \App\Models\User::find($ownerId);
         $tripAgg = \App\Support\TripAggregator::for(
             $trips->pluck('id')->all(),
-            $owner?->getHppPerMikaValue() ?? 9500.0,
             $owner?->getKomisiPerMikaValue() ?? 1000.0,
         );
 

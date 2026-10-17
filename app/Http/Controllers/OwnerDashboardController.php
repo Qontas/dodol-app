@@ -56,14 +56,14 @@ class OwnerDashboardController extends Controller
             ->pluck('last_visit', 'kiosk_id');
 
         $overdueCount = $ownerKiosks
-            ->filter(function ($kiosk) use ($lastVisitPerKiosk) {
+            ->filter(function ($kiosk) use ($lastVisitPerKiosk, $user) {
                 $lastVisit = $lastVisitPerKiosk[$kiosk->id] ?? null;
 
                 if (! $lastVisit) {
                     return true; // belum pernah dikunjungi = overdue
                 }
 
-                $threshold = $kiosk->target_visit_interval_days ?: 10;
+                $threshold = $kiosk->target_visit_interval_days ?: $user->getDefaultTargetVisitIntervalDaysValue();
 
                 // abs(): Carbon 3 diffInDays bertanda (tanggal lampau = negatif),
                 // tanpa abs() kios yang sudah pernah dikunjungi tak pernah overdue.
@@ -79,17 +79,38 @@ class OwnerDashboardController extends Controller
 
         // Widget — Kerugian titipan bulan ini: dari "Stop Tanpa Tagih" (write-off),
         // di mana seluruh sisa titipan dianggap basi/hilang (uang Rp 0). Nilai modal
-        // = mika hilang x HPP per mika owner. Dipakai supaya kerugian tidak siluman.
-        $kerugianBiji = (int) Settlement::where('is_writeoff', true)
-            ->whereBetween('visit_date', [today()->startOfMonth(), today()->endOfMonth()])
+        // = mika hilang x HPP PER-BARIS snapshot delivery-nya sendiri (bukan lagi satu
+        // HPP flat owner) — join ke deliveries, akumulasi per baris, karena owner bisa
+        // punya >1 isi/HPP sekaligus. Fallback HPP owner saat ini untuk baris lolos
+        // cost_snapshot NULL (jalur delivery lama sebelum snapshot ada).
+        $kerugianRows = Settlement::query()
+            ->join('deliveries', 'deliveries.id', '=', 'settlements.delivery_id')
+            ->where('settlements.is_writeoff', true)
+            ->whereBetween('settlements.visit_date', [today()->startOfMonth(), today()->endOfMonth()])
             ->where($settlementOwnerScope)
-            ->sum('qty_returned_expired');
-        $kerugianMika = $kerugianBiji / 15;
-        $hppPerMika = (float) ($user->hpp_per_mika ?? 9500);
+            ->get([
+                'settlements.qty_returned_expired',
+                'deliveries.cost_snapshot',
+                'deliveries.units_per_pack_snapshot',
+            ]);
+
+        $fallbackHppKerugian = $user->getHppPerMikaValue();
+        $kerugianBiji = 0;
+        $kerugianMika = 0.0;
+        $kerugianNilai = 0.0;
+        foreach ($kerugianRows as $row) {
+            $biji = (int) $row->qty_returned_expired;
+            $units = max(1, (int) ($row->units_per_pack_snapshot ?? 15));
+            $cost = $row->cost_snapshot !== null ? (float) $row->cost_snapshot : $fallbackHppKerugian;
+
+            $kerugianBiji += $biji;
+            $kerugianMika += $biji / $units;
+            $kerugianNilai += ($biji / $units) * $cost;
+        }
         $kerugianTitipan = [
             'biji' => $kerugianBiji,
             'mika' => $kerugianMika,
-            'nilai' => (int) round($kerugianMika * $hppPerMika),
+            'nilai' => (int) round($kerugianNilai),
         ];
 
         // Widget — Untung bersih hari ini: jumlah untung_bersih_owner dari trip
@@ -191,7 +212,6 @@ class OwnerDashboardController extends Controller
         // Angka IDENTIK accessor Trip — lihat TripAggregator. Kunci: [trip_id => [...]].
         $completedAgg = \App\Support\TripAggregator::for(
             $completedTrips->pluck('id')->all(),
-            $hppPerMikaVal,
             $komisiPerMikaVal,
         );
 
@@ -344,14 +364,19 @@ class OwnerDashboardController extends Controller
      * (ended_at) — scope & rumus IDENTIK totals MonthlyReportController::buildMonthlyData
      * supaya angka tak pernah beda dua versi. Semua agregat di level DB (SUM), 3 query.
      *
-     * Rumus (mirror accessor Trip):
+     * Rumus (mirror Trip::salesSnapshotTotals() — per-BARIS delivery snapshot, bukan
+     * lagi qty_sold-total/15 dikali satu HPP flat):
      *   omset        = SUM(settlements.amount_paid) atas delivery yg di-settle kunjungan
      *                  aktif trip bulan ini (basis LAKU, = Trip::omset_val)
-     *   untung_kotor = (SUM(qty_sold)/15) × (12000 − hpp)          (= Trip::untung_kotor)
+     *   untung_kotor = Σ per-baris (qty_sold/units_per_pack_snapshot) × (unit_price −
+     *                  cost_snapshot)                                (= Trip::untung_kotor)
      *   komisi       = SUM(qty_delivered non-BS) × komisi_per_mika (= Trip::komisi_rian, basis DROP)
      *   untung_bersih= untung_kotor − komisi                       (= Trip::untung_bersih_owner)
+     *
+     * $fallbackHpp dipakai HANYA untuk baris lolos cost_snapshot NULL (jalur delivery
+     * lama sebelum snapshot ada) — bukan lagi HPP flat yang menentukan SELURUH hasil.
      */
-    private function monthlySummary(int $ownerId, int $year, int $mon, float $hpp, float $komisiPerMika): array
+    private function monthlySummary(int $ownerId, int $year, int $mon, float $fallbackHpp, float $komisiPerMika): array
     {
         // Delivery yg di-settle oleh kunjungan AKTIF (belum dikoreksi) trip SELESAI owner
         // bulan ini. Sama persis sumber Trip::omset_val / Trip::mika_terjual.
@@ -363,13 +388,29 @@ class OwnerDashboardController extends Controller
                 ->whereMonth('trip_date', $mon))
             ->pluck('settled_delivery_id');
 
-        $sale = Settlement::whereIn('delivery_id', $settledDeliveryIds)
-            ->selectRaw('COALESCE(SUM(amount_paid), 0) as omset, COALESCE(SUM(qty_sold), 0) as qty_sold')
-            ->first();
+        $saleRows = Settlement::whereIn('settlements.delivery_id', $settledDeliveryIds)
+            ->join('deliveries', 'deliveries.id', '=', 'settlements.delivery_id')
+            ->get([
+                'settlements.amount_paid',
+                'settlements.qty_sold',
+                'deliveries.unit_price',
+                'deliveries.cost_snapshot',
+                'deliveries.units_per_pack_snapshot',
+            ]);
 
-        $omset = (float) ($sale->omset ?? 0);
-        $mikaTerjual = ((float) ($sale->qty_sold ?? 0)) / 15;
-        $untungKotor = $mikaTerjual * (12000 - $hpp);
+        $omset = 0.0;
+        $mikaTerjual = 0.0;
+        $untungKotor = 0.0;
+        foreach ($saleRows as $row) {
+            $units = max(1, (int) ($row->units_per_pack_snapshot ?? 15));
+            $mikaRow = ((float) $row->qty_sold) / $units;
+            $cost = $row->cost_snapshot !== null ? (float) $row->cost_snapshot : $fallbackHpp;
+            $price = (float) $row->unit_price;
+
+            $omset += (float) $row->amount_paid;
+            $mikaTerjual += $mikaRow;
+            $untungKotor += $mikaRow * ($price - $cost);
+        }
 
         // Komisi Rian basis DROP: mika diletakkan (exclude BS daur-ulang) × tarif.
         // Clause !='bs_redistribution' identik Trip::getTotalDropReal() (delivery_type

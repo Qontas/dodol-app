@@ -38,6 +38,20 @@ class ProductVariant extends Model
         'is_active' => 'boolean',
     ];
 
+    /**
+     * Harga jual per BIJI, diturunkan dari sale_price_per_pack (harga per mika) ÷
+     * units_per_pack — simetris dengan Delivery::getHargaPerBijiAttribute(), tapi
+     * dibaca dari KONFIGURASI VARIAN SAAT INI (bukan snapshot), jadi hanya untuk
+     * preview SEBELUM delivery dibuat (mis. modal Titip Cash BS). Delivery yang
+     * SUDAH tersimpan harus selalu baca accessor Delivery sendiri, bukan ini.
+     */
+    public function getHargaPerBijiAttribute(): float
+    {
+        $units = max(1, (int) $this->units_per_pack);
+
+        return (float) $this->sale_price_per_pack / $units;
+    }
+
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
