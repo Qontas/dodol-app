@@ -226,11 +226,15 @@ class ActiveTripTest extends TestCase
             ->call('saveVisit')
             ->assertHasNoErrors();
 
+        // hpp_estimasi & komisi_rian SENGAJA tidak lagi ada di tripSummary — operator
+        // tidak boleh terima info komisi/untung owner (lihat TripSummaryHidesCommissionTest).
+        // Verifikasi angkanya langsung lewat accessor Trip, bukan payload Livewire.
+        $this->assertEqualsWithDelta(95000, (float) $trip->hpp_estimasi, 1.0);
+        $this->assertEqualsWithDelta(5000, (float) $trip->komisi_rian, 1.0);
+
         Livewire::test(ActiveTrip::class)
             ->call('openEndTripModal')
             ->assertSet('tripSummary.total_uang_diterima', 120000)
-            ->assertSet('tripSummary.hpp_estimasi', 95000)
-            ->assertSet('tripSummary.komisi_rian', 5000)
             ->set('endReason', 'target_done')
             ->call('confirmEndTrip')
             ->assertRedirect(route('operator.dashboard'));

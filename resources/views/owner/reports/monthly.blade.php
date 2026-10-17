@@ -59,6 +59,7 @@
             <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
                 <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Total Mika Diantar</div>
                 <div class="mt-2 text-2xl font-bold text-slate-900">{{ number_format($total_mika_diantar, 0, ',', '.') }} mika</div>
+                <div class="text-xs text-slate-400">({{ number_format($total_biji_diantar, 0, ',', '.') }} biji)</div>
             </div>
             <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
                 <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Modal Mika</div>
@@ -94,7 +95,10 @@
                                 <td class="px-4 py-2">{{ $r['trip_date'] }}</td>
                                 <td class="px-4 py-2">{{ $r['operator'] }}</td>
                                 <td class="px-4 py-2 text-right">{{ $r['kios_dikunjungi'] }}</td>
-                                <td class="px-4 py-2 text-right">{{ number_format($r['mika_drop'], 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right">
+                                    {{ number_format($r['mika_drop'], 0, ',', '.') }}
+                                    <span class="block text-[10px] text-slate-400">({{ number_format($r['biji_drop'], 0, ',', '.') }} biji)</span>
+                                </td>
                                 <td class="px-4 py-2 text-right">Rp {{ number_format($r['omset'], 0, ',', '.') }}</td>
                                 <td class="px-4 py-2 text-right">Rp {{ number_format($r['komisi'], 0, ',', '.') }}</td>
                                 <td class="px-4 py-2 text-right">Rp {{ number_format($r['untung_bersih'], 0, ',', '.') }}</td>
@@ -107,7 +111,10 @@
                         <tr>
                             <td class="px-4 py-2" colspan="2">TOTAL</td>
                             <td class="px-4 py-2 text-right">{{ $totals['kios_dikunjungi'] }}</td>
-                            <td class="px-4 py-2 text-right">{{ number_format($totals['mika_drop'], 0, ',', '.') }}</td>
+                            <td class="px-4 py-2 text-right">
+                                {{ number_format($totals['mika_drop'], 0, ',', '.') }}
+                                <span class="block text-[10px] font-normal text-slate-500">({{ number_format($totals['biji_drop'], 0, ',', '.') }} biji)</span>
+                            </td>
                             <td class="px-4 py-2 text-right">Rp {{ number_format($totals['omset'], 0, ',', '.') }}</td>
                             <td class="px-4 py-2 text-right">Rp {{ number_format($totals['komisi'], 0, ',', '.') }}</td>
                             <td class="px-4 py-2 text-right">Rp {{ number_format($totals['untung_bersih'], 0, ',', '.') }}</td>

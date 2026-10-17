@@ -69,7 +69,7 @@
                     <tbody class="divide-y divide-slate-100">
                         @forelse ($trips as $trip)
                             @php
-                                $agg = $aggregates[$trip->id] ?? ['kios' => 0, 'mika_diantar' => 0, 'omset' => 0, 'komisi' => 0, 'untung_bersih' => 0];
+                                $agg = $aggregates[$trip->id] ?? ['kios' => 0, 'mika_diantar' => 0, 'biji_diantar' => 0, 'omset' => 0, 'komisi' => 0, 'untung_bersih' => 0];
                                 $area = $areas[$trip->id] ?? ['label' => 'Semua Kios', 'crossed' => false];
                             @endphp
                             <tr class="hover:bg-slate-50">
@@ -90,7 +90,10 @@
                                     @endif
                                 </td>
                                 <td class="px-4 py-3 text-right text-slate-700">{{ $agg['kios'] }}</td>
-                                <td class="px-4 py-3 text-right text-slate-700">{{ number_format($agg['mika_diantar'], 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right text-slate-700">
+                                    {{ number_format($agg['mika_diantar'], 0, ',', '.') }}
+                                    <span class="block text-[10px] text-slate-400">({{ number_format($agg['biji_diantar'], 0, ',', '.') }} biji)</span>
+                                </td>
                                 <td class="px-4 py-3 text-right text-slate-900 font-medium">Rp {{ number_format($agg['omset'], 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right text-amber-800">Rp {{ number_format($agg['komisi'], 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right font-semibold text-emerald-700">Rp {{ number_format($agg['untung_bersih'], 0, ',', '.') }}</td>

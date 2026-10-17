@@ -73,6 +73,7 @@
             <div>
                 <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Diantar</p>
                 <p class="text-base font-bold text-slate-900">{{ number_format($summary['mika_drop'], 0, ',', '.') }} mika</p>
+                <p class="text-[10px] text-slate-400">({{ number_format($trip->biji_diantar, 0, ',', '.') }} biji)</p>
             </div>
             <div>
                 <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Sisa</p>
@@ -81,6 +82,7 @@
             <div>
                 <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Terjual</p>
                 <p class="text-base font-bold text-slate-900">{{ number_format($trip->mika_terjual, 2, ',', '.') }} mika</p>
+                <p class="text-[10px] text-slate-400">({{ number_format($trip->biji_terjual, 0, ',', '.') }} biji)</p>
             </div>
         </div>
 
@@ -101,12 +103,13 @@
             <div>
                 <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Komisi (Drop)</p>
                 <p class="text-base font-bold text-amber-700">{{ number_format($trip->mika_komisi, 2, ',', '.') }} mika</p>
+                <p class="text-[10px] text-slate-400">({{ number_format($trip->biji_komisi, 0, ',', '.') }} biji)</p>
             </div>
         </div>
 
         <div class="grid grid-cols-2 gap-4 bg-amber-50 border border-amber-100 rounded-lg p-4 text-center">
             <div>
-                <p class="text-[10px] uppercase text-amber-800 font-medium">Komisi Rian</p>
+                <p class="text-[10px] uppercase text-amber-800 font-medium">Komisi {{ $trip->operator?->name ?? 'Operator' }}</p>
                 <p class="text-base font-bold text-amber-900">Rp {{ number_format($trip->komisi_rian, 0, ',', '.') }}</p>
             </div>
             <div>

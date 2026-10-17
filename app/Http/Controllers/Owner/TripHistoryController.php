@@ -105,6 +105,7 @@ class TripHistoryController extends Controller
             $out[$id] = [
                 'kios' => $a['active_visits'],
                 'mika_diantar' => $a['mika_diantar'],
+                'biji_diantar' => $a['biji_diantar'],
                 'omset' => $a['omset'],
                 'komisi' => $a['komisi'],
                 'untung_bersih' => $a['untung_bersih'],

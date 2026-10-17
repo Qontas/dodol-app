@@ -34,12 +34,17 @@ class TripAggregator
 
         // (1) Total drop (semua) + drop basis komisi (exclude BS daur-ulang). Identik
         //     deliveries->sum('qty_delivered') & getTotalDropReal (delivery_type <> BS).
+        //     Kolom biji_* = tampilan tambahan "X mika (Y biji)" (Trip::biji_diantar/
+        //     biji_komisi) — units_per_pack_snapshot sudah di tabel deliveries sendiri,
+        //     tak perlu join tambahan.
         $deliveryAgg = Delivery::whereIn('trip_id', $tripIds)
             ->groupBy('trip_id')
             ->selectRaw('trip_id,
                 COALESCE(SUM(qty_delivered), 0) as mika_diantar,
-                COALESCE(SUM(CASE WHEN delivery_type <> ? THEN qty_delivered ELSE 0 END), 0) as drop_komisi',
-                ['bs_redistribution'])
+                COALESCE(SUM(CASE WHEN delivery_type <> ? THEN qty_delivered ELSE 0 END), 0) as drop_komisi,
+                COALESCE(SUM(qty_delivered * COALESCE(units_per_pack_snapshot, 15)), 0) as biji_diantar,
+                COALESCE(SUM(CASE WHEN delivery_type <> ? THEN qty_delivered * COALESCE(units_per_pack_snapshot, 15) ELSE 0 END), 0) as biji_komisi',
+                ['bs_redistribution', 'bs_redistribution'])
             ->get()
             ->keyBy('trip_id');
 
@@ -86,7 +91,8 @@ class TripAggregator
         // (5) Kios BARU (drop_only, first_titip_date = trip_date) → jumlah & mika titipnya.
         //     Identik getKiosBaruCountAttribute/getMikaKiosBaruAttribute. Join manual pada
         //     `trips` tak kena SoftDeletes global scope → whereNull(deleted_at) demi
-        //     konsistensi (id yang masuk pun sudah trip non-arsip milik owner).
+        //     konsistensi (id yang masuk pun sudah trip non-arsip milik owner). Kolom
+        //     biji_kios_baru = tampilan tambahan, identik Trip::biji_kios_baru.
         $kiosBaruRows = DB::table('kiosk_visits as kv')
             ->join('trips as t', 't.id', '=', 'kv.trip_id')
             ->join('kiosks as k', 'k.id', '=', 'kv.kiosk_id')
@@ -99,14 +105,28 @@ class TripAggregator
             ->groupBy('kv.trip_id')
             ->selectRaw('kv.trip_id as trip_id,
                 COUNT(*) as kios_baru,
-                COALESCE(SUM(nd.qty_delivered), 0) as mika_kios_baru')
+                COALESCE(SUM(nd.qty_delivered), 0) as mika_kios_baru,
+                COALESCE(SUM(nd.qty_delivered * COALESCE(nd.units_per_pack_snapshot, 15)), 0) as biji_kios_baru')
             ->get()
             ->keyBy('trip_id');
+
+        // (6) Fallback HPP untuk baris lolos cost_snapshot NULL (jalur delivery lama
+        //     sebelum snapshot ada) — PER OWNER trip ybs, identik Trip::getHpp()/
+        //     salesSnapshotTotals() ("IDENTIK, jangan menyimpang"). Dulu hardcode 9500.0
+        //     flat di sini, beda jalur dari accessor Trip yang baca owner->hpp_per_mika —
+        //     bisa bikin dashboard (batch) vs detail trip (accessor) beda angka kalau HPP
+        //     owner pernah diubah dari 9500. 1 query batch join trips→users, bukan N+1;
+        //     aman untuk batch lintas-owner sekalipun (walau 3 caller saat ini per-owner).
+        $fallbackHppByTrip = DB::table('trips')
+            ->join('users', 'users.id', '=', 'trips.owner_id')
+            ->whereIn('trips.id', $tripIds)
+            ->pluck('users.hpp_per_mika', 'trips.id');
 
         $out = [];
         foreach ($tripIds as $id) {
             $mikaDiantar = (int) ($deliveryAgg[$id]->mika_diantar ?? 0);
             $dropKomisi = (float) ($deliveryAgg[$id]->drop_komisi ?? 0);
+            $fallbackHpp = (float) ($fallbackHppByTrip[$id] ?? 9500);
 
             // Akumulasi PER-BARIS delivery snapshot (units_per_pack_snapshot/unit_price/
             // cost_snapshot) — bukan lagi qty_sold-total/15 dikali HPP-flat satu pemanggil,
@@ -116,6 +136,9 @@ class TripAggregator
             $mikaTerjual = 0.0;
             $hppEstimasi = 0.0;
             $untungKotor = 0.0;
+            // biji_terjual = qty_sold mentah (satuan asli settlements) — tampilan tambahan,
+            // identik Trip::biji_terjual, TIDAK dipakai rumus uang.
+            $bijiTerjual = 0;
             foreach ($deliveryIdsByTrip[$id] ?? [] as $deliveryId) {
                 if (! ($s = $settlements->get($deliveryId))) {
                     continue;
@@ -123,13 +146,14 @@ class TripAggregator
 
                 $units = max(1, (int) ($s->units_per_pack_snapshot ?? 15));
                 $mikaRow = ((float) $s->qty_sold) / $units;
-                $cost = $s->cost_snapshot !== null ? (float) $s->cost_snapshot : 9500.0;
+                $cost = $s->cost_snapshot !== null ? (float) $s->cost_snapshot : $fallbackHpp;
                 $price = (float) $s->unit_price;
 
                 $omset += (float) $s->amount_paid;
                 $mikaTerjual += $mikaRow;
                 $hppEstimasi += $mikaRow * $cost;
                 $untungKotor += $mikaRow * ($price - $cost);
+                $bijiTerjual += (int) $s->qty_sold;
             }
 
             $komisi = $dropKomisi * $komisiPerMika;
@@ -150,6 +174,12 @@ class TripAggregator
                 'kios_baru_count' => $kiosBaru,
                 'mika_kios_baru' => (float) ($kiosBaruRows[$id]->mika_kios_baru ?? 0),
                 'kios_lama_count' => max(0, $activeCount - $kiosBaru),
+                // Tampilan tambahan "X mika (Y biji)" — lihat Trip::biji_terjual/
+                // biji_diantar/biji_komisi/biji_kios_baru (sumber angka identik).
+                'biji_terjual' => $bijiTerjual,
+                'biji_diantar' => (int) ($deliveryAgg[$id]->biji_diantar ?? 0),
+                'biji_komisi' => (int) ($deliveryAgg[$id]->biji_komisi ?? 0),
+                'biji_kios_baru' => (int) ($kiosBaruRows[$id]->biji_kios_baru ?? 0),
             ];
         }
 

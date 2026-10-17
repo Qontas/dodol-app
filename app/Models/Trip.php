@@ -69,6 +69,30 @@ class Trip extends Model
             ->sum('qty_delivered');
     }
 
+    /**
+     * Versi BIJI dari getTotalDropReal() — tampilan tambahan "X mika (Y biji)", bukan
+     * basis hitungan baru. qty_delivered × units_per_pack_snapshot per baris (SUM di SQL,
+     * bukan N+1), fallback 15 identik accessor Delivery::getQtyBijiDeliveredAttribute().
+     */
+    public function getBijiKomisiAttribute(): int
+    {
+        return (int) $this->deliveries()
+            ->where('delivery_type', '!=', 'bs_redistribution')
+            ->selectRaw('COALESCE(SUM(qty_delivered * COALESCE(units_per_pack_snapshot, 15)), 0) as total')
+            ->value('total');
+    }
+
+    /**
+     * Versi BIJI dari total mika diantar (semua delivery_type, termasuk BS) — tampilan
+     * tambahan "Mika Diantar" di sisi mika/biji, bukan basis komisi (lihat biji_komisi).
+     */
+    public function getBijiDiantarAttribute(): int
+    {
+        return (int) $this->deliveries()
+            ->selectRaw('COALESCE(SUM(qty_delivered * COALESCE(units_per_pack_snapshot, 15)), 0) as total')
+            ->value('total');
+    }
+
     public function visits(): HasMany
     {
         return $this->hasMany(KioskVisit::class);
@@ -103,6 +127,31 @@ class Trip extends Model
         }
 
         return (float) $mikaKiosBaru;
+    }
+
+    /**
+     * Versi BIJI dari getMikaKiosBaruAttribute() — tampilan tambahan, query sama (visit
+     * drop_only kios baru), ditambah accessor Delivery::qty_biji_delivered per baris
+     * (tanpa query baru, newDelivery sudah dimuat per-visit di loop yang sama).
+     */
+    public function getBijiKiosBaruAttribute(): int
+    {
+        $newKioskVisits = $this->visits()
+            ->active()
+            ->where('visit_action', 'drop_only')
+            ->whereHas('kiosk', function ($q) {
+                $q->whereDate('first_titip_date', $this->trip_date);
+            })
+            ->get();
+
+        $bijiKiosBaru = 0;
+        foreach ($newKioskVisits as $visit) {
+            if ($visit->newDelivery) {
+                $bijiKiosBaru += $visit->newDelivery->qty_biji_delivered;
+            }
+        }
+
+        return $bijiKiosBaru;
     }
 
     public function getOmsetValAttribute(): float
@@ -175,6 +224,9 @@ class Trip extends Model
         $mikaTerjual = 0.0;
         $hppEstimasi = 0.0;
         $untungKotor = 0.0;
+        // biji_terjual = qty_sold mentah (settlements.qty_sold SUDAH dalam satuan biji,
+        // bukan mika) — tampilan tambahan "X mika (Y biji)", TIDAK dipakai rumus uang.
+        $bijiTerjual = 0;
 
         foreach ($rows as $row) {
             $units = max(1, (int) ($row->units_per_pack_snapshot ?? 15));
@@ -185,13 +237,24 @@ class Trip extends Model
             $mikaTerjual += $mikaRow;
             $hppEstimasi += $mikaRow * $cost;
             $untungKotor += $mikaRow * ($price - $cost);
+            $bijiTerjual += (int) $row->qty_sold;
         }
 
         return $this->salesSnapshotTotalsCache = [
             'mika_terjual' => $mikaTerjual,
             'hpp_estimasi' => $hppEstimasi,
             'untung_kotor' => $untungKotor,
+            'biji_terjual' => $bijiTerjual,
         ];
+    }
+
+    /**
+     * Versi BIJI dari mika_terjual — tampilan tambahan "X,XX mika (Y biji)". Nilainya
+     * qty_sold mentah (satuan asli settlements, lihat salesSnapshotTotals()).
+     */
+    public function getBijiTerjualAttribute(): int
+    {
+        return $this->salesSnapshotTotals()['biji_terjual'];
     }
 
     public function getHppEstimasiAttribute(): float

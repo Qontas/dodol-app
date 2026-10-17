@@ -49,6 +49,10 @@ class MonthlyReportController extends Controller
             'operator' => $t->operator?->name ?? '—',
             'kios_dikunjungi' => $t->visits->count(),
             'mika_drop' => (int) $t->deliveries->sum('qty_delivered'),
+            // Tampilan tambahan "X mika (Y biji)" — dari koleksi `deliveries` yang SUDAH
+            // eager-loaded di atas (accessor qty_biji_delivered murni komputasi, bukan
+            // query baru), jadi tetap O(1) query berapa pun banyak trip di bulan ini.
+            'biji_drop' => (int) $t->deliveries->sum(fn ($d) => $d->qty_biji_delivered),
             'omset' => (int) ($tripAgg[$t->id]['omset'] ?? 0),
             'komisi' => (int) ($tripAgg[$t->id]['komisi'] ?? 0),
             'untung_bersih' => (int) ($tripAgg[$t->id]['untung_bersih'] ?? 0),
@@ -57,6 +61,7 @@ class MonthlyReportController extends Controller
         $totals = [
             'kios_dikunjungi' => $rows->sum('kios_dikunjungi'),
             'mika_drop' => $rows->sum('mika_drop'),
+            'biji_drop' => $rows->sum('biji_drop'),
             'omset' => $rows->sum('omset'),
             'komisi' => $rows->sum('komisi'),
             'untung_bersih' => $rows->sum('untung_bersih'),
@@ -114,11 +119,19 @@ class MonthlyReportController extends Controller
         // $owner sudah di-fetch di atas (dipakai juga untuk hpp/komisi TripAggregator).
         $hargaMika = (float) ($owner?->harga_mika ?? 200.00);
 
-        $totalMikaDiantar = (int) \App\Models\Delivery::whereHas('trip', function ($q) use ($ownerId, $year, $mon) {
+        // 1 query (bukan 2): mika & biji sekaligus — units_per_pack_snapshot sudah di
+        // tabel deliveries sendiri, tak perlu join tambahan (lihat TripAggregator §1).
+        $totalDiantarRow = \App\Models\Delivery::whereHas('trip', function ($q) use ($ownerId, $year, $mon) {
             $q->where('owner_id', $ownerId)
               ->whereYear('trip_date', $year)
               ->whereMonth('trip_date', $mon);
-        })->sum('qty_delivered');
+        })->selectRaw('
+                COALESCE(SUM(qty_delivered), 0) as mika,
+                COALESCE(SUM(qty_delivered * COALESCE(units_per_pack_snapshot, 15)), 0) as biji
+            ')->first();
+
+        $totalMikaDiantar = (int) ($totalDiantarRow->mika ?? 0);
+        $totalBijiDiantar = (int) ($totalDiantarRow->biji ?? 0);
 
         $modalMika = $totalMikaDiantar * $hargaMika;
 
@@ -141,6 +154,7 @@ class MonthlyReportController extends Controller
                 'frekuensi' => $kiosFrekuensi,
             ],
             'total_mika_diantar' => $totalMikaDiantar,
+            'total_biji_diantar' => $totalBijiDiantar,
             'modal_mika' => $modalMika,
             'rekap_komisi' => $rekapKomisi,
         ];

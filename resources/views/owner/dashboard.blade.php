@@ -353,6 +353,11 @@
                         'untung_bersih' => $completedTrip->untung_bersih_owner,
                         'kios_baru_count' => $completedTrip->kios_baru_count,
                         'kios_lama_count' => $completedTrip->kios_lama_count,
+                        // Tampilan tambahan "X mika (Y biji)" — lihat TripAggregator::for().
+                        'biji_terjual' => $completedTrip->biji_terjual,
+                        'biji_diantar' => $completedTrip->biji_diantar,
+                        'biji_komisi' => $completedTrip->biji_komisi,
+                        'biji_kios_baru' => $completedTrip->biji_kios_baru,
                     ];
                 @endphp
                 <div class="border border-slate-200 rounded-xl p-5 mb-4 last:mb-0 bg-slate-50/50 shadow-sm">
@@ -413,6 +418,7 @@
                         <div>
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Total Mika Dititip</p>
                             <p class="text-base font-bold text-slate-900">{{ $mikaDrop }} mika</p>
+                            <p class="text-[10px] text-slate-400">({{ number_format($agg['biji_diantar'], 0, ',', '.') }} biji)</p>
                         </div>
                     </div>
 
@@ -421,10 +427,12 @@
                         <div>
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Terjual</p>
                             <p class="text-base font-bold text-slate-900">{{ number_format($agg['mika_terjual'], 2, ',', '.') }} mika</p>
+                            <p class="text-[10px] text-slate-400">({{ number_format($agg['biji_terjual'], 0, ',', '.') }} biji)</p>
                         </div>
                         <div>
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Kios Baru (Titip)</p>
                             <p class="text-base font-bold text-amber-700">{{ number_format($agg['mika_kios_baru'], 2, ',', '.') }} mika</p>
+                            <p class="text-[10px] text-slate-400">({{ number_format($agg['biji_kios_baru'], 0, ',', '.') }} biji)</p>
                         </div>
                         <div>
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Modal Dodol</p>
@@ -440,9 +448,10 @@
                         <div>
                             <p class="text-[10px] uppercase text-amber-800 font-medium">Mika Komisi (Drop)</p>
                             <p class="text-base font-bold text-amber-700">{{ number_format($agg['mika_komisi'], 2, ',', '.') }} mika</p>
+                            <p class="text-[10px] text-amber-600">({{ number_format($agg['biji_komisi'], 0, ',', '.') }} biji)</p>
                         </div>
                         <div>
-                            <p class="text-[10px] uppercase text-amber-800 font-medium">Komisi Rian</p>
+                            <p class="text-[10px] uppercase text-amber-800 font-medium">Komisi {{ $completedTrip->operator->name ?? 'Operator' }}</p>
                             <p class="text-base font-bold text-amber-900">Rp {{ number_format($agg['komisi'], 0, ',', '.') }}</p>
                         </div>
                         <div>

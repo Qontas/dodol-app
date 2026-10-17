@@ -28,6 +28,8 @@ class TripExportController extends Controller
         $trip->loadMissing(['owner', 'operator', 'startingCluster', 'visits.kiosk']);
 
         $mikaDibawa = (int) ($trip->qty_carried_total ?? 0);
+        // Hanya SATU trip per panggilan (bukan loop banyak trip) — aman pakai accessor
+        // relation-method Trip::getBiji*Attribute() di sini, tak picu N+1.
         $mikaDrop = (int) $trip->deliveries()->sum('qty_delivered');
 
         return [
@@ -35,18 +37,22 @@ class TripExportController extends Controller
             'businessName' => $trip->owner?->name ?? 'Cemilan Qontas',
             'operatorName' => $trip->operator?->name ?? '—',
             'clusterName' => $trip->startingCluster?->name ?? 'Semua Kios',
+            'komisiPerMika' => (int) ($trip->owner?->getKomisiPerMikaValue() ?? 1000),
             'summary' => [
                 'mika_dibawa' => $mikaDibawa,
                 'mika_drop' => $mikaDrop,
                 'mika_sisa' => $mikaDibawa - $mikaDrop,
+                'biji_drop' => (int) $trip->biji_diantar,
             ],
             'finansial' => [
                 'omset' => (int) $trip->omset_val,
                 'hpp' => (int) $trip->hpp_estimasi,
                 'untung_kotor' => (int) $trip->untung_kotor,
                 'mika_komisi' => (int) $trip->mika_komisi,
+                'biji_komisi' => (int) $trip->biji_komisi,
                 'total_komisi' => (int) $trip->komisi_rian,
                 'untung_bersih' => (int) $trip->untung_bersih_owner,
+                'biji_terjual' => (int) $trip->biji_terjual,
             ],
             'visits' => $trip->visits->map(fn ($v) => [
                 'kiosk' => $v->kiosk?->name ?? '—',

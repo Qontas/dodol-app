@@ -37,7 +37,7 @@ class MonthlyRekapSheet implements FromArray, WithHeadings, WithTitle
 
     public function headings(): array
     {
-        return ['Tanggal', 'Operator', 'Kios Dikunjungi', 'Mika Drop', 'Omset', 'Komisi', 'Untung Bersih'];
+        return ['Tanggal', 'Operator', 'Kios Dikunjungi', 'Mika Drop', 'Biji Drop', 'Omset', 'Komisi', 'Untung Bersih'];
     }
 
     public function array(): array
@@ -47,13 +47,14 @@ class MonthlyRekapSheet implements FromArray, WithHeadings, WithTitle
             $r['operator'],
             $r['kios_dikunjungi'],
             $r['mika_drop'],
+            $r['biji_drop'],
             $r['omset'],
             $r['komisi'],
             $r['untung_bersih'],
         ], $this->data['rows']->all());
 
         $t = $this->data['totals'];
-        $rows[] = ['TOTAL', '', $t['kios_dikunjungi'], $t['mika_drop'], $t['omset'], $t['komisi'], $t['untung_bersih']];
+        $rows[] = ['TOTAL', '', $t['kios_dikunjungi'], $t['mika_drop'], $t['biji_drop'], $t['omset'], $t['komisi'], $t['untung_bersih']];
 
         return $rows;
     }

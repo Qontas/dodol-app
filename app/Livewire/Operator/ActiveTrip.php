@@ -2378,12 +2378,9 @@ class ActiveTrip extends Component
             'total_mika_cash' => $totalMikaCash,
             'total_amount_cash' => $totalAmountCash,
             'total_uang_diterima' => (int) $this->trip->omset_val,
-            'hpp_estimasi' => (int) $this->trip->hpp_estimasi,
-            'untung_kotor' => (int) $this->trip->untung_kotor,
-            'komisi_reguler' => (int) $this->trip->komisi_reguler,
-            'komisi_kios_baru' => (int) $this->trip->komisi_kios_baru,
-            'komisi_rian' => (int) $this->trip->komisi_rian,
-            'untung_bersih_owner' => (int) $this->trip->untung_bersih_owner,
+            // Operator TIDAK BOLEH terima info komisi/untung owner — HPP, untung kotor,
+            // komisi (reguler/kios baru/total), dan untung bersih owner SENGAJA tidak
+            // dikirim ke payload Livewire ini. Lihat TripSummaryHidesCommissionTest.
         ];
 
         $this->endReason = '';

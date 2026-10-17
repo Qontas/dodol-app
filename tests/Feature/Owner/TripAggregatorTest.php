@@ -112,6 +112,12 @@ class TripAggregatorTest extends TestCase
             $this->assertEqualsWithDelta($trip->mika_kios_baru, $a['mika_kios_baru'], 0.0001, 'mika_kios_baru');
             $this->assertSame($trip->kios_lama_count, $a['kios_lama_count'], 'kios_lama_count');
             $this->assertSame((int) $trip->deliveries()->sum('qty_delivered'), $a['mika_diantar'], 'mika_diantar');
+
+            // Kolom tambahan "X mika (Y biji)" — IDENTIK accessor Trip::biji_*.
+            $this->assertSame($trip->biji_terjual, $a['biji_terjual'], 'biji_terjual');
+            $this->assertSame($trip->biji_diantar, $a['biji_diantar'], 'biji_diantar');
+            $this->assertSame($trip->biji_komisi, $a['biji_komisi'], 'biji_komisi');
+            $this->assertSame($trip->biji_kios_baru, $a['biji_kios_baru'], 'biji_kios_baru');
         }
 
         // Sanity angka konkret trip A: omset 120.000; mika_komisi = 7+10+3 = 20 (BS 2 keluar);
@@ -127,6 +133,13 @@ class TripAggregatorTest extends TestCase
         $this->assertEqualsWithDelta(7, $aA['mika_kios_baru'], 0.0001);
         $this->assertSame(1, $aA['kios_lama_count']);
         $this->assertSame(2, $aA['active_visits']);
+        // Biji (isi default varian 15): drop total 7+10+3+2(BS)=22 → 330 biji;
+        // basis komisi exclude BS 7+10+3=20 → 300 biji; kios baru 7 → 105 biji;
+        // terjual qty_sold mentah 150 biji (= mika_terjual 10 × 15).
+        $this->assertSame(330, $aA['biji_diantar']);
+        $this->assertSame(300, $aA['biji_komisi']);
+        $this->assertSame(105, $aA['biji_kios_baru']);
+        $this->assertSame(150, $aA['biji_terjual']);
     }
 
     public function test_empty_trip_ids_returns_empty(): void

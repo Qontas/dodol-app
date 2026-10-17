@@ -52,12 +52,14 @@ class TripSummarySheet implements FromArray, WithHeadings, WithTitle
             ['Cluster', $this->data['clusterName']],
             ['Mika Dibawa', $s['mika_dibawa']],
             ['Mika Di-drop', $s['mika_drop']],
+            ['Biji Di-drop', $s['biji_drop']],
             ['Mika Sisa', $s['mika_sisa']],
             ['Omset', $f['omset']],
             ['HPP', $f['hpp']],
             ['Untung Kotor', $f['untung_kotor']],
             ['Mika Komisi (Drop)', $f['mika_komisi']],
-            ['Komisi Rian', $f['total_komisi']],
+            ['Biji Komisi (Drop)', $f['biji_komisi']],
+            ["Komisi {$this->data['operatorName']}", $f['total_komisi']],
             ['Untung Bersih Owner', $f['untung_bersih']],
         ];
     }
