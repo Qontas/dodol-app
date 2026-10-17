@@ -36,6 +36,12 @@ class User extends Authenticatable implements FilamentUser
         'harga_mika',
         'komisi_per_mika',
         'komisi_kios_baru_per_mika',
+        'business_name',
+        'default_target_visit_interval_days',
+        'default_warning_visit_interval_days',
+        'default_fast_mover_threshold_days',
+        'kios_baru_days',
+        'default_qty_mika',
     ];
 
     /**
@@ -65,6 +71,12 @@ class User extends Authenticatable implements FilamentUser
             'harga_mika' => 'decimal:2',
             'komisi_per_mika' => 'decimal:2',
             'komisi_kios_baru_per_mika' => 'decimal:2',
+            'business_name' => 'string',
+            'default_target_visit_interval_days' => 'integer',
+            'default_warning_visit_interval_days' => 'integer',
+            'default_fast_mover_threshold_days' => 'integer',
+            'kios_baru_days' => 'integer',
+            'default_qty_mika' => 'integer',
         ];
     }
 
