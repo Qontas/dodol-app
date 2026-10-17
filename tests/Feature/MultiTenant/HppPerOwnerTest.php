@@ -112,23 +112,28 @@ class HppPerOwnerTest extends TestCase
 
     public function test_owner_can_update_own_hpp_via_settings(): void
     {
+        // hpp_per_mika DIHAPUS dari form /owner/settings — HPP sekarang per-varian
+        // produk (ProductVariant::cost_per_pack), bukan satu angka global per owner.
+        // hpp_per_mika TETAP di-set di fixture (kolomnya tak dihapus, hanya tak lagi
+        // bisa diubah lewat form ini) untuk pastikan ia TIDAK ikut berubah/ter-reset
+        // oleh update yang tak menyertakannya.
         $owner = User::factory()->create(['role' => 'owner', 'is_active' => true, 'hpp_per_mika' => 9500]);
 
         $this->actingAs($owner)->get('/owner/settings')->assertOk();
 
         $this->actingAs($owner)
             ->put('/owner/settings', [
-                'hpp_per_mika' => 8800,
                 'harga_mika' => 250,
                 'komisi_per_mika' => 600,
                 'komisi_kios_baru_per_mika' => 1200,
             ])
             ->assertRedirect(route('owner.settings'));
 
-        $this->assertSame('8800.00', $owner->fresh()->hpp_per_mika);
         $this->assertSame('250.00', $owner->fresh()->harga_mika);
         $this->assertSame('600.00', $owner->fresh()->komisi_per_mika);
         $this->assertSame('1200.00', $owner->fresh()->komisi_kios_baru_per_mika);
+        // hpp_per_mika tidak disentuh oleh update ini — tetap nilai fixture semula.
+        $this->assertSame('9500.00', $owner->fresh()->hpp_per_mika);
     }
 
     public function test_operator_cannot_access_owner_settings(): void

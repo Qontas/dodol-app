@@ -86,6 +86,9 @@ class CreateKiosk extends Component
 
     public function mount(): void
     {
+        // Jatah default MILIK OWNER (bukan literal 1) — owner bisa ubah di Settings.
+        $this->defaultQtyMika = auth()->user()->owner?->getDefaultQtyMikaValue() ?? 1;
+
         // Pre-pilih cluster kalau cuma ada satu
         $clusters = $this->clusters;
         if ($clusters->count() === 1) {
@@ -180,8 +183,9 @@ class CreateKiosk extends Component
         }
 
         $titipanGagal = false;
+        $owner = auth()->user()->owner;
 
-        $kiosk = DB::transaction(function () use ($titipToTrip, $isCashOnly, $activeTrip, &$titipanGagal) {
+        $kiosk = DB::transaction(function () use ($titipToTrip, $isCashOnly, $activeTrip, $owner, &$titipanGagal) {
             $kiosk = Kiosk::create([
                 'name' => $this->namaKios,
                 'owner_name' => $this->namaPemilik,
@@ -194,6 +198,12 @@ class CreateKiosk extends Component
                 'latitude' => $this->latitude,
                 'longitude' => $this->longitude,
                 'is_active' => true,
+                // Default interval MILIK OWNER — jalur ini sebelumnya tak mengisi kolom
+                // ini sama sekali (jatuh ke default migrasi mentah 14/10/null), beda diam-
+                // diam dari jalur Filament owner (KioskResource). Disamakan di sini.
+                'target_visit_interval_days' => $owner?->getDefaultTargetVisitIntervalDaysValue() ?? 10,
+                'warning_visit_interval_days' => $owner?->getDefaultWarningVisitIntervalDaysValue() ?? 14,
+                'fast_mover_threshold_days' => $owner?->getDefaultFastMoverThresholdDaysValue() ?? 7,
                 // Kios dibuat operator di lapangan = titip pertama hari ini → kios baru.
                 'first_titip_date' => today(),
                 'store_note' => trim($this->storeNote) ?: null,

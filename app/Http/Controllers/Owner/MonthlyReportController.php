@@ -143,7 +143,7 @@ class MonthlyReportController extends Controller
 
         return [
             'month' => $month,
-            'businessName' => $owner?->name ?? '—',
+            'businessName' => $owner?->getBusinessNameValue() ?? 'Cemilan Qontas',
             'trips' => $trips,
             'rows' => $rows,
             'totals' => $totals,

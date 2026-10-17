@@ -34,7 +34,7 @@ class TripExportController extends Controller
 
         return [
             'trip' => $trip,
-            'businessName' => $trip->owner?->name ?? 'Cemilan Qontas',
+            'businessName' => $trip->owner?->getBusinessNameValue() ?? 'Cemilan Qontas',
             'operatorName' => $trip->operator?->name ?? '—',
             'clusterName' => $trip->startingCluster?->name ?? 'Semua Kios',
             'komisiPerMika' => (int) ($trip->owner?->getKomisiPerMikaValue() ?? 1000),

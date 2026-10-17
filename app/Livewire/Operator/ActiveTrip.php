@@ -699,6 +699,13 @@ class ActiveTrip extends Component
             ->pluck('avg_days', 'kiosk_id');
 
         $flagsByKiosk = [];
+        // Dihitung SEKALI di luar loop (bukan di dalam foreach) — fallback OWNER, bukan
+        // literal 10, untuk kios lama tanpa kolomnya sendiri. Pakai owner()->first() (query
+        // builder), BUKAN properti ->owner (relation-cache) — properti akan memakai cache
+        // relasi dari pemanggilan SEBELUMNYA pada instance user yang sama (nyata di test:
+        // dua Livewire::test() berturut memakai auth()->user() yang sama → query kedua
+        // "gratis" dari cache, bikin jumlah query berbeda antar render secara tak sengaja).
+        $defaultUrgentThreshold = auth()->user()->owner()->first()?->getDefaultTargetVisitIntervalDaysValue() ?? 10;
 
         foreach ($kiosks as $kiosk) {
             $flags = [];
@@ -709,8 +716,8 @@ class ActiveTrip extends Component
                 ? (int) abs($today->diffInDays(\Illuminate\Support\Carbon::parse($lastVisit)))
                 : 999;
 
-            // URGENT — lewat target interval (default 10 hari).
-            $urgentThreshold = $kiosk->target_visit_interval_days ?: 10;
+            // URGENT — lewat target interval (default milik owner, fallback 10 hari).
+            $urgentThreshold = $kiosk->target_visit_interval_days ?: $defaultUrgentThreshold;
             if ($daysSinceVisit > $urgentThreshold) {
                 $flags[] = 'urgent';
             }

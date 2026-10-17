@@ -149,14 +149,10 @@ class UserResource extends Resource
                     ->description('Tarif bisnis owner — dipakai menghitung untung & upah operator.')
                     ->visible(fn (Get $get): bool => $get('role') === 'owner')
                     ->schema([
-                        Forms\Components\TextInput::make('hpp_per_mika')
-                            ->label('HPP per Mika (Rp)')
-                            ->numeric()
-                            ->default(9500)
-                            ->minValue(1)
-                            ->helperText('Harga Pokok Produksi per mika. Default: Rp 9.500')
-                            ->required(),
-
+                        // hpp_per_mika DIHAPUS dari form ini — HPP sekarang per-varian produk
+                        // (ProductVariant::cost_per_pack), bukan satu angka global per owner.
+                        // Kolom tabel readonly super-admin (di bawah) DIBIARKAN — informasional,
+                        // audit data lama, bukan jalur kalkulasi aktif.
                         Forms\Components\TextInput::make('harga_mika')
                             ->label('Harga Mika (Rp)')
                             ->numeric()

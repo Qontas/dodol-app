@@ -283,10 +283,11 @@ class SuperAdminUserGuardTest extends TestCase
         $operator = User::factory()->create(['role' => 'operator', 'owner_id' => $owner->id]);
 
         // Super admin tidak mengantar dodol → tak punya tarif komisi.
+        // hpp_per_mika DIHAPUS dari form ini (HPP sekarang per-varian produk,
+        // ProductVariant::cost_per_pack) — tak lagi dicek di sini.
         Livewire::test(EditUser::class, ['record' => $super->getKey()])
             ->assertFormFieldIsHidden('komisi_per_mika')
             ->assertFormFieldIsHidden('komisi_kios_baru_per_mika')
-            ->assertFormFieldIsHidden('hpp_per_mika')
             ->assertFormFieldIsHidden('harga_mika')
             // 'Owner' (atasan) juga tak relevan untuk super admin.
             ->assertFormFieldIsHidden('owner_id');
@@ -295,7 +296,6 @@ class SuperAdminUserGuardTest extends TestCase
         Livewire::test(EditUser::class, ['record' => $owner->getKey()])
             ->assertFormFieldExists('komisi_per_mika')
             ->assertFormFieldExists('komisi_kios_baru_per_mika')
-            ->assertFormFieldExists('hpp_per_mika')
             ->assertFormFieldExists('harga_mika');
 
         // Operator TIDAK menetapkan tarif (dia dibayar pakai tarif owner-nya).

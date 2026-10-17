@@ -7,7 +7,7 @@
     {{-- Identitas perender halaman/snapshot — guard pwa-token-refresh memakai
          ini untuk deteksi snapshot wire:navigate lintas-tenant yang basi. --}}
     <meta name="auth-uid" content="{{ auth()->id() }}">
-    <title>@yield('title', 'Owner') &mdash; Cemilan Qontas</title>
+    <title>@yield('title', 'Owner') &mdash; {{ auth()->user()?->getBusinessNameValue() ?? 'Cemilan Qontas' }}</title>
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -31,7 +31,7 @@
     >
         <div class="px-6 py-5 border-b border-slate-700">
             <a href="{{ route('owner.dashboard') }}" class="text-lg font-semibold text-amber-400">
-                Cemilan Qontas
+                {{ auth()->user()?->getBusinessNameValue() ?? 'Cemilan Qontas' }}
             </a>
             <p class="mt-1 text-xs text-slate-400">Panel Owner</p>
         </div>

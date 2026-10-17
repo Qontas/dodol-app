@@ -7,7 +7,7 @@
     {{-- Identitas perender halaman/snapshot — guard pwa-token-refresh memakai
          ini untuk deteksi snapshot wire:navigate lintas-tenant yang basi. --}}
     <meta name="auth-uid" content="{{ auth()->id() }}">
-    <title>{{ $title ?? 'Operator' }} &mdash; Cemilan Qontas</title>
+    <title>{{ $title ?? 'Operator' }} &mdash; {{ auth()->user()?->owner?->getBusinessNameValue() ?? 'Cemilan Qontas' }}</title>
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -19,7 +19,7 @@
 <div class="min-h-screen flex flex-col">
     <header class="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
         <a href="{{ route('operator.dashboard') }}" class="text-base font-semibold text-amber-600">
-            Cemilan Qontas
+            {{ auth()->user()?->owner?->getBusinessNameValue() ?? 'Cemilan Qontas' }}
         </a>
         <div class="flex items-center gap-3">
             <span class="text-sm text-slate-600">{{ auth()->user()->name }}</span>

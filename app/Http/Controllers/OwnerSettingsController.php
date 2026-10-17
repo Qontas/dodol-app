@@ -15,14 +15,15 @@ class OwnerSettingsController extends Controller
 
     public function update(Request $request): RedirectResponse
     {
+        // hpp_per_mika DIHAPUS dari form ini — HPP sekarang per-varian produk
+        // (ProductVariant::cost_per_pack), bukan satu angka global per owner.
+        // Kolom tabel readonly super-admin di UserResource DIBIARKAN (informasional,
+        // audit data lama) — bukan jalur kalkulasi aktif.
         $data = $request->validate([
-            'hpp_per_mika' => 'required|numeric|min:1',
             'harga_mika' => 'required|numeric|min:0',
             'komisi_per_mika' => 'required|numeric|min:0',
             'komisi_kios_baru_per_mika' => 'required|numeric|min:0',
         ], [
-            'hpp_per_mika.required' => 'HPP per mika wajib diisi.',
-            'hpp_per_mika.min' => 'HPP per mika minimal Rp 1.',
             'harga_mika.required' => 'Harga mika wajib diisi.',
             'harga_mika.min' => 'Harga mika minimal Rp 0.',
             'komisi_per_mika.required' => 'Komisi reguler per mika wajib diisi.',
@@ -32,7 +33,6 @@ class OwnerSettingsController extends Controller
         ]);
 
         auth()->user()->update([
-            'hpp_per_mika' => $data['hpp_per_mika'],
             'harga_mika' => $data['harga_mika'],
             'komisi_per_mika' => $data['komisi_per_mika'],
             'komisi_kios_baru_per_mika' => $data['komisi_kios_baru_per_mika'],
