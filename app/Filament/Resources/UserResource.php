@@ -213,17 +213,35 @@ class UserResource extends Resource
                     })
                     ->sortable(),
 
-                // Komisi/Mika = angka yang SUNGGUH dipakai membayar operator
+                // Komisi Operator/Mika = angka yang SUNGGUH dipakai membayar operator
                 // (Rp per mika drop). Untuk operator → tarif owner-nya. Kolom persen
                 // 'commission_rate' lama SENGAJA dibuang: legacy & menyesatkan.
+                //
+                // Label lama "Komisi/Mika" + angka polos bikin baris OWNER terlihat
+                // seolah owner MENERIMA komisi, padahal itu tarif yang owner BAYAR ke
+                // operatornya — beda arti dgn baris operator (tarif yang operator
+                // TERIMA, dibaca dari owner-nya). Prefix "Bayar"/"Terima" per baris
+                // meluruskan ini TANPA mengubah angka (fix 20 Okt 2026).
                 Tables\Columns\TextColumn::make('komisi_efektif_per_mika')
-                    ->label('Komisi/Mika')
+                    ->label('Komisi Operator /Mika')
                     ->state(fn (User $record): ?float => match ($record->role) {
                         'operator' => $record->owner?->getKomisiPerMikaValue(),
                         'owner' => $record->getKomisiPerMikaValue(),
                         default => null,
                     })
-                    ->formatStateUsing(fn ($state) => $state !== null ? 'Rp '.number_format((float) $state, 0, ',', '.') : '—')
+                    ->formatStateUsing(function ($state, User $record) {
+                        if ($state === null) {
+                            return '—';
+                        }
+
+                        $rupiah = 'Rp '.number_format((float) $state, 0, ',', '.');
+
+                        return match ($record->role) {
+                            'owner' => "Bayar {$rupiah}",
+                            'operator' => "Terima {$rupiah}",
+                            default => $rupiah,
+                        };
+                    })
                     ->alignCenter(),
 
                 Tables\Columns\TextColumn::make('hpp_per_mika')
