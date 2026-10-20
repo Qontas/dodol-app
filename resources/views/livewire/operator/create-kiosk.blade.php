@@ -224,6 +224,9 @@
                     id="operator-map"
                     style="height: 300px; border-radius: 12px; border: 1px solid #e2e8f0; z-index: 1; position: relative;"
                 ></div>
+                <p id="map-tile-error" class="hidden text-xs text-amber-600 mt-2">
+                    ⚠️ Gambar peta gagal dimuat (jaringan). Kamu masih bisa menandai lokasi lewat tombol GPS atau tempel link Google Maps, atau simpan kios tanpa lokasi.
+                </p>
             </div>
 
             {{-- Koordinat display --}}
@@ -368,12 +371,23 @@
             // lebih longgar dari OSM). maxNativeZoom 20 = batas tile ada; maxZoom 20 = user
             // tak bisa over-zoom ke zona tanpa-tile (akar grey saat zoom kuat). Samakan dgn
             // peta owner (KioskResource) biar konsisten.
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', {
+            const operatorTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', {
                 attribution: '© OpenStreetMap, © CARTO',
                 subdomains: 'abcd',
                 maxNativeZoom: 20,
                 maxZoom: 20
             }).addTo(operatorMap);
+
+            // Tile gagal muat (CDN diblokir jaringan/kartu SIM tertentu, dll) -> jangan
+            // diamkan jadi kotak abu-abu misterius. Tampilkan pesan SEKALI, peta &
+            // form tetap bisa dipakai (lokasi selalu opsional, lihat komentar di atas).
+            let tileErrorShown = false;
+            operatorTiles.on('tileerror', function () {
+                if (tileErrorShown) return;
+                tileErrorShown = true;
+                const msg = document.getElementById('map-tile-error');
+                if (msg) msg.classList.remove('hidden');
+            });
 
             @if ($latitude && $longitude)
                 operatorMarker = L.marker([startLat, startLng]).addTo(operatorMap);
@@ -403,7 +417,14 @@
         // isAuto=true  (auto saat form kebuka): senyap kalau gagal/ditolak — jangan ganggu
         //              operator dengan popup; mereka masih bisa pencet tombol / klik peta.
         // isAuto=false (tombol dipencet): tampilkan alert kalau gagal (operator sengaja minta).
-        function triggerGps(isAuto) {
+        //
+        // PENTING: getCurrentPosition TANPA opsi `timeout` bisa MENGGANTUNG SELAMANYA kalau
+        // chip GPS tak kunjung dapat fix (sinyal lemah, indoor, dll) — browser tidak punya
+        // batas waktu default. Itu akar bug "Mencari lokasi..." macet permanen di lapangan.
+        // Di sini dibatasi tegas + percobaan kedua dgn enableHighAccuracy:false (fix GPS
+        // satelit lebih lama/gagal di sebagian HP; fix jaringan/wifi lebih cepat dapat,
+        // cukup akurat utk lokasi kios) — sebelum benar-benar menyerah.
+        function triggerGps(isAuto, isRetry) {
             const btn = document.getElementById('btn-gps');
             if (!navigator.geolocation) {
                 if (!isAuto) alert('GPS tidak didukung browser ini.');
@@ -416,9 +437,32 @@
                     if (operatorMap) operatorMap.setView([pos.coords.latitude, pos.coords.longitude], 17);
                     if (btn) btn.textContent = '📍 Pakai Lokasi Saya (GPS)';
                 },
-                function () {
-                    if (!isAuto) alert('Gagal mendapatkan lokasi. Pastikan GPS aktif dan izin lokasi diberikan.');
+                function (err) {
+                    // Percobaan pertama gagal krn sinyal (bukan izin ditolak) -> coba sekali
+                    // lagi dgn akurasi rendah (fix jaringan, lebih cepat/andal indoor).
+                    if (!isRetry && err && err.code !== err.PERMISSION_DENIED) {
+                        triggerGps(isAuto, true);
+                        return;
+                    }
                     if (btn) btn.textContent = '📍 Pakai Lokasi Saya (GPS)';
+                    if (isAuto) return; // senyap — operator masih bisa pencet tombol / klik peta.
+
+                    let pesan = 'Gagal mendapatkan lokasi. Coba lagi.';
+                    if (err) {
+                        if (err.code === err.PERMISSION_DENIED) {
+                            pesan = 'Izin lokasi ditolak. Buka ikon gembok di address bar > Izin > Lokasi > Izinkan, lalu coba lagi. Kamu tetap bisa simpan kios tanpa lokasi atau tandai manual di peta.';
+                        } else if (err.code === err.POSITION_UNAVAILABLE) {
+                            pesan = 'Sinyal GPS tidak didapat. Coba lagi di tempat terbuka, atau tandai lokasi manual di peta.';
+                        } else if (err.code === err.TIMEOUT) {
+                            pesan = 'Waktu habis mencari lokasi. Coba lagi, atau tandai lokasi manual di peta.';
+                        }
+                    }
+                    alert(pesan);
+                },
+                {
+                    enableHighAccuracy: !isRetry,
+                    timeout: 15000,
+                    maximumAge: 0,
                 }
             );
         }
