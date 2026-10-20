@@ -1,6 +1,11 @@
 <div class="max-w-md mx-auto pb-36" x-data="{
     loading: false,
-    sortByDistance() {
+    // Disamakan dgn form Kios Baru operator (fix 26324bd): timeout tegas + percobaan
+    // kedua enableHighAccuracy:false (fix jaringan, lebih cepat/andal indoor) sebelum
+    // menyerah, dan pesan per error.code (bukan error.message mentah browser yg kadang
+    // bahasa Inggris/tak jelas bagi operator lapangan). Tombol selalu pulih (loading
+    // di-reset) baik sukses maupun gagal — tak pernah nyangkut di 'Mencari…'.
+    sortByDistance(isRetry) {
         if (!navigator.geolocation) {
             alert('Geolocation tidak didukung oleh browser Anda.');
             return;
@@ -12,12 +17,27 @@
                     .then(() => { this.loading = false; });
             },
             (error) => {
+                if (!isRetry && error && error.code !== error.PERMISSION_DENIED) {
+                    this.sortByDistance(true);
+                    return;
+                }
                 this.loading = false;
-                alert('Gagal mendapatkan lokasi GPS: ' + error.message);
+
+                let pesan = 'Gagal mendapatkan lokasi. Coba lagi.';
+                if (error) {
+                    if (error.code === error.PERMISSION_DENIED) {
+                        pesan = 'Izin lokasi ditolak. Buka ikon gembok di address bar > Izin > Lokasi > Izinkan, lalu coba lagi.';
+                    } else if (error.code === error.POSITION_UNAVAILABLE) {
+                        pesan = 'Sinyal GPS tidak didapat. Coba lagi di tempat terbuka.';
+                    } else if (error.code === error.TIMEOUT) {
+                        pesan = 'Waktu habis mencari lokasi. Coba lagi.';
+                    }
+                }
+                alert(pesan);
             },
             {
-                enableHighAccuracy: true,
-                timeout: 5000,
+                enableHighAccuracy: !isRetry,
+                timeout: 15000,
                 maximumAge: 0
             }
         );

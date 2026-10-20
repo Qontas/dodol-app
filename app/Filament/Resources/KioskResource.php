@@ -260,18 +260,19 @@ class KioskResource extends Resource
                             ->showFullscreenControl()
                             ->showZoomControl()
                             ->showMyLocationButton()
-                            // Tile CARTO Voyager (gratis, CDN + subdomain {s}=abcd → tile keisi
-                            // lebih cepat & kebijakan usage lebih longgar dari tile.openstreetmap.org
-                            // yang rawan throttle/400). Native 256px — sudah default Leaflet, sama
-                            // seperti peta operator (create-kiosk.blade.php), jadi tak perlu override
-                            // tileSize/zoomOffset lagi (itu cuma perlu utk nyamain default dotswan yg beda).
-                            ->tilesUrl('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png')
-                            ->attribution('© OpenStreetMap, © CARTO')
+                            // Tile CARTO Voyager DIBUANG (20 Okt 2026): CARTO sekarang mewajibkan
+                            // API key di zoom dekat (z≥~17) — tile diganti watermark "API KEY
+                            // REQUIRED", bukan dirender — ini AKAR "peta hilang" di lapangan saat
+                            // operator GPS/zoom dekat (zoom jauh masih kelihatan normal, jadi lolos
+                            // dari pengecekan sekilas). Balik ke default tilesUrl/attribution class
+                            // ini (tile.openstreetmap.org, tanpa API key) — TIDAK override di sini
+                            // lagi biar otomatis ikut kalau default LeafletMapPicker berubah.
                             ->zoom(13)
-                            // AKAR "grey saat zoom KUAT": provider cuma ada tile s/d ~z20. Cap
-                            // maxZoom = 20 (map & tileLayer maxNativeZoom) — user tak bisa over-zoom
-                            // ke zona tanpa-tile. z20 = level bangunan, cukup buat nunjuk lokasi kios.
-                            ->maxZoom(20)
+                            // maxZoom 19 = batas tile OSM standar ada (lebih rendah dari CARTO yg
+                            // s/d 20) — samakan dgn default LeafletMapPicker::$mapConfig, jadi
+                            // baris ini sebenarnya redundan tapi dipertahankan utk jelas eksplisit
+                            // & konsisten dgn peta operator (create-kiosk.blade.php).
+                            ->maxZoom(19)
                             ->dehydrated(false),
 
                         // Kolom asli tetap disimpan ke DB lewat hidden field

@@ -53,10 +53,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }).setView([start.lat, start.lng], config.zoom);
 
                 // maxNativeZoom = maxZoom: cegah over-zoom ke level tanpa tile
-                // (akar "grey saat zoom kuat", sama fix dgn peta operator).
+                // (akar "grey saat zoom kuat", sama fix dgn peta operator). Tanpa
+                // `subdomains`: tilesUrl standar (tile.openstreetmap.org) host tunggal,
+                // tak pakai placeholder {s} (beda dari CARTO yang dibuang 20 Okt 2026
+                // krn skrg wajib API key di zoom dekat — lihat KioskResource).
                 L.tileLayer(config.tilesUrl, {
                     attribution: config.attribution,
-                    subdomains: 'abcd',
                     maxZoom: config.maxZoom,
                     maxNativeZoom: config.maxZoom,
                 }).addTo(this.map);

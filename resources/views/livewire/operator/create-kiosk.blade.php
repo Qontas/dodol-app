@@ -365,17 +365,19 @@
             const startLat = {{ $latitude ?: 3.5952 }};
             const startLng = {{ $longitude ?: 98.6722 }};
 
-            operatorMap = L.map('operator-map', { maxZoom: 20 }).setView([startLat, startLng], 15);
+            operatorMap = L.map('operator-map', { maxZoom: 19 }).setView([startLat, startLng], 15);
 
-            // Tile CARTO Voyager (gratis, CDN + subdomain abcd → tile keisi cepat, usage
-            // lebih longgar dari OSM). maxNativeZoom 20 = batas tile ada; maxZoom 20 = user
-            // tak bisa over-zoom ke zona tanpa-tile (akar grey saat zoom kuat). Samakan dgn
-            // peta owner (KioskResource) biar konsisten.
-            const operatorTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap, © CARTO',
-                subdomains: 'abcd',
-                maxNativeZoom: 20,
-                maxZoom: 20
+            // Tile OpenStreetMap standar (20 Okt 2026, ganti dari CARTO Voyager): CARTO
+            // sekarang mewajibkan API key di zoom dekat (z≥~17) — tile diganti watermark
+            // "API KEY REQUIRED" bukan dirender, itu AKAR "peta hilang" di lapangan saat
+            // operator GPS/zoom dekat (zoom jauh masih normal, jadi lolos dari cek sekilas).
+            // Host tunggal (tak pakai {s}/subdomains). maxNativeZoom 19 = batas tile OSM
+            // ada; maxZoom 19 = user tak bisa over-zoom ke zona tanpa-tile. Samakan dgn
+            // peta owner (KioskResource/LeafletMapPicker) biar konsisten.
+            const operatorTiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxNativeZoom: 19,
+                maxZoom: 19
             }).addTo(operatorMap);
 
             // Tile gagal muat (CDN diblokir jaringan/kartu SIM tertentu, dll) -> jangan
