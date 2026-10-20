@@ -791,101 +791,66 @@ Section **Tarif & Komisi** (visible hanya jika `role = 'owner'`):
 
 ---
 
-### B9. 🔴 Settings (PALING PENTING — cek paling teliti)
+### B9. Settings (PALING PENTING — cek paling teliti)
 
 Halaman Settings owner: `GET /owner/settings`, `PUT /owner/settings/update`
 Controller: `app/Http/Controllers/OwnerSettingsController.php`
 View: `resources/views/owner/settings.blade.php`
 
----
-
-#### B9.1 Harga Mika, Komisi Reguler, Komisi Kios Baru
-
-**STATUS: ADA FORM INPUT di halaman Settings.**
-
-Halaman Settings saat ini memiliki tiga field yang dapat diubah owner:
-
-1. **`harga_mika`** — Label: `Harga Mika (Rp)`, helperText: `Harga modal mika per kemasan. Default: Rp 200.` (`settings.blade.php:25–31`)
-2. **`komisi_per_mika`** — Label: `Komisi Reguler per Mika (Rp)`, helperText: `Komisi per mika yang terjual pada kios biasa. Default: Rp 500.` (`settings.blade.php:38–44`)
-3. **`komisi_kios_baru_per_mika`** — Label: `Komisi Kios Baru per Mika (Rp)`, helperText: `Komisi per mika untuk kios yang baru pertama kali dititipi. Default: Rp 1.000.` (`settings.blade.php:51–57`)
-
-Controller memvalidasi ketiga field tersebut dan menyimpannya ke `users` table. (`OwnerSettingsController.php:22–39`)
-
-Accessor fallback di model: `getHargaMikaValue()` fallback 200, `getKomisiPerMikaValue()` fallback 1000, `getKomisiKiosBaruPerMikaValue()` fallback 1000. (`User.php:297–311`)
-
-Heading halaman: `Pengaturan`, subtitle: `Atur Harga Mika dan Komisi untuk bisnis Anda.` (`settings.blade.php:7–8`)
+**STATUS 20 OKTOBER 2026: SEMUA 9 PENGATURAN SUDAH PUNYA INPUT DAN DAPAT DISIMPAN OWNER.** Form dibagi menjadi tiga bagian agar kegunaan setiap nilai jelas.
 
 ---
 
-#### B9.2 Nama Usaha (`business_name`)
+#### B9.1 Identitas Usaha
 
-**STATUS: TIDAK ADA form input di halaman Settings saat ini. HANYA ada di DB, accessor, dan (tersembunyi) di super admin UserResource — TANPA UI untuk owner.**
-
-- Kolom `business_name` di-migrate oleh `2026_10_17_000003_add_business_name_to_users_table.php` dengan komentar: `Nama bisnis per owner (header panel/laporan/export) — sebelum ini layout/export memakai users.name (nama ORANG owner) sebagai pengganti nama bisnis.` (`2026_10_17_000003_add_business_name_to_users_table.php:8–10`)
-- Accessor `User::getBusinessNameValue()` mengembalikan `$this->business_name ?? 'Cemilan Qontas'`. (`User.php:318–320`)
-- Field `business_name` ada di `$fillable` model User. (`User.php:39`)
-- **Halaman Settings (`settings.blade.php`) TIDAK memiliki input `business_name`.** Controller `OwnerSettingsController::update()` hanya memvalidasi dan menyimpan `harga_mika`, `komisi_per_mika`, `komisi_kios_baru_per_mika` — `business_name` tidak ada dalam `$data` yang diproses. (`OwnerSettingsController.php:22–38`)
-- Di `UserResource` (super admin Filament): `business_name` **tidak ada** sebagai field form eksplisit di dalam `form()` — hanya ada di `$fillable` model.
-- **Kesimpulan: owner tidak dapat mengubah Nama Usaha sendiri via UI apapun saat ini.** Nilai hanya bisa diubah lewat `tinker` atau migrasi DB manual.
+1. **`business_name` — Nama Usaha**
+   - Teks maksimal 60 karakter; kosong disimpan sebagai `null` sehingga accessor tetap memakai fallback **`Cemilan Qontas`**.
+   - Nilai tampil pada header panel owner/operator, laporan bulanan, serta export PDF/Excel.
+   - Helper menjelaskan bahwa nama ini digunakan di judul halaman, laporan, dan file unduhan.
 
 ---
 
-#### B9.3 Interval Default Kunjungan (Ideal / Peringatan / Laris)
+#### B9.2 Harga & Komisi
 
-**STATUS: TIDAK ADA form input di halaman Settings saat ini. HANYA ada di DB dan accessor — TANPA UI untuk owner.**
+1. **`harga_mika` — Harga Mika (Rp)**, angka minimal 0, fallback Rp 200.
+2. **`komisi_per_mika` — Komisi Reguler per Mika (Rp)**, angka minimal 0, accessor fallback Rp 1.000.
+3. **`komisi_kios_baru_per_mika` — Komisi Kios Baru per Mika (Rp)**, angka minimal 0, fallback Rp 1.000.
 
-Kolom-kolom ini di-migrate oleh `2026_10_17_000004_add_kiosk_defaults_to_users_table.php` dengan komentar: `Default pengaturan kios baru PER OWNER (menu Settings owner) — sebelum ini angka ideal/peringatan/batas-laris/durasi-kios-baru/jatah-titipan-awal hardcode literal di KioskResource & CreateKiosk. Hanya memengaruhi kios BARU; kios yang sudah ada tak berubah.` (`2026_10_17_000004_add_kiosk_defaults_to_users_table.php:9–11`)
-
-Kolom-kolom yang ada di DB (nullable):
-- `default_target_visit_interval_days` — accessor fallback **10** (`User.php:328–329`)
-- `default_warning_visit_interval_days` — accessor fallback **14** (`User.php:335–337`)
-- `default_fast_mover_threshold_days` — accessor fallback **7** (`User.php:343–345`)
-
-Semua ada di `$fillable` (`User.php:40–42`) dan `$casts` (`User.php:75–77`).
-
-**Halaman Settings tidak memiliki satu pun input untuk ketiga interval ini.** Controller hanya memproses `harga_mika`, `komisi_per_mika`, `komisi_kios_baru_per_mika`. (`OwnerSettingsController.php:22–38`)
-
-**Kesimpulan: interval default ideal/peringatan/laris hanya dapat diubah via `tinker` atau DB manual.**
+`hpp_per_mika` tidak berada di form ini karena HPP aktif sekarang berasal dari biaya per varian produk (`ProductVariant::cost_per_pack`).
 
 ---
 
-#### B9.4 Masa Kios Baru (`kios_baru_days`)
+#### B9.3 Default Kedai Baru
 
-**STATUS: TIDAK ADA form input di halaman Settings saat ini. HANYA ada di DB dan accessor — TANPA UI untuk owner.**
+Bagian ini berisi lima nilai milik owner yang dipakai saat **membuat kios baru**:
 
-- Kolom `kios_baru_days` di-migrate bersamaan dengan ketiga interval di atas (`2026_10_17_000004_add_kiosk_defaults_to_users_table.php:22`).
-- Accessor `User::getKiosBaruDaysValue()` mengembalikan `(int)($this->kios_baru_days ?? 30)`. Komentar: `Lama (hari) status "kios baru" dihitung dari first_titip_date — dipakai badge ⭐ dan penentuan komisi kios baru. Fallback 30 (perilaku hardcode lama).` (`User.php:348–354`)
-- Halaman Settings tidak memiliki input `kios_baru_days`. Controller tidak memproses field ini.
+1. **`default_target_visit_interval_days` — Ideal Dikunjungi Tiap (hari)**, 1–365, fallback **10**.
+2. **`default_warning_visit_interval_days` — Peringatan Belum Dikunjungi (hari)**, 1–365, fallback **14**.
+3. **`default_fast_mover_threshold_days` — Batas Kios Laris (hari)**, 1–365, fallback **7**.
+4. **`kios_baru_days` — Masa "Kios Baru" (hari)**, 1–365, fallback **30**.
+5. **`default_qty_mika` — Default Jatah Titipan Kedai Baru (mika)**, 1–100, fallback **1**.
 
-**Kesimpulan: durasi masa kios baru tidak dapat diubah owner dari UI manapun saat ini.**
+Aturan silang: nilai **Peringatan Belum Dikunjungi harus lebih besar atau sama dengan Ideal Dikunjungi Tiap**. Jika lebih kecil, simpan ditolak dengan pesan yang menjelaskan hubungan kedua nilai tersebut.
 
----
+Default interval dan jatah diterapkan pada jalur pembuatan kios owner (Filament) dan operator (Livewire). Perubahan hanya memengaruhi data **baru**; kios dan trip yang sudah ada tidak diubah. Form juga menegaskan aturan ini lewat helper text.
 
-#### B9.5 Default Jatah Titipan (`default_qty_mika`)
-
-**STATUS: TIDAK ADA form input di halaman Settings saat ini. HANYA ada di DB dan accessor — TANPA UI untuk owner.**
-
-- Kolom `default_qty_mika` di-migrate bersamaan (`2026_10_17_000004_add_kiosk_defaults_to_users_table.php:23`).
-- Accessor `User::getDefaultQtyMikaValue()` mengembalikan `(int)($this->default_qty_mika ?? 1)`. Komentar: `Default jatah titipan (mika) untuk kios konsinyasi baru. Fallback 1 — sama dengan perilaku live sekarang (CreateKiosk operator), BUKAN 4.` (`User.php:357–364`)
-- Halaman Settings tidak memiliki input `default_qty_mika`. Controller tidak memproses field ini.
-
-**Kesimpulan: default jatah titipan tidak dapat diubah owner dari UI manapun saat ini.**
+Controller hanya menjalankan `auth()->user()->update($data)` dan tidak menerima `owner_id` dari request, sehingga owner hanya mengubah pengaturan miliknya sendiri. Cakupan ini diverifikasi oleh `tests/Feature/Owner/SettingsTest.php`, termasuk persist/reload, validasi silang, header/PDF, kedua jalur pembuatan kios, dan isolasi antar-owner.
 
 ---
 
-#### B9. Ringkasan Tabel Status Settings
+#### B9.4 Ringkasan Tabel Status Settings
 
-| Nilai | Kolom DB | Ada di Settings Form? | Fallback |
-|---|---|---|---|
-| Harga Mika | `harga_mika` | **YA** — input `Harga Mika (Rp)` | Rp 200 |
-| Komisi Reguler per Mika | `komisi_per_mika` | **YA** — input `Komisi Reguler per Mika (Rp)` | Rp 1.000 |
-| Komisi Kios Baru per Mika | `komisi_kios_baru_per_mika` | **YA** — input `Komisi Kios Baru per Mika (Rp)` | Rp 1.000 |
-| Nama Usaha | `business_name` | **TIDAK** — tidak ada di Settings maupun form Filament owner | `'Cemilan Qontas'` |
-| Interval Ideal Kunjungan | `default_target_visit_interval_days` | **TIDAK** | 10 hari |
-| Interval Peringatan Kunjungan | `default_warning_visit_interval_days` | **TIDAK** | 14 hari |
-| Batas Kios Laris | `default_fast_mover_threshold_days` | **TIDAK** | 7 hari |
-| Masa Kios Baru | `kios_baru_days` | **TIDAK** | 30 hari |
-| Default Jatah Titipan | `default_qty_mika` | **TIDAK** | 1 mika |
+| Bagian | Nilai | Kolom DB | Ada di Settings Form? | Fallback / batas |
+|---|---|---|---|---|
+| Identitas Usaha | Nama Usaha | `business_name` | **YA** | `Cemilan Qontas`; maks. 60 karakter |
+| Harga & Komisi | Harga Mika | `harga_mika` | **YA** | Rp 200; min. 0 |
+| Harga & Komisi | Komisi Reguler per Mika | `komisi_per_mika` | **YA** | Rp 1.000; min. 0 |
+| Harga & Komisi | Komisi Kios Baru per Mika | `komisi_kios_baru_per_mika` | **YA** | Rp 1.000; min. 0 |
+| Default Kedai Baru | Interval Ideal Kunjungan | `default_target_visit_interval_days` | **YA** | 10 hari; 1–365 |
+| Default Kedai Baru | Interval Peringatan Kunjungan | `default_warning_visit_interval_days` | **YA** | 14 hari; 1–365 dan ≥ ideal |
+| Default Kedai Baru | Batas Kios Laris | `default_fast_mover_threshold_days` | **YA** | 7 hari; 1–365 |
+| Default Kedai Baru | Masa Kios Baru | `kios_baru_days` | **YA** | 30 hari; 1–365 |
+| Default Kedai Baru | Default Jatah Titipan | `default_qty_mika` | **YA** | 1 mika; 1–100 |
 
 ---
 
@@ -1042,22 +1007,13 @@ Sumber: `routes/web.php:96-99`, `app/Http/Controllers/Owner/TripDeleteController
 
 ## D. TEMUAN
 
-### D1. 🔴 Gap Utama Settings — 5 Nilai Ada di DB Tanpa UI
+### D1. ✅ SELESAI — Gap Settings Enam Nilai Tanpa UI
 
-**Masalah:** Migration `2026_10_17_000004` (komentar: `menu Settings owner`) menambahkan 5 kolom yang **dimaksudkan** tersedia di Settings owner. Namun halaman Settings (`settings.blade.php`) dan controller (`OwnerSettingsController`) **TIDAK memiliki form input untuk satu pun dari kelima nilai ini:**
+Temuan awal: `business_name` dan lima default kedai baru sudah tersedia di DB/accessor, tetapi belum dapat diubah owner dari UI.
 
-1. `business_name` — Nama Usaha (fallback hardcode `'Cemilan Qontas'`)
-2. `default_target_visit_interval_days` — Interval Ideal Kunjungan (fallback 10)
-3. `default_warning_visit_interval_days` — Interval Peringatan Kunjungan (fallback 14)
-4. `default_fast_mover_threshold_days` — Batas Kios Laris (fallback 7)
-5. `kios_baru_days` — Masa Kios Baru (fallback 30)
-6. `default_qty_mika` — Default Jatah Titipan (fallback 1)
+**Status 20 Oktober 2026: diperbaiki.** Halaman Settings sekarang memiliki tiga bagian (`Identitas Usaha`, `Harga & Komisi`, `Default Kedai Baru`) dan input untuk keenam nilai tersebut. Controller memvalidasi dan menyimpannya pada owner yang login; `Peringatan Belum Dikunjungi` wajib ≥ `Ideal Dikunjungi Tiap`; batas hari maksimal 365 dan jatah maksimal 100.
 
-**Dampak:** Owner tidak dapat mengubah nilai-nilai ini dari UI apapun. Aksesnya hanya via `tinker` atau akses langsung ke DB. Halaman Settings tampil dengan subtitle `Atur Harga Mika dan Komisi untuk bisnis Anda.` — tidak menyebutkan pengaturan kios sama sekali.
-
-Sitasi migration: `2026_10_17_000004_add_kiosk_defaults_to_users_table.php:9–11`, `2026_10_17_000003_add_business_name_to_users_table.php:8–10`.
-Sitasi controller: `OwnerSettingsController.php:22–38`.
-Sitasi view: `settings.blade.php` — tidak ada input untuk keenam field di atas.
+Default kustom dipakai pada jalur pembuatan kios owner maupun operator tanpa memutasi kios/trip lama. Nama usaha dipakai oleh header dan data export PDF/Excel. Perilaku persist/reload, validasi, penerapan default, dan isolasi tenant dilindungi oleh `tests/Feature/Owner/SettingsTest.php`.
 
 ---
 
@@ -1088,9 +1044,9 @@ Kolom `users.hpp_per_mika` masih ada di DB dan model (fillable, cast, accessor d
 
 ---
 
-### D5. Komentar Migration vs Implementasi: Settings Belum Selesai
+### D5. ✅ SELESAI — Implementasi Settings Kini Sesuai Komentar Migration
 
-Migration `2026_10_17_000004` menyebutkan `(menu Settings owner)` sebagai tujuan kolom. Ini mengindikasikan fitur Settings yang lebih lengkap direncanakan tapi **belum diimplementasikan** di halaman Settings dan controller. Kondisi ini merupakan "fitur setengah jadi" — DB sudah siap, UI belum tersedia.
+Migration `2026_10_17_000004` menyebut `(menu Settings owner)` sebagai tujuan kolom. Sejak 20 Oktober 2026, halaman dan controller Settings telah mengimplementasikan kelima default kedai baru tersebut, ditambah `business_name` dari migration `2026_10_17_000003`. Tidak ada lagi gap DB-siap/UI-belum-tersedia untuk field-field ini.
 
 ---
 

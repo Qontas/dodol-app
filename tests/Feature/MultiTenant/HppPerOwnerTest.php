@@ -126,6 +126,12 @@ class HppPerOwnerTest extends TestCase
                 'harga_mika' => 250,
                 'komisi_per_mika' => 600,
                 'komisi_kios_baru_per_mika' => 1200,
+                // Kirim nilai default standar supaya tidak ikut diuji di sini.
+                'default_target_visit_interval_days' => 10,
+                'default_warning_visit_interval_days' => 14,
+                'default_fast_mover_threshold_days' => 7,
+                'kios_baru_days' => 30,
+                'default_qty_mika' => 1,
             ])
             ->assertRedirect(route('owner.settings'));
 
