@@ -32,12 +32,14 @@ class Trip extends Model
         'qty_bs_redistributed',
         'starting_cluster_id',
         'notes',
+        'komisi_per_mika_snapshot',
     ];
 
     protected $casts = [
         'trip_date' => 'date',
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
+        'komisi_per_mika_snapshot' => 'decimal:2',
     ];
 
     /** Cache instance untuk salesSnapshotTotals() — lihat docblock method-nya. */
@@ -177,12 +179,22 @@ class Trip extends Model
     }
 
     /**
-     * Tarif komisi Rian per mika DROP dari owner trip ini, fallback Rp 1.000.
-     * (Opsi Y — basis DROP. Bonus kios-baru terpisah sudah dilebur ke tarif ini.)
+     * Tarif komisi Rian per mika DROP YANG BERLAKU di trip ini (Opsi Y — basis
+     * DROP. Bonus kios-baru terpisah sudah dilebur ke tarif ini).
+     *
+     * BRIEF 2 (21 Okt 2026) — dibaca dari komisi_per_mika_snapshot (diisi SEKALI
+     * saat trip dimulai, StartTrip::startTrip(), dari tarif EFEKTIF operator trip
+     * ybs — User::getEffectiveKomisiPerMikaValue()), BUKAN lagi tarif owner/
+     * operator SAAT INI. Sebelum perubahan ini komisi_rian baca owner->komisi_
+     * per_mika LIVE tanpa snapshot apa pun — trip yang sudah lama berakhir ikut
+     * berubah komisinya kalau owner ganti tarif hari ini (dibuktikan dgn test,
+     * lihat laporan investigasi BRIEF 2 poin 1). Fallback live dipertahankan
+     * HANYA untuk trip pra-snapshot yang belum di-backfill (seharusnya tidak
+     * terjadi di produksi setelah `trips:backfill-komisi-snapshot` dijalankan).
      */
     private function getKomisiPerMika(): float
     {
-        return (float) ($this->owner?->komisi_per_mika ?? 1000);
+        return (float) ($this->komisi_per_mika_snapshot ?? $this->owner?->komisi_per_mika ?? 1000);
     }
 
     /**

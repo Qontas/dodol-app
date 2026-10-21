@@ -2538,8 +2538,12 @@ class ActiveTrip extends Component
                 $marginRateAssumed = 1.0000;
             }
 
-            $owner = $this->trip->owner;
-            $komisiPerMika = $owner ? $owner->getKomisiPerMikaValue() : 1000;
+            // BRIEF 2 (21 Okt 2026): teks catatan HARUS menyebut tarif yang BENAR-BENAR
+            // dipakai menghitung $komisi di atas (komisi_rian, baca snapshot trip ini),
+            // bukan tarif owner SAAT INI — dulu dua-duanya kebetulan sama karena belum
+            // ada snapshot; sekarang owner bisa sudah ganti tarif sebelum trip ini
+            // diakhiri, dan notes tak boleh berbohong soal tarif mana yang dipakai.
+            $komisiPerMika = $this->trip->komisi_per_mika_snapshot ?? ($this->trip->owner?->getKomisiPerMikaValue() ?? 1000);
 
             \App\Models\Commission::create([
                 'trip_id' => $this->trip->id,

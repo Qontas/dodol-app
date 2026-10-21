@@ -36,6 +36,7 @@ class User extends Authenticatable implements FilamentUser
         'harga_mika',
         'komisi_per_mika',
         'komisi_kios_baru_per_mika',
+        'komisi_per_mika_khusus',
         'business_name',
         'default_target_visit_interval_days',
         'default_warning_visit_interval_days',
@@ -71,6 +72,7 @@ class User extends Authenticatable implements FilamentUser
             'harga_mika' => 'decimal:2',
             'komisi_per_mika' => 'decimal:2',
             'komisi_kios_baru_per_mika' => 'decimal:2',
+            'komisi_per_mika_khusus' => 'decimal:2',
             'business_name' => 'string',
             'default_target_visit_interval_days' => 'integer',
             'default_warning_visit_interval_days' => 'integer',
@@ -308,6 +310,29 @@ class User extends Authenticatable implements FilamentUser
     public function getKomisiKiosBaruPerMikaValue(): float
     {
         return (float) ($this->komisi_kios_baru_per_mika ?? 1000);
+    }
+
+    /**
+     * BRIEF 2 Section 3 — tarif komisi EFEKTIF untuk user ini. Operator: tarif
+     * khusus (komisi_per_mika_khusus) kalau diisi, kalau tidak ikut tarif
+     * default owner-nya. Owner/super admin: tarif owner itu sendiri (sama
+     * seperti getKomisiPerMikaValue() — dipertahankan sbg method terpisah
+     * supaya titik panggil StartTrip tidak perlu peduli role siapa yang login).
+     *
+     * Dipakai HANYA saat trip DIMULAI (snapshot ke trips.komisi_per_mika_snapshot)
+     * — ubah tarif di sini tidak pernah menyentuh trip yang sudah berjalan/berakhir.
+     */
+    public function getEffectiveKomisiPerMikaValue(): float
+    {
+        if ($this->isOperator()) {
+            if ($this->komisi_per_mika_khusus !== null) {
+                return (float) $this->komisi_per_mika_khusus;
+            }
+
+            return (float) ($this->owner?->getKomisiPerMikaValue() ?? 1000);
+        }
+
+        return $this->getKomisiPerMikaValue();
     }
 
     /**

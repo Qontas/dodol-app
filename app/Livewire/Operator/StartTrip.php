@@ -353,6 +353,12 @@ class StartTrip extends Component
             ? 'Trip Bebas (lintas cluster, semua kios)'
             : "Cluster awal: cluster_id={$startingClusterId}";
 
+        // Tarif komisi EFEKTIF operator ini (khusus ?? default owner) dibekukan
+        // SEKARANG, saat trip dimulai — BRIEF 2 Section 2/3. Ubah tarif owner atau
+        // tarif khusus operator SETELAH titik ini TIDAK menyentuh trip ini lagi,
+        // cuma berlaku untuk trip BARU berikutnya.
+        $komisiPerMikaSnapshot = auth()->user()->getEffectiveKomisiPerMikaValue();
+
         // Proteksi 2: Jaring Throwable Total (Menangkap segala jenis error database)
         try {
             $trip = Trip::create([
@@ -364,6 +370,7 @@ class StartTrip extends Component
                 'started_at' => now(),
                 'qty_carried_total' => $this->qtyCarried,
                 'notes' => $notes,
+                'komisi_per_mika_snapshot' => $komisiPerMikaSnapshot,
             ]);
         } catch (\Throwable $e) {
             // Segala macam ledakan duplikasi data diserap di sini.

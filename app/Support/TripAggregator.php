@@ -122,6 +122,15 @@ class TripAggregator
             ->whereIn('trips.id', $tripIds)
             ->pluck('users.hpp_per_mika', 'trips.id');
 
+        // (7) Tarif komisi per mika YANG DIBEKUKAN per trip (BRIEF 2 Section 2) —
+        //     identik Trip::getKomisiPerMika(). Batch tunggal, bukan N+1. Trip pra-
+        //     snapshot (belum di-backfill) jatuh ke parameter $komisiPerMika pemanggil
+        //     (live, sama seperti perilaku sebelum BRIEF 2) — seharusnya sudah tak
+        //     terjadi di produksi setelah trips:backfill-komisi-snapshot dijalankan.
+        $komisiSnapshotByTrip = DB::table('trips')
+            ->whereIn('id', $tripIds)
+            ->pluck('komisi_per_mika_snapshot', 'id');
+
         $out = [];
         foreach ($tripIds as $id) {
             $mikaDiantar = (int) ($deliveryAgg[$id]->mika_diantar ?? 0);
@@ -156,7 +165,8 @@ class TripAggregator
                 $bijiTerjual += (int) $s->qty_sold;
             }
 
-            $komisi = $dropKomisi * $komisiPerMika;
+            $tarifKomisi = (float) ($komisiSnapshotByTrip[$id] ?? $komisiPerMika);
+            $komisi = $dropKomisi * $tarifKomisi;
 
             $activeCount = (int) ($activeVisits[$id] ?? 0);
             $kiosBaru = (int) ($kiosBaruRows[$id]->kios_baru ?? 0);
