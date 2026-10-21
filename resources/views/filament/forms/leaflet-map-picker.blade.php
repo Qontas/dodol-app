@@ -33,5 +33,15 @@
         </div>
 
         <div x-ref="map" class="w-full rounded-xl" style="min-height: 30vh;"></div>
+
+        {{-- Akurasi GPS — diisi Alpine (gpsAccuracy), bukan server. Lingkaran radius akurasi
+             digambar di peta lewat updateGpsAccuracyUi(). >50m dianggap kurang akurat. --}}
+        <p x-show="gpsAccuracy !== null" x-cloak x-text="`Akurasi ±${gpsAccuracy} meter`" class="mt-2 text-xs text-gray-500 dark:text-gray-400"></p>
+        <p
+            x-show="gpsAccuracy !== null && gpsAccuracy > 50"
+            x-cloak
+            x-text="`⚠️ Lokasi kurang akurat (±${gpsAccuracy} m). Pastikan GPS mode akurasi tinggi, coba di luar ruangan, atau geser pin ke titik yang benar.`"
+            class="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-400"
+        ></p>
     </div>
 </x-filament-forms::field-wrapper>

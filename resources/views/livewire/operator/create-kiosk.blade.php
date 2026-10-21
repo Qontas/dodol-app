@@ -227,6 +227,10 @@
                 <p id="map-tile-error" class="hidden text-xs text-amber-600 mt-2">
                     ⚠️ Gambar peta gagal dimuat (jaringan). Kamu masih bisa menandai lokasi lewat tombol GPS atau tempel link Google Maps, atau simpan kios tanpa lokasi.
                 </p>
+                {{-- Akurasi GPS — diisi JS (gpsBestAccuracy), bukan server. Lingkaran radius
+                     akurasi digambar di peta (L.circle) lewat updateGpsAccuracyUi(). --}}
+                <p id="gps-accuracy" class="hidden text-xs text-slate-500 mt-2"></p>
+                <p id="gps-accuracy-warning" class="hidden text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 mt-2"></p>
             </div>
 
             {{-- Koordinat display --}}
@@ -353,6 +357,7 @@
     <script>
         let operatorMap = null;
         let operatorMarker = null;
+        let operatorAccuracyCircle = null;
 
         document.addEventListener('livewire:navigated', initOperatorMap);
         document.addEventListener('DOMContentLoaded', initOperatorMap);
@@ -392,7 +397,7 @@
             });
 
             @if ($latitude && $longitude)
-                operatorMarker = L.marker([startLat, startLng]).addTo(operatorMap);
+                operatorMarker = createMarker(startLat, startLng);
             @endif
 
             operatorMap.on('click', function (e) {
@@ -420,67 +425,169 @@
         //              operator dengan popup; mereka masih bisa pencet tombol / klik peta.
         // isAuto=false (tombol dipencet): tampilkan alert kalau gagal (operator sengaja minta).
         //
-        // PENTING: getCurrentPosition TANPA opsi `timeout` bisa MENGGANTUNG SELAMANYA kalau
-        // chip GPS tak kunjung dapat fix (sinyal lemah, indoor, dll) — browser tidak punya
-        // batas waktu default. Itu akar bug "Mencari lokasi..." macet permanen di lapangan.
-        // Di sini dibatasi tegas + percobaan kedua dgn enableHighAccuracy:false (fix GPS
-        // satelit lebih lama/gagal di sebagian HP; fix jaringan/wifi lebih cepat dapat,
-        // cukup akurat utk lokasi kios) — sebelum benar-benar menyerah.
-        function triggerGps(isAuto, isRetry) {
+        // RIWAYAT BUG (TERBUKTI dari keluhan lapangan 21 Okt 2026): versi sebelumnya pakai
+        // getCurrentPosition SEKALI, dan kalau gagal (bukan izin ditolak) langsung retry SEKALI
+        // dgn enableHighAccuracy:false lalu PASRAH menerima hasilnya — fix jaringan/wifi bisa
+        // meleset ratusan meter tapi diam-diam dianggap tepat (operator sudah refresh GPS >2x,
+        // tetap meleset, karena hasil kasar itu TAK PERNAH diganti walau GPS sejati menyusul).
+        //
+        // Sekarang pakai watchPosition maks 15 detik, SIMPAN & PAKAI bacaan dgn coords.accuracy
+        // TERKECIL (bisa makin akurat tiap update selama GPS chip mengunci), berhenti lebih awal
+        // begitu akurasi ≤20m. Kalau sampai batas waktu tak pernah dapat ≤20m, bacaan terbaik yang
+        // ada tetap dipakai TAPI ditandai jelas sbg perkiraan kasar (pesan kuning + lingkaran
+        // akurasi di peta) — bukan lagi dianggap diam-diam tepat. watchPosition WAJIB dihentikan
+        // (clearWatch) begitu selesai ATAU saat operator pindah halaman (lihat listener
+        // livewire:navigate di bawah) — kalau tidak, pencarian lanjut jalan di background sia-sia.
+        let gpsWatchId = null;
+        let gpsTimeoutId = null;
+        let gpsBestAccuracy = null;
+        let gpsGotAnyFix = false;
+
+        function triggerGps(isAuto) {
             const btn = document.getElementById('btn-gps');
             if (!navigator.geolocation) {
                 if (!isAuto) alert('GPS tidak didukung browser ini.');
                 return;
             }
+            stopGpsWatch();
+            gpsBestAccuracy = null;
+            gpsGotAnyFix = false;
             if (btn) btn.textContent = '⏳ Mencari lokasi...';
-            navigator.geolocation.getCurrentPosition(
+
+            gpsWatchId = navigator.geolocation.watchPosition(
                 function (pos) {
-                    setMapLocation(pos.coords.latitude, pos.coords.longitude);
-                    if (operatorMap) operatorMap.setView([pos.coords.latitude, pos.coords.longitude], 17);
-                    if (btn) btn.textContent = '📍 Pakai Lokasi Saya (GPS)';
+                    const acc = pos.coords.accuracy;
+                    if (gpsBestAccuracy === null || acc < gpsBestAccuracy) {
+                        gpsBestAccuracy = acc;
+                        gpsGotAnyFix = true;
+                        setMapLocation(pos.coords.latitude, pos.coords.longitude, acc);
+                        if (operatorMap) operatorMap.setView([pos.coords.latitude, pos.coords.longitude], 17);
+                    }
+                    if (acc <= 20) {
+                        finishGps(isAuto);
+                    }
                 },
                 function (err) {
-                    // Percobaan pertama gagal krn sinyal (bukan izin ditolak) -> coba sekali
-                    // lagi dgn akurasi rendah (fix jaringan, lebih cepat/andal indoor).
-                    if (!isRetry && err && err.code !== err.PERMISSION_DENIED) {
-                        triggerGps(isAuto, true);
+                    // Izin ditolak: percuma ditunggu/di-retry, langsung menyerah.
+                    if (err && err.code === err.PERMISSION_DENIED) {
+                        stopGpsWatch();
+                        if (btn) btn.textContent = '📍 Pakai Lokasi Saya (GPS)';
+                        if (!isAuto) {
+                            alert('Izin lokasi ditolak. Buka ikon gembok di address bar > Izin > Lokasi > Izinkan, lalu coba lagi. Kamu tetap bisa simpan kios tanpa lokasi atau tandai manual di peta.');
+                        }
                         return;
                     }
-                    if (btn) btn.textContent = '📍 Pakai Lokasi Saya (GPS)';
-                    if (isAuto) return; // senyap — operator masih bisa pencet tombol / klik peta.
-
-                    let pesan = 'Gagal mendapatkan lokasi. Coba lagi.';
-                    if (err) {
-                        if (err.code === err.PERMISSION_DENIED) {
-                            pesan = 'Izin lokasi ditolak. Buka ikon gembok di address bar > Izin > Lokasi > Izinkan, lalu coba lagi. Kamu tetap bisa simpan kios tanpa lokasi atau tandai manual di peta.';
-                        } else if (err.code === err.POSITION_UNAVAILABLE) {
-                            pesan = 'Sinyal GPS tidak didapat. Coba lagi di tempat terbuka, atau tandai lokasi manual di peta.';
-                        } else if (err.code === err.TIMEOUT) {
-                            pesan = 'Waktu habis mencari lokasi. Coba lagi, atau tandai lokasi manual di peta.';
-                        }
-                    }
-                    alert(pesan);
+                    // Error lain (sinyal lemah/tak tersedia sesaat) — watchPosition tetap bisa
+                    // dapat fix berikutnya; biarkan jalan sampai batas waktu 15 detik di bawah
+                    // yang memutuskan, jangan menyerah di error pertama (itu akar bug lama).
                 },
-                {
-                    enableHighAccuracy: !isRetry,
-                    timeout: 15000,
-                    maximumAge: 0,
-                }
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
             );
+
+            gpsTimeoutId = setTimeout(function () {
+                finishGps(isAuto);
+            }, 15000);
+        }
+
+        // Dipanggil begitu akurasi ≤20m ATAU batas waktu 15 detik habis (mana dulu).
+        function finishGps(isAuto) {
+            stopGpsWatch();
+            const btn = document.getElementById('btn-gps');
+            if (btn) btn.textContent = '📍 Pakai Lokasi Saya (GPS)';
+            if (!gpsGotAnyFix && !isAuto) {
+                alert('Gagal mendapatkan lokasi. Sinyal GPS tidak didapat dalam 15 detik. Coba lagi di tempat terbuka, atau tandai lokasi manual di peta.');
+            }
+        }
+
+        function stopGpsWatch() {
+            if (gpsWatchId !== null) {
+                navigator.geolocation.clearWatch(gpsWatchId);
+                gpsWatchId = null;
+            }
+            if (gpsTimeoutId !== null) {
+                clearTimeout(gpsTimeoutId);
+                gpsTimeoutId = null;
+            }
+        }
+
+        // Operator bisa pindah halaman (wire:navigate, mis. tombol kembali di header) sebelum
+        // GPS selesai/timeout — watch yang masih jalan harus dihentikan, bukan dibiarkan bocor
+        // di background tanpa UI yang mengonsumsi hasilnya.
+        document.addEventListener('livewire:navigate', stopGpsWatch);
+
+        function createMarker(lat, lng) {
+            const marker = L.marker([lat, lng], { draggable: true }).addTo(operatorMap);
+            marker.on('dragend', function () {
+                const pos = marker.getLatLng();
+                // Pin digeser manual oleh operator -> dianggap koreksi yang disengaja,
+                // bukan lagi bacaan GPS mentah. Lepas badge/lingkaran akurasi GPS.
+                clearGpsAccuracyUi();
+                setMapLocation(pos.lat, pos.lng);
+            });
+            return marker;
         }
 
         function moveMarker(lat, lng) {
             if (operatorMarker) {
                 operatorMarker.setLatLng([lat, lng]);
             } else {
-                operatorMarker = L.marker([lat, lng]).addTo(operatorMap);
+                operatorMarker = createMarker(lat, lng);
             }
         }
 
-        function setMapLocation(lat, lng) {
+        // accuracy diisi HANYA saat lokasi datang dari GPS (triggerGps). Klik peta / geser pin
+        // manual memanggil fungsi ini TANPA accuracy -> otomatis bersihkan badge GPS lama.
+        function setMapLocation(lat, lng, accuracy) {
             moveMarker(lat, lng);
             @this.set('latitude', lat);
             @this.set('longitude', lng);
+            if (typeof accuracy === 'number') {
+                updateGpsAccuracyUi(lat, lng, accuracy);
+            } else {
+                clearGpsAccuracyUi();
+            }
+        }
+
+        // Tampilkan "Akurasi ±X meter" di bawah peta + lingkaran radius akurasi (L.circle).
+        // >50m dianggap kurang akurat -> pesan kuning eksplisit (jangan diam-diam dianggap tepat).
+        function updateGpsAccuracyUi(lat, lng, accuracy) {
+            const info = document.getElementById('gps-accuracy');
+            const warn = document.getElementById('gps-accuracy-warning');
+            const rounded = Math.round(accuracy);
+
+            if (info) {
+                info.textContent = `Akurasi ±${rounded} meter`;
+                info.classList.remove('hidden');
+            }
+            if (warn) {
+                if (accuracy > 50) {
+                    warn.textContent = `⚠️ Lokasi kurang akurat (±${rounded} m). Pastikan GPS mode akurasi tinggi, coba di luar ruangan, atau geser pin ke titik yang benar.`;
+                    warn.classList.remove('hidden');
+                } else {
+                    warn.classList.add('hidden');
+                }
+            }
+            if (operatorMap) {
+                if (operatorAccuracyCircle) operatorMap.removeLayer(operatorAccuracyCircle);
+                operatorAccuracyCircle = L.circle([lat, lng], {
+                    radius: accuracy,
+                    color: '#3b82f6',
+                    weight: 1,
+                    fillColor: '#3b82f6',
+                    fillOpacity: 0.12,
+                }).addTo(operatorMap);
+            }
+        }
+
+        function clearGpsAccuracyUi() {
+            const info = document.getElementById('gps-accuracy');
+            const warn = document.getElementById('gps-accuracy-warning');
+            if (info) info.classList.add('hidden');
+            if (warn) warn.classList.add('hidden');
+            if (operatorMap && operatorAccuracyCircle) {
+                operatorMap.removeLayer(operatorAccuracyCircle);
+                operatorAccuracyCircle = null;
+            }
         }
 
         // Hasil tombol "Loncat" (jumpToMapsLocation di server sudah set
@@ -489,6 +596,8 @@
         document.addEventListener('livewire:init', () => {
             Livewire.on('kiosk-location-jumped', (event) => {
                 if (!operatorMap) return;
+                stopGpsWatch();
+                clearGpsAccuracyUi();
                 moveMarker(event.lat, event.lng);
                 operatorMap.setView([event.lat, event.lng], 17);
             });

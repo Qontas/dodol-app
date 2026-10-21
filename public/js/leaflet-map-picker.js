@@ -16,6 +16,13 @@ document.addEventListener('DOMContentLoaded', () => {
             showGpsButton: !!config.showMyLocationButton,
             gpsLoading: false,
             gpsError: '',
+            // Akurasi bacaan GPS terbaik (meter) utk badge "Akurasi ±X meter" + peringatan
+            // kuning (>50m) di blade. null = belum ada bacaan GPS (lokasi default/manual).
+            gpsAccuracy: null,
+            accuracyCircle: null,
+            gpsWatchId: null,
+            gpsTimeoutId: null,
+            gpsGotAnyFix: false,
 
             getCoordinates() {
                 const state = $wire.get(config.statePath) ?? {};
@@ -71,12 +78,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (config.draggable) {
                     this.marker.on('dragend', () => {
                         const pos = this.marker.getLatLng();
+                        // Pin digeser manual -> koreksi yang disengaja, bukan lagi bacaan GPS
+                        // mentah. Lepas badge/lingkaran akurasi GPS lama.
+                        this.clearGpsAccuracyUi();
                         this.writeCoordinates(pos.lat, pos.lng);
                     });
                 }
 
                 if (config.clickable) {
                     this.map.on('click', (e) => {
+                        this.clearGpsAccuracyUi();
                         this.marker.setLatLng(e.latlng);
                         this.writeCoordinates(e.latlng.lat, e.latlng.lng);
                     });
@@ -101,6 +112,9 @@ document.addEventListener('DOMContentLoaded', () => {
             },
 
             jumpToLocation() {
+                // Loncat ke lokasi tempel-link/koordinat -> manual, bukan bacaan GPS.
+                this.stopGpsWatch();
+                this.clearGpsAccuracyUi();
                 const coords = this.getCoordinates();
                 this.map.setView([coords.lat, coords.lng], Math.max(this.map.getZoom(), 15));
                 this.marker.setLatLng([coords.lat, coords.lng]);
@@ -143,6 +157,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 this.makeControlButton('topright', 'Pakai lokasi saya', icon, () => this.useMyLocation());
             },
 
+            // Sama pola dgn peta operator (create-kiosk.blade.php, fix 21 Okt 2026): versi
+            // getCurrentPosition SEKALI sebelumnya menerima bacaan apapun yg datang duluan —
+            // bisa fix jaringan/wifi yang meleset ratusan meter, diam-diam dianggap tepat.
+            // watchPosition maks 15 detik, simpan & pakai bacaan dgn accuracy TERKECIL,
+            // berhenti lebih awal kalau ≤20m. Kalau sampai habis waktu tak pernah dapat
+            // ≤20m, bacaan terbaik yg ada tetap dipakai TAPI gpsAccuracy + lingkaran peta
+            // menandainya jelas sbg perkiraan kasar (blade menampilkan peringatan >50m).
             useMyLocation() {
                 this.gpsError = '';
 
@@ -151,32 +172,87 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
+                this.stopGpsWatch();
+                this.gpsGotAnyFix = false;
                 this.gpsLoading = true;
-                navigator.geolocation.getCurrentPosition(
+
+                this.gpsWatchId = navigator.geolocation.watchPosition(
                     (pos) => {
-                        this.gpsLoading = false;
-                        const { latitude, longitude } = pos.coords;
-                        this.map.setView([latitude, longitude], 17);
-                        this.marker.setLatLng([latitude, longitude]);
-                        this.writeCoordinates(latitude, longitude);
-                        // Cegah tile abu-abu setelah recenter (container mungkin baru
-                        // di-relayout) — sama fix dgn ResizeObserver invalidateSize.
-                        setTimeout(() => this.map.invalidateSize(), 60);
-                    },
-                    (err) => {
-                        this.gpsLoading = false;
-                        if (err && err.code === err.PERMISSION_DENIED) {
-                            this.gpsError = 'Izin lokasi ditolak. Aktifkan izin lokasi untuk situs ini di browser, lalu coba lagi.';
-                        } else if (err && err.code === err.POSITION_UNAVAILABLE) {
-                            this.gpsError = 'Lokasi tidak tersedia. Pastikan GPS/lokasi perangkat aktif.';
-                        } else if (err && err.code === err.TIMEOUT) {
-                            this.gpsError = 'Terlalu lama mencari lokasi (timeout). Coba lagi di tempat yang lebih terbuka.';
-                        } else {
-                            this.gpsError = 'Gagal mendapatkan lokasi. Coba lagi.';
+                        const acc = pos.coords.accuracy;
+                        if (this.gpsAccuracy === null || acc < this.gpsAccuracy) {
+                            this.gpsGotAnyFix = true;
+                            const { latitude, longitude } = pos.coords;
+                            this.map.setView([latitude, longitude], 17);
+                            this.marker.setLatLng([latitude, longitude]);
+                            this.writeCoordinates(latitude, longitude);
+                            this.updateGpsAccuracyUi(latitude, longitude, acc);
+                            // Cegah tile abu-abu setelah recenter (container mungkin baru
+                            // di-relayout) — sama fix dgn ResizeObserver invalidateSize.
+                            setTimeout(() => this.map.invalidateSize(), 60);
+                        }
+                        if (acc <= 20) {
+                            this.finishGps();
                         }
                     },
-                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                    (err) => {
+                        // Izin ditolak: percuma ditunggu/di-retry, langsung menyerah.
+                        if (err && err.code === err.PERMISSION_DENIED) {
+                            this.stopGpsWatch();
+                            this.gpsLoading = false;
+                            this.gpsError = 'Izin lokasi ditolak. Aktifkan izin lokasi untuk situs ini di browser, lalu coba lagi.';
+                            return;
+                        }
+                        // Error lain (sinyal lemah/tak tersedia sesaat) — watchPosition masih
+                        // bisa dapat fix berikutnya; biarkan jalan sampai batas waktu 15 detik
+                        // di bawah yang memutuskan, jangan menyerah di error pertama.
+                    },
+                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
                 );
+
+                this.gpsTimeoutId = setTimeout(() => this.finishGps(), 15000);
+            },
+
+            // Dipanggil begitu akurasi ≤20m ATAU batas waktu 15 detik habis (mana dulu).
+            finishGps() {
+                this.stopGpsWatch();
+                this.gpsLoading = false;
+                if (!this.gpsGotAnyFix) {
+                    this.gpsError = 'Terlalu lama mencari lokasi. Sinyal GPS tidak didapat dalam 15 detik, coba lagi di tempat yang lebih terbuka.';
+                }
+            },
+
+            stopGpsWatch() {
+                if (this.gpsWatchId !== null) {
+                    navigator.geolocation.clearWatch(this.gpsWatchId);
+                    this.gpsWatchId = null;
+                }
+                if (this.gpsTimeoutId !== null) {
+                    clearTimeout(this.gpsTimeoutId);
+                    this.gpsTimeoutId = null;
+                }
+            },
+
+            // Badge "Akurasi ±X meter" (blade) + lingkaran radius akurasi di peta (L.circle).
+            // >50m dianggap kurang akurat -> blade menampilkan peringatan kuning eksplisit
+            // (jangan diam-diam dianggap tepat).
+            updateGpsAccuracyUi(lat, lng, accuracy) {
+                this.gpsAccuracy = Math.round(accuracy);
+                if (this.accuracyCircle) this.map.removeLayer(this.accuracyCircle);
+                this.accuracyCircle = L.circle([lat, lng], {
+                    radius: accuracy,
+                    color: '#3b82f6',
+                    weight: 1,
+                    fillColor: '#3b82f6',
+                    fillOpacity: 0.12,
+                }).addTo(this.map);
+            },
+
+            clearGpsAccuracyUi() {
+                this.gpsAccuracy = null;
+                if (this.accuracyCircle) {
+                    this.map.removeLayer(this.accuracyCircle);
+                    this.accuracyCircle = null;
+                }
             },
 
             addFullscreenControl() {
