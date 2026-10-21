@@ -115,6 +115,10 @@ class UserResource extends Resource
                             ->label('Owner')
                             ->options(fn (): array => User::query()->where('role', 'owner')->pluck('name', 'id')->all())
                             ->searchable()
+                            // ->live(): komisi_per_mika_khusus di bawah menampilkan tarif
+                            // default OWNER YANG DIPILIH di helper text-nya — tanpa live()
+                            // helper itu tak ikut berubah saat super admin ganti pilihan.
+                            ->live()
                             ->visible(fn (Get $get): bool => (bool) auth()->user()?->isSuperAdmin() && $get('role') === 'operator')
                             ->required(fn (Get $get): bool => (bool) auth()->user()?->isSuperAdmin() && $get('role') === 'operator')
                             ->helperText('Operator ini bekerja untuk owner yang dipilih'),
@@ -128,6 +132,35 @@ class UserResource extends Resource
                             ->helperText(fn (?User $record): string => $record !== null && $record->id === auth()->id()
                                 ? 'Tidak bisa menonaktifkan akun sendiri.'
                                 : 'Nonaktifkan untuk disable login user ini'),
+                    ]),
+
+                // BRIEF 2 Section 3 — tarif komisi KHUSUS untuk SATU operator, nullable.
+                // Kosong = ikut tarif default usaha (owner-nya). Diisi di sini (owner
+                // membuat/mengubah operatornya) ATAU form Edit super admin (owner_id
+                // dipilih manual, lihat helper text di bawah yang baca owner TERSEBUT).
+                //
+                // Hanya SATU field (bukan "reguler"+"kios baru") — komisi sudah flat
+                // satu tarif sejak sebelum BRIEF 2 (lihat Trip::getKomisiKiosBaruAttribute
+                // yang hardcode 0.0), jadi override pun cukup satu angka.
+                //
+                // Field ini TIDAK menyentuh trip yang sudah berjalan — hanya dibaca saat
+                // trip BARU dimulai (User::getEffectiveKomisiPerMikaValue() dipanggil dari
+                // StartTrip::startTrip(), dibekukan ke trips.komisi_per_mika_snapshot).
+                Section::make('Komisi Khusus Operator')
+                    ->description('Opsional — kosongkan untuk ikut tarif default usaha owner.')
+                    ->visible(fn (Get $get): bool => $get('role') === 'operator')
+                    ->schema([
+                        Forms\Components\TextInput::make('komisi_per_mika_khusus')
+                            ->label('Komisi Khusus (Rp)')
+                            ->numeric()
+                            ->nullable()
+                            ->minValue(0)
+                            ->helperText(function (Get $get): string {
+                                $defaultRate = static::resolveOwnerDefaultKomisiRate($get);
+                                $rupiah = 'Rp '.number_format($defaultRate, 0, ',', '.');
+
+                                return "Kosongkan untuk ikut tarif default usaha ({$rupiah})";
+                            }),
                     ]),
 
                 // Tarif bisnis DIPISAH dari section role, dan hanya untuk role OWNER.
@@ -180,6 +213,26 @@ class UserResource extends Resource
             ]);
     }
 
+    /**
+     * Tarif default usaha (owner) yang berlaku untuk operator yang SEDANG diisi di form —
+     * owner viewer: selalu dirinya sendiri (operator yang dibuat/diedit owner SELALU
+     * terikat ke owner itu, lihat CreateUser/EditUser mutate*BeforeSave). Super admin:
+     * owner yang DIPILIH di field 'owner_id' (bisa berubah sebelum disimpan, makanya
+     * field itu ->live()). Fallback 1000 kalau owner belum dipilih (form create kosong).
+     */
+    private static function resolveOwnerDefaultKomisiRate(Get $get): float
+    {
+        if (auth()->user()?->isOwner()) {
+            return auth()->user()->getKomisiPerMikaValue();
+        }
+
+        $ownerId = $get('owner_id');
+
+        return $ownerId
+            ? (float) (User::find($ownerId)?->getKomisiPerMikaValue() ?? 1000)
+            : 1000.0;
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -213,19 +266,42 @@ class UserResource extends Resource
                     })
                     ->sortable(),
 
+                // BRIEF 2 Section 4 — ringkasan per OWNER di daftar user: jumlah kios
+                // aktif & jumlah operator miliknya. "—" untuk baris operator/super admin
+                // (tak relevan untuk mereka). Baca withCount('ownedKiosks'/'operators')
+                // yang SUDAH dimuat getEloquentQuery() — NOL query tambahan per baris.
+                Tables\Columns\TextColumn::make('owned_active_kiosks_count')
+                    ->label('Kios')
+                    ->state(fn (User $record): ?int => $record->role === 'owner' ? (int) $record->owned_active_kiosks_count : null)
+                    ->placeholder('—')
+                    ->alignCenter(),
+
+                Tables\Columns\TextColumn::make('operators_count')
+                    ->label('Operator')
+                    ->state(fn (User $record): ?int => $record->role === 'owner' ? (int) $record->operators_count : null)
+                    ->placeholder('—')
+                    ->alignCenter(),
+
                 // Komisi Operator/Mika = angka yang SUNGGUH dipakai membayar operator
-                // (Rp per mika drop). Untuk operator → tarif owner-nya. Kolom persen
-                // 'commission_rate' lama SENGAJA dibuang: legacy & menyesatkan.
+                // (Rp per mika drop). Untuk operator → tarif EFEKTIF-nya (khusus ??
+                // default owner — BRIEF 2 Section 3, lihat getEffectiveKomisiPerMikaValue).
+                // Kolom persen 'commission_rate' lama SENGAJA dibuang: legacy & menyesatkan.
                 //
                 // Label lama "Komisi/Mika" + angka polos bikin baris OWNER terlihat
                 // seolah owner MENERIMA komisi, padahal itu tarif yang owner BAYAR ke
                 // operatornya — beda arti dgn baris operator (tarif yang operator
-                // TERIMA, dibaca dari owner-nya). Prefix "Bayar"/"Terima" per baris
-                // meluruskan ini TANPA mengubah angka (fix 20 Okt 2026).
+                // TERIMA, dibaca dari owner-nya ATAU tarif khususnya sendiri). Prefix
+                // "Bayar"/"Terima" per baris meluruskan ini TANPA mengubah angka (fix
+                // 20 Okt 2026); suffix "(khusus)"/"(ikut owner)" ditambah 21 Okt 2026
+                // supaya owner/super admin bisa lihat sekilas siapa yang di-override.
+                //
+                // $record->owner sudah di-eager-load (->with('owner') di bawah) — baca
+                // komisi_per_mika_khusus langsung dari $record (kolom sendiri), NOL
+                // query tambahan.
                 Tables\Columns\TextColumn::make('komisi_efektif_per_mika')
                     ->label('Komisi Operator /Mika')
                     ->state(fn (User $record): ?float => match ($record->role) {
-                        'operator' => $record->owner?->getKomisiPerMikaValue(),
+                        'operator' => $record->getEffectiveKomisiPerMikaValue(),
                         'owner' => $record->getKomisiPerMikaValue(),
                         default => null,
                     })
@@ -236,11 +312,17 @@ class UserResource extends Resource
 
                         $rupiah = 'Rp '.number_format((float) $state, 0, ',', '.');
 
-                        return match ($record->role) {
-                            'owner' => "Bayar {$rupiah}",
-                            'operator' => "Terima {$rupiah}",
-                            default => $rupiah,
-                        };
+                        if ($record->role === 'owner') {
+                            return "Bayar {$rupiah}";
+                        }
+
+                        if ($record->role === 'operator') {
+                            $suffix = $record->komisi_per_mika_khusus !== null ? '(khusus)' : '(ikut owner)';
+
+                            return "Terima {$rupiah} {$suffix}";
+                        }
+
+                        return $rupiah;
                     })
                     ->alignCenter(),
 
@@ -389,7 +471,17 @@ class UserResource extends Resource
         // baris menembak 2-3 COUNT × 2 pemanggil (->disabled + ->tooltip) = ~53 query
         // untuk 10 baris. Baris owner memakai 3 count pertama, baris operator 2
         // terakhir; yang tak terpakai tetap murah (masih satu query utama).
-        $query->withCount(['ownedKiosks', 'ownedTrips', 'operators', 'operatedTrips', 'commissions']);
+        // BRIEF 2 Section 4: kolom "Kios" di tabel butuh kios AKTIF saja (beda dari
+        // owned_kiosks_count delete-guard di atas, yang sengaja TOTAL — kios nonaktif
+        // tetap harus memblokir hapus owner). Alias terpisah ('owned_active_kiosks_count'),
+        // qualified 'kiosks.is_active' (bukan 'is_active' polos) karena hasManyThrough
+        // ini JOIN ke clusters yang JUGA punya kolom is_active — tanpa qualifier itu
+        // ambigu. Masih SATU query utama (subquery correlated), bukan N+1.
+        $query->withCount([
+            'ownedKiosks',
+            'ownedKiosks as owned_active_kiosks_count' => fn ($q) => $q->where('kiosks.is_active', true),
+            'ownedTrips', 'operators', 'operatedTrips', 'commissions',
+        ]);
 
         // Kolom "Komisi/Mika" baris OPERATOR membaca tarif OWNER-nya
         // ($record->owner?->getKomisiPerMikaValue()). Tanpa eager load ini, tiap baris
