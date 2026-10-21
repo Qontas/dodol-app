@@ -849,7 +849,14 @@
                 @elseif(is_null($chosenAction))
                     {{-- ============ LAYAR 1: PILIH AKSI ============ --}}
 
-                    {{-- Navigasi hanya di layar pertama (foto sudah tampil di puncak modal) --}}
+                    {{-- Navigasi hanya di layar pertama (foto sudah tampil di puncak modal).
+                         Kios tanpa koordinat: JANGAN hilang diam-diam (keluhan lapangan 21 Okt
+                         2026 — operator Tazudin kira tombol navigasi "tidak aktif"/bug, padahal
+                         kiosnya memang belum punya lokasi tersimpan). Operator tak punya rute
+                         edit-lokasi kios sendiri (hanya form "Kios Baru" saat MENDAFTARKAN kios
+                         baru yang minta GPS) — kios LAMA tanpa koordinat cuma bisa dilengkapi
+                         owner lewat panel Kios. Jadi tombol abu ini membuka PENJELASAN, bukan
+                         form (tak ada form operator utk itu). --}}
                     @if($selectedKiosk->latitude && $selectedKiosk->longitude)
                         <a href="https://www.google.com/maps?q={{ $selectedKiosk->latitude }},{{ $selectedKiosk->longitude }}"
                            target="_blank"
@@ -862,6 +869,26 @@
                             </svg>
                             Navigasi ke Kios
                         </a>
+                    @else
+                        <div x-data="{ showInfo: false }">
+                            <button type="button" x-on:click="showInfo = !showInfo"
+                                class="inline-flex items-center gap-2 text-sm font-medium text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-200">
+                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                </svg>
+                                Lokasi belum diisi
+                            </button>
+                            <p x-show="showInfo" x-cloak x-transition
+                               class="mt-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                                Kios ini belum punya titik lokasi tersimpan, jadi tombol navigasi tidak muncul.
+                                Minta owner melengkapinya lewat menu Kios (panel owner) — tandai pin di peta
+                                atau tempel link Google Maps. Kios baru yang kamu daftarkan sendiri lewat
+                                "Kios Baru" otomatis diminta lokasi GPS saat itu juga.
+                            </p>
+                        </div>
                     @endif
 
                     @if($pendingDelivery)
