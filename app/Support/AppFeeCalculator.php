@@ -136,4 +136,81 @@ class AppFeeCalculator
 
         return $out;
     }
+
+    /**
+     * TUGAS 1 (BRIEF 23 Okt 2026, lanjutan) — versi PER TANGGAL dari
+     * summaryForOwners(), untuk widget "Rincian Fee Aplikasi Harian".
+     *
+     * mika_kena_fee & fee: ATURAN HITUNG SAMA PERSIS summaryForOwners()
+     * (lihat docblock kelas di atas — TIDAK ditulis ulang), cuma dengan
+     * GROUP BY tambahan t.trip_date + dibatasi ke satu bulan.
+     *
+     * mika_diantar (metrik BARU, khusus widget ini) = SEMUA delivery trip
+     * nyata (bukan trip sentinel migrasi, bukan trip diarsip) TERMASUK
+     * titipan konsinyasi PERTAMA tiap kios (beda dari mika_kena_fee — lebih
+     * besar atau SAMA), tapi TETAP KECUALIKAN bs_redistribution (konsisten
+     * dengan basis komisi Rian, lihat KomisiRianTest). Dengan kata lain:
+     * mika_diantar pakai aturan 1-3 saja (tanpa aturan 4 "titipan pertama"),
+     * mika_kena_fee pakai aturan 1-4 penuh.
+     *
+     * @return array<int, array{date: string, owner_id: int, owner_name: string, mika_diantar: int, mika_kena_fee: int, fee: float}>
+     *         Terurut per tanggal lalu nama owner. HANYA tanggal yang ada
+     *         aktivitas (tak ada baris nihil untuk tanggal kosong).
+     */
+    public static function summaryByOwnerAndDate(int $year, int $month): array
+    {
+        $monthStart = \Illuminate\Support\Carbon::create($year, $month, 1)->startOfMonth();
+        $monthEnd = (clone $monthStart)->endOfMonth();
+
+        // SAMA seperti summaryForOwners() — WAJIB GLOBAL lintas bulan (lihat
+        // 🔴 di docblock kelas): delivery "pertama" kios bisa jatuh di bulan
+        // lain dari bulan yang sedang dilihat widget ini.
+        $firstConsignmentDeliveryIds = DB::table('deliveries as d')
+            ->where('d.delivery_type', 'consignment')
+            ->groupBy('d.kiosk_id')
+            ->selectRaw('MIN(d.id) as first_id')
+            ->pluck('first_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        // CASE WHEN butuh daftar ID literal (bukan ->whereNotIn() WHERE biasa)
+        // karena mika_diantar di query YANG SAMA butuh baris first-consignment
+        // itu TETAP ikut terjumlah (WHERE akan membuangnya sama sekali untuk
+        // SEMUA kolom, bukan cuma mika_kena_fee/fee). ID-nya SELALU hasil
+        // query kita sendiri di atas (integer kolom auto-increment), BUKAN
+        // input user — aman diinline langsung ke SQL, bukan lewat binding.
+        $excludeFirstSql = $firstConsignmentDeliveryIds !== []
+            ? 'd.id NOT IN ('.implode(',', $firstConsignmentDeliveryIds).')'
+            : '1=1';
+
+        $rows = DB::table('deliveries as d')
+            ->join('trips as t', 't.id', '=', 'd.trip_id')
+            ->join('users as op', 'op.id', '=', 't.operator_id')
+            ->join('users as o', 'o.id', '=', 't.owner_id')
+            ->where('d.delivery_type', '<>', 'bs_redistribution')
+            ->where('op.email', 'not like', User::SYSTEM_OPERATOR_EMAIL_PREFIX.'%')
+            ->whereNull('t.deleted_at')
+            ->whereBetween('t.trip_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+            ->groupBy('t.trip_date', 't.owner_id', 'o.name')
+            ->selectRaw(
+                't.trip_date as trip_date,'.
+                't.owner_id as owner_id,'.
+                'o.name as owner_name,'.
+                'COALESCE(SUM(d.qty_delivered), 0) as mika_diantar,'.
+                "COALESCE(SUM(CASE WHEN {$excludeFirstSql} THEN d.qty_delivered ELSE 0 END), 0) as mika_kena_fee,".
+                "COALESCE(SUM(CASE WHEN {$excludeFirstSql} THEN d.qty_delivered * COALESCE(t.app_fee_per_pack_snapshot, 0) ELSE 0 END), 0) as fee"
+            )
+            ->orderBy('t.trip_date')
+            ->orderBy('o.name')
+            ->get();
+
+        return $rows->map(fn ($row) => [
+            'date' => (string) $row->trip_date,
+            'owner_id' => (int) $row->owner_id,
+            'owner_name' => $row->owner_name,
+            'mika_diantar' => (int) $row->mika_diantar,
+            'mika_kena_fee' => (int) $row->mika_kena_fee,
+            'fee' => (float) $row->fee,
+        ])->all();
+    }
 }
