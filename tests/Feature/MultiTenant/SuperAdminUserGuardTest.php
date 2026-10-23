@@ -285,9 +285,11 @@ class SuperAdminUserGuardTest extends TestCase
         // Super admin tidak mengantar dodol → tak punya tarif komisi.
         // hpp_per_mika DIHAPUS dari form ini (HPP sekarang per-varian produk,
         // ProductVariant::cost_per_pack) — tak lagi dicek di sini.
+        // komisi_kios_baru_per_mika DIHAPUS dari form ini (23 Okt 2026, field non-
+        // fungsional) — tak lagi dicek hidden/exists di sini (field-nya sudah tak ada
+        // sama sekali, bukan cuma disembunyikan).
         Livewire::test(EditUser::class, ['record' => $super->getKey()])
             ->assertFormFieldIsHidden('komisi_per_mika')
-            ->assertFormFieldIsHidden('komisi_kios_baru_per_mika')
             ->assertFormFieldIsHidden('harga_mika')
             // 'Owner' (atasan) juga tak relevan untuk super admin.
             ->assertFormFieldIsHidden('owner_id');
@@ -295,13 +297,11 @@ class SuperAdminUserGuardTest extends TestCase
         // Owner = yang MENETAPKAN tarif → tetap tampil normal.
         Livewire::test(EditUser::class, ['record' => $owner->getKey()])
             ->assertFormFieldExists('komisi_per_mika')
-            ->assertFormFieldExists('komisi_kios_baru_per_mika')
             ->assertFormFieldExists('harga_mika');
 
         // Operator TIDAK menetapkan tarif (dia dibayar pakai tarif owner-nya).
         Livewire::test(EditUser::class, ['record' => $operator->getKey()])
-            ->assertFormFieldIsHidden('komisi_per_mika')
-            ->assertFormFieldIsHidden('komisi_kios_baru_per_mika');
+            ->assertFormFieldIsHidden('komisi_per_mika');
     }
 
     public function test_editing_super_admin_without_tarif_fields_still_saves(): void
@@ -409,7 +409,6 @@ class SuperAdminUserGuardTest extends TestCase
                 'hpp_per_mika' => 9500,
                 'harga_mika' => 200,
                 'komisi_per_mika' => 500,
-                'komisi_kios_baru_per_mika' => 1000,
                 'is_active' => true,
             ])
             ->call('create');

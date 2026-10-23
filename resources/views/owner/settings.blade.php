@@ -68,24 +68,17 @@
                     <input type="number" step="0.01" min="0" name="komisi_per_mika" id="komisi_per_mika"
                            value="{{ old('komisi_per_mika', (int) $user->getKomisiPerMikaValue()) }}"
                            class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500">
-                    <p class="mt-1 text-xs text-slate-500">Komisi per mika yang terjual pada kios biasa. Default: Rp 500.</p>
+                    <p class="mt-1 text-xs text-slate-500">Komisi per mika yang diletakkan operator (basis drop). Default: Rp 1.000.</p>
                     @error('komisi_per_mika')
                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                     @enderror
                 </div>
 
-                <div>
-                    <label for="komisi_kios_baru_per_mika" class="block text-sm font-medium text-slate-700">
-                        Komisi Kios Baru per Mika (Rp)
-                    </label>
-                    <input type="number" step="0.01" min="0" name="komisi_kios_baru_per_mika" id="komisi_kios_baru_per_mika"
-                           value="{{ old('komisi_kios_baru_per_mika', (int) $user->getKomisiKiosBaruPerMikaValue()) }}"
-                           class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500">
-                    <p class="mt-1 text-xs text-slate-500">Komisi per mika untuk kios yang baru pertama kali dititipi. Default: Rp 1.000.</p>
-                    @error('komisi_kios_baru_per_mika')
-                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                    @enderror
-                </div>
+                {{-- "Komisi Kios Baru per Mika" DIHAPUS dari form ini (23 Okt 2026) — investigasi
+                     BRIEF 2 membuktikan komisi sudah FLAT (Trip::getKomisiKiosBaruAttribute()
+                     hardcode 0.0, bonus kios-baru sudah dilebur ke tarif reguler di atas); isian
+                     ini TIDAK berpengaruh ke perhitungan apa pun. Kolom DB komisi_kios_baru_per_mika
+                     SENGAJA TIDAK didrop (reversible/aman), lihat NEXT_SESSION.md. --}}
             </div>
 
             {{-- ========== Default Kedai Baru ========== --}}

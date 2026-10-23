@@ -117,6 +117,8 @@ class HppPerOwnerTest extends TestCase
         // hpp_per_mika TETAP di-set di fixture (kolomnya tak dihapus, hanya tak lagi
         // bisa diubah lewat form ini) untuk pastikan ia TIDAK ikut berubah/ter-reset
         // oleh update yang tak menyertakannya.
+        // komisi_kios_baru_per_mika DIHAPUS dari form juga (23 Okt 2026) — lihat
+        // test_komisi_kios_baru_per_mika_ignored_even_if_submitted di bawah.
         $owner = User::factory()->create(['role' => 'owner', 'is_active' => true, 'hpp_per_mika' => 9500]);
 
         $this->actingAs($owner)->get('/owner/settings')->assertOk();
@@ -125,7 +127,6 @@ class HppPerOwnerTest extends TestCase
             ->put('/owner/settings', [
                 'harga_mika' => 250,
                 'komisi_per_mika' => 600,
-                'komisi_kios_baru_per_mika' => 1200,
                 // Kirim nilai default standar supaya tidak ikut diuji di sini.
                 'default_target_visit_interval_days' => 10,
                 'default_warning_visit_interval_days' => 14,
@@ -137,9 +138,38 @@ class HppPerOwnerTest extends TestCase
 
         $this->assertSame('250.00', $owner->fresh()->harga_mika);
         $this->assertSame('600.00', $owner->fresh()->komisi_per_mika);
-        $this->assertSame('1200.00', $owner->fresh()->komisi_kios_baru_per_mika);
         // hpp_per_mika tidak disentuh oleh update ini — tetap nilai fixture semula.
         $this->assertSame('9500.00', $owner->fresh()->hpp_per_mika);
+    }
+
+    /**
+     * REGRESI — investigasi BRIEF 2026-10-23 poin 1: "Komisi Kios Baru per Mika"
+     * dihapus dari form /owner/settings (tak lagi divalidasi/ditulis). Pastikan
+     * walau field lama ini tetap dikirim (klien basi/replay), ia diam-diam
+     * diabaikan — bukan nyasar nulis kolom lewat mass-update yang tak sengaja.
+     */
+    public function test_komisi_kios_baru_per_mika_ignored_even_if_submitted(): void
+    {
+        $owner = User::factory()->create([
+            'role' => 'owner', 'is_active' => true,
+            'komisi_kios_baru_per_mika' => 1000,
+        ]);
+
+        $this->actingAs($owner)
+            ->put('/owner/settings', [
+                'harga_mika' => 250,
+                'komisi_per_mika' => 600,
+                'komisi_kios_baru_per_mika' => 1200,
+                'default_target_visit_interval_days' => 10,
+                'default_warning_visit_interval_days' => 14,
+                'default_fast_mover_threshold_days' => 7,
+                'kios_baru_days' => 30,
+                'default_qty_mika' => 1,
+            ])
+            ->assertRedirect(route('owner.settings'));
+
+        // Tak berubah dari nilai fixture semula — field ini tak lagi sampai ke $data.
+        $this->assertSame('1000.00', $owner->fresh()->komisi_kios_baru_per_mika);
     }
 
     public function test_operator_cannot_access_owner_settings(): void

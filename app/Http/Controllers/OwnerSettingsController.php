@@ -22,11 +22,14 @@ class OwnerSettingsController extends Controller
         // Enam pengaturan di bawah sudah punya kolom DB dan accessor dengan fallback;
         // Settings ini melengkapi jalur edit milik owner. Nilai default kedai hanya
         // dipakai saat membuat kios baru — kios/trip yang sudah ada tidak disentuh.
+        // komisi_kios_baru_per_mika DIHAPUS dari form (23 Okt 2026) — komisi sudah flat
+        // (Trip::getKomisiKiosBaruAttribute() hardcode 0.0), isian ini tak berpengaruh ke
+        // perhitungan apa pun. Kolom DB SENGAJA tidak didrop; tak lagi divalidasi/ditulis
+        // dari sini. Lihat NEXT_SESSION.md.
         $data = $request->validate([
             'business_name' => 'nullable|string|max:60',
             'harga_mika' => 'required|numeric|min:0',
             'komisi_per_mika' => 'required|numeric|min:0',
-            'komisi_kios_baru_per_mika' => 'required|numeric|min:0',
             'default_target_visit_interval_days' => 'required|integer|min:1|max:365',
             'default_warning_visit_interval_days' => 'required|integer|min:1|max:365|gte:default_target_visit_interval_days',
             'default_fast_mover_threshold_days' => 'required|integer|min:1|max:365',
@@ -38,8 +41,6 @@ class OwnerSettingsController extends Controller
             'harga_mika.min' => 'Harga mika minimal Rp 0.',
             'komisi_per_mika.required' => 'Komisi reguler per mika wajib diisi.',
             'komisi_per_mika.min' => 'Komisi reguler per mika minimal Rp 0.',
-            'komisi_kios_baru_per_mika.required' => 'Komisi kios baru per mika wajib diisi.',
-            'komisi_kios_baru_per_mika.min' => 'Komisi kios baru per mika minimal Rp 0.',
             'default_target_visit_interval_days.required' => 'Ideal dikunjungi tiap (hari) wajib diisi.',
             'default_target_visit_interval_days.min' => 'Ideal dikunjungi tiap (hari) minimal 1 hari.',
             'default_target_visit_interval_days.max' => 'Ideal dikunjungi tiap (hari) maksimal 365 hari.',

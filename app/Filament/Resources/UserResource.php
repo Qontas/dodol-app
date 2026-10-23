@@ -197,18 +197,16 @@ class UserResource extends Resource
                         Forms\Components\TextInput::make('komisi_per_mika')
                             ->label('Komisi Reguler (Rp)')
                             ->numeric()
-                            ->default(500)
-                            ->minValue(0)
-                            ->helperText('Komisi per mika untuk kios biasa. Default: Rp 500')
-                            ->required(),
-
-                        Forms\Components\TextInput::make('komisi_kios_baru_per_mika')
-                            ->label('Komisi Kios Baru (Rp)')
-                            ->numeric()
                             ->default(1000)
                             ->minValue(0)
-                            ->helperText('Komisi per mika untuk kios baru. Default: Rp 1.000')
+                            ->helperText('Komisi per mika yang diletakkan operator (basis drop). Default: Rp 1.000')
                             ->required(),
+
+                        // "Komisi Kios Baru (Rp)" DIHAPUS dari form ini (23 Okt 2026) — investigasi
+                        // BRIEF 2 membuktikan komisi sudah FLAT (Trip::getKomisiKiosBaruAttribute()
+                        // hardcode 0.0, bonus kios-baru sudah dilebur ke tarif reguler di atas);
+                        // isian ini TIDAK berpengaruh ke perhitungan apa pun. Kolom DB
+                        // komisi_kios_baru_per_mika SENGAJA TIDAK didrop, lihat NEXT_SESSION.md.
                     ]),
             ]);
     }
@@ -344,11 +342,8 @@ class UserResource extends Resource
                     ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false)
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                Tables\Columns\TextColumn::make('komisi_kios_baru_per_mika')
-                    ->label('Komisi Kios Baru')
-                    ->money('IDR')
-                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false)
-                    ->toggleable(isToggledHiddenByDefault: true),
+                // Kolom tabel "Komisi Kios Baru" DIHAPUS (23 Okt 2026) — lihat komentar
+                // di form Section('Tarif & Komisi') di atas; isian ini tak berfungsi.
 
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Aktif')
