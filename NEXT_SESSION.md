@@ -1,6 +1,80 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 23 Oktober 2026*
 
+## 🔴 BRIEF 23 OKT 2026 (LANJUTAN): AUDIT PERFORMA + WIDGET FEE HARIAN — SELESAI, boleh push (tidak ada migrasi)
+Brief terpisah, lanjutan dari "BRIEF 5 TUGAS" di bawah (sudah deploy sore harinya) — **tidak ada
+migrasi, tidak ada akses/perintah ke DB production, tidak ada angka uang lama yang berubah**.
+**606 test PASS** (naik dari baseline 596 di awal sesi ini, +10 test baru: lihat rincian TUGAS 1
+di bawah). Commit atomik per tugas, lihat `git log` (`2daaf69`, `1bc5721`, `1d4dba6`, `8400948`).
+
+Audit performa atas dashboard admin & owner menghasilkan 5 rekomendasi (diberi nomor saat audit
+dipresentasikan di sesi ini). Hasil akhir per rekomendasi:
+
+| # | Temuan | Status sesi ini |
+|---|---|---|
+| 1 | `LiveTripProgress` (owner dashboard) query Trip dari nol di `render()`, padahal `OwnerDashboardController` sudah meng-query data yang sama untuk halaman yang sama → duplikat | ✅ **DIPERBAIKI — TUGAS 2** |
+| 2 | Sesuatu di `Dashboard::mount()` panel admin | ❌ **DITOLAK, eksplisit di luar scope sesi ini** — brief secara tegas melarang perubahan di titik ini; brief sendiri menandainya sebagai artefak lingkungan test, bukan masalah nyata ("di prod semua widget admin tampil normal") |
+| 3 | `ChartWidget` admin (`OwnerOmsetChart`) tak pernah override `$pollingInterval` → diam-diam pakai default trait `CanPoll` Filament (`5s`), terlalu sering untuk chart 30 hari | ✅ **DIPERBAIKI — TUGAS 4** |
+| 4 | (ditunda oleh brief sendiri) | ⏸️ **DITUNDA**, tidak dikerjakan sesi ini |
+| 5a | `/owner/dashboard` memuat Chart.js lewat `<script src="cdn.jsdelivr.net/npm/chart.js">` TANPA versi — risiko keamanan supply-chain (isi bisa berubah di CDN tanpa jejak di repo) | ✅ **DIPERBAIKI — TUGAS 3** |
+| 5b | (ditunda oleh brief sendiri — terkait thumbnail foto) | ⏸️ **DITUNDA**, tidak dikerjakan sesi ini |
+
+**TUGAS 2 — commit `1d4dba6`:** `OwnerDashboardController` meng-oper `$activeTrips` (sudah eager-
+loaded persis kebutuhan komponen) ke `<livewire:owner.live-trip-progress :active-trips="...">`;
+komponen menyimpannya ke properti **protected** (BUKAN public — supaya tak ikut di-hydrate ulang
+dari snapshot Livewire di setiap poll 30 detik, yang kalau public justru bikin data basi
+selamanya) lewat `mount()`, dipakai HANYA di render pertama; setiap poll susulan tetap query
+ulang seperti sebelumnya. Query count (skenario 1 trip aktif + aktivitas drop+settle): **55 → 49
+(-6)**. Angka tampilan (omset, komisi, kios belum dikunjungi) IDENTIK. Lihat **UI_INVENTORY**
+bagian "Laporan Trip Real-Time (Live)".
+**Gotcha Livewire ditemukan & dicatat di docblock kode:** `mount()` SENGAJA tanpa type-hint
+`?Collection` pada parameternya — kalau di-type-hint, container Laravel diam-diam menyuntik
+`Collection` KOSONG (bukan `null`) saat parameter tak dioper (mis. test lama yang mem-mount tanpa
+`active-trips`), karena `Collection` punya constructor tanpa argumen sehingga trivially
+instantiable bagi container — defaultnya `= null` tak pernah kepakai. Baru ketahuan lewat 3 test
+lama yang gagal; fix: hilangkan type-hint di parameter `mount()` (properti backing-nya tetap
+typed).
+
+**TUGAS 3 — commit `2daaf69`:** Chart.js di `/owner/dashboard` dibundle via Vite
+(`resources/js/owner-chart.js`, entry point terpisah supaya tak ikut ke semua halaman owner/
+operator), versi dikunci `^4.6.1` di `package-lock.json`. Diverifikasi browser sungguhan
+(Playwright + Chrome sistem, skill `verify-browser`) di 390px & 1280px: canvas ketemu,
+`window.Chart` terdefinisi, grafik benar-benar tergambar. Lihat **UI_INVENTORY** bagian "Tren
+Omset (30 Hari Terakhir)".
+
+**TUGAS 4 — commit `1bc5721`:** `OwnerOmsetChart::$pollingInterval = '60s'` (eksplisit, bukan lagi
+default diam-diam `5s`). Daftar LENGKAP `wire:poll` di app ini & interval akhir:
+- `AppFeeWidget` (admin, "Fee Aplikasi") → **30s**, tidak diubah.
+- `AppFeeDailyWidget` (admin, "Rincian Fee Aplikasi Harian", TUGAS 1 baru) → **30s**, sama sejak lahir.
+- `OwnerOmsetChart` (admin, "Tren Omset 30 Hari") → **60s**, DIUBAH dari default 5s.
+- `LiveTripProgress` (owner, "Laporan Live") → **30s**, tidak diubah (di luar scope TUGAS 4).
+Tidak ada `ChartWidget` admin lain selain `OwnerOmsetChart`.
+
+**TUGAS 1 — commit `8400948`** (widget baru, bukan dari daftar rekomendasi audit — permintaan
+brief tersendiri): widget admin baru **"Rincian Fee Aplikasi Harian"**
+(`app/Filament/Widgets/AppFeeDailyWidget.php`) — rincian PER TANGGAL dari widget "Fee Aplikasi"
+yang sudah ada (per-owner-per-bulan). `App\Support\AppFeeCalculator::summaryByOwnerAndDate()`
+ditambahkan: SATU query batch, ATURAN HITUNG sama persis `summaryForOwners()` (lihat docblock
+kelas), ditambah metrik baru "Mika Diantar" (tanpa pengecualian "titipan konsinyasi pertama").
+Filter Bulan (native `<input type="month">`) & Owner (default "bertarif > 0"), baris TOTAL,
+`wire:poll.30s`, super admin saja. Query konstan berapa pun banyak owner/tanggal. **10 test baru**
+(7 `AppFeeDailyWidgetTest` + 2 `AppFeeCalculatorTest`) termasuk bukti PROGRAMATIK bahwa total Fee
+bulan ini widget baru = "Fee Bulan Ini" widget "Fee Aplikasi" lama (angka tak berubah, cuma
+dipecah per tanggal) — juga diverifikasi visual di browser sungguhan (390px & 1280px, data demo
+dihapus lagi setelah screenshot): TOTAL 13 mika kena fee × Rp500 = Rp 6.500, cocok dengan "Mika
+Kena Fee (Bulan Ini)" = 13 di widget lama. Lihat **UI_INVENTORY B8.6**.
+
+### Dokumen (TUGAS 5)
+`docs/UI_INVENTORY.md`: **B8.6** baru (widget "Rincian Fee Aplikasi Harian"), **B8.4** (catatan
+polling 60s), bagian "Laporan Trip Real-Time (Live)" & "Tren Omset (30 Hari Terakhir)" di **B2**
+diperbarui (preload TUGAS 2, bundling Vite TUGAS 3). `NEXT_SESSION.md`: entry ini.
+
+### ATURAN KERAS yang dipatuhi
+Tidak ada akses/perintah ke DB production. Tidak ada migrasi (TUGAS 1-4 murni kode/view/test).
+Tidak ada angka uang lama yang berubah — dibuktikan test lama yang mengunci angka tampilan tetap
+PASS tanpa diubah. Full suite dijalankan ulang setelah setiap tugas (bukan hanya file tersentuh).
+Boleh push (tidak ada migrasi baru) — TUGAS 1-4 sudah di-push ke `main`.
+
 ## 🔴 BRIEF KOLOM KOMISI & FEE DI MANAJEMEN USER (23 Okt 2026) — SELESAI, tampilan saja, boleh push
 Brief terpisah (bukan lanjutan "BRIEF 5 TUGAS" di bawah) — murni tampilan `UserResource`, **tidak
 ada migrasi, tidak ada akses prod, tidak ada angka uang yang berubah**. **596 test PASS** (naik
