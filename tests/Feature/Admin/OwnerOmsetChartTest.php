@@ -138,6 +138,21 @@ class OwnerOmsetChartTest extends TestCase
         );
     }
 
+    /**
+     * TUGAS 4 (BRIEF 23 Okt 2026, lanjutan, rekomendasi audit performa #3) —
+     * default CanPoll Filament untuk ChartWidget adalah '5s', terlalu sering
+     * untuk chart 30 hari yang jarang berubah tiap detik. Kunci ke 60s supaya
+     * tidak diam-diam balik ke default 5s kalau override dihapus.
+     */
+    public function test_polling_interval_is_60_seconds_not_filament_default_5s(): void
+    {
+        $super = User::factory()->create(['role' => 'super_admin', 'is_active' => true]);
+
+        $widget = Livewire::actingAs($super)->test(OwnerOmsetChart::class)->instance();
+
+        $this->assertSame('60s', $this->callProtected($widget, 'getPollingInterval'));
+    }
+
     private function callProtected(object $obj, string $method): mixed
     {
         $ref = new \ReflectionMethod($obj, $method);

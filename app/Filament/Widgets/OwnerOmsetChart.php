@@ -27,6 +27,14 @@ class OwnerOmsetChart extends ChartWidget
 
     protected static string $view = 'filament.widgets.omset-bar-chart';
 
+    /**
+     * TUGAS 4 (BRIEF 23 Okt 2026, lanjutan, rekomendasi audit performa #3) —
+     * default CanPoll Filament adalah '5s', terlalu sering untuk chart 30 hari
+     * yang datanya baru berubah kalau ada settlement baru (jarang dalam
+     * hitungan detik). 60s cukup supaya tetap "live" tanpa membebani DB.
+     */
+    protected static ?string $pollingInterval = '60s';
+
     private const BULAN_SINGKAT = [1 => 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
     private const BULAN_PANJANG = [1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
