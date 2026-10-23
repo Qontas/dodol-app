@@ -7,9 +7,45 @@ use App\Models\Trip;
 use App\Models\Kiosk;
 use App\Models\KioskVisit;
 use App\Support\TripAreas;
+use Illuminate\Support\Collection;
 
 class LiveTripProgress extends Component
 {
+    /**
+     * TUGAS 2 (BRIEF 23 Okt 2026, lanjutan, rekomendasi audit performa #1) —
+     * OwnerDashboardController SUDAH menghitung $activeTrips dengan eager
+     * load yang sama persis untuk widget lain di halaman yang sama; render
+     * awal komponen ini dulu meng-query ULANG trip aktif (duplikat). Sekarang
+     * controller mengoper koleksi itu lewat mount(), dipakai HANYA untuk
+     * render pertama.
+     *
+     * SENGAJA protected (bukan public): properti public di Livewire 3
+     * ikut di-hydrate dari snapshot di SETIAP request susulan (termasuk
+     * poll 30 detik), jadi kalau public, data trip aktif bisa jadi basi
+     * (poll tak pernah lihat trip baru/berakhir). Properti protected TIDAK
+     * ikut snapshot — mount() hanya jalan sekali di render awal, jadi di
+     * setiap poll berikutnya nilainya otomatis balik null → render()
+     * jatuh ke query ulang di bawah, PERSIS perilaku lama.
+     */
+    protected ?Collection $preloadedActiveTrips = null;
+
+    /**
+     * 🔴 $activeTrips SENGAJA TANPA type-hint `?Collection` di parameter ini
+     * (beda dari properti di atas) — Livewire mem-resolve parameter mount()
+     * yang tak terisi lewat Laravel container (`Container::call()`), dan
+     * `Illuminate\Support\Collection` BISA di-instantiate tanpa argumen.
+     * Kalau di-type-hint, container diam-diam menyuntik Collection KOSONG
+     * ganti null waktu parameter tak dioper (mis. test `Livewire::test()`
+     * tanpa mount params) — default `= null` di signature TAK PERNAH
+     * kepakai, dan `??` di render() di bawah jadi tak pernah fallback ke
+     * query. Tanpa type-hint, container tak bisa resolve apa-apa untuk
+     * parameter ini, jadi default null benar-benar terpakai saat kosong.
+     */
+    public function mount($activeTrips = null): void
+    {
+        $this->preloadedActiveTrips = $activeTrips;
+    }
+
     /**
      * Komponen ini di-poll tiap 30 detik dari dashboard owner, jadi semua
      * angka per-trip dihitung di sini dengan eager load — bukan lewat accessor
@@ -17,8 +53,10 @@ class LiveTripProgress extends Component
      */
     public function render()
     {
-        // Multi-tenant: owner hanya lihat trip bisnisnya sendiri.
-        $activeTrips = Trip::whereNull('ended_at')
+        // Multi-tenant: owner hanya lihat trip bisnisnya sendiri. Render awal
+        // pakai koleksi dari controller (lihat docblock $preloadedActiveTrips
+        // di atas); setiap poll susulan query ulang di sini seperti biasa.
+        $activeTrips = $this->preloadedActiveTrips ?? Trip::whereNull('ended_at')
             ->where('owner_id', auth()->id())
             ->with([
                 'operator',

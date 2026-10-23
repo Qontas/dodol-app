@@ -219,10 +219,25 @@ class OwnerDashboardController extends Controller
             $chartData[] = (int) ($dailyOmsetRaw[$formattedDate] ?? 0);
         }
 
-        // Active trips real-time progress
+        // Active trips real-time progress. Eager load LENGKAP (bukan cuma 4
+        // relasi lama) karena koleksi ini SEKARANG dioper langsung ke
+        // <livewire:owner.live-trip-progress :active-trips="..."> sebagai
+        // render awal (TUGAS 2, BRIEF 23 Okt 2026, lanjutan, rekomendasi
+        // audit performa #1) — menghilangkan query duplikat yang dulu
+        // dilakukan ulang di dalam komponen itu sendiri. Daftar relasi di
+        // sini HARUS sama dengan yang dibutuhkan LiveTripProgress::render(),
+        // lihat app/Livewire/Owner/LiveTripProgress.php.
         $activeTrips = Trip::whereNull('ended_at')
             ->where('owner_id', $ownerId)
-            ->with(['operator', 'startingCluster', 'visits.kiosk', 'deliveries'])
+            ->with([
+                'operator',
+                'startingCluster',
+                'owner',
+                'visits.kiosk',
+                'visits.newDelivery',
+                'visits.settledDelivery.settlement',
+                'deliveries',
+            ])
             ->get();
 
         // Completed trips for ended trip reports — trip sentinel migrasi dikecualikan

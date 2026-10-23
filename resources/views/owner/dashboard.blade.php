@@ -328,8 +328,11 @@
             </div>
         @endif
 
-        {{-- Live Trip Progress --}}
-        <livewire:owner.live-trip-progress />
+        {{-- Live Trip Progress — TUGAS 2 (BRIEF 23 Okt 2026, lanjutan): $activeTrips
+             sudah dihitung controller (dengan eager load yang sama), dioper ke sini
+             supaya render awal tidak query ulang. Poll 30s berikutnya tetap query
+             ulang seperti biasa (lihat LiveTripProgress::mount()). --}}
+        <livewire:owner.live-trip-progress :active-trips="$activeTrips" />
 
         {{-- Completed Trips Report --}}
         <div class="bg-white rounded-lg border border-slate-200 p-5 mt-6">
