@@ -45,7 +45,10 @@ class OwnerPerformanceTable extends BaseWidget
     {
         $owners = User::query()->where('role', 'owner')
             ->withCount([
-                'operators',
+                // realOperators() = AKTIF & bukan akun sistem (fix 23 Okt 2026) — lihat
+                // docblock relasinya di User model. Alias 'operators_count' DIPERTAHANKAN
+                // (bukan nama relasinya) supaya computeStatsByOwner() di bawah tak berubah.
+                'realOperators as operators_count',
                 'ownedKiosks as active_kiosks_count' => fn ($q) => $q->where('kiosks.is_active', true),
             ])
             ->get();

@@ -265,9 +265,13 @@ class UserResource extends Resource
                     ->placeholder('—')
                     ->alignCenter(),
 
-                Tables\Columns\TextColumn::make('operators_count')
+                // active_operators_count = realOperators() (AKTIF, bukan akun sistem) —
+                // BEDA dari 'operators_count' (guard hapus di bawah, yang sengaja
+                // menghitung SEMUA). Fix 23 Okt 2026: owner dengan 1 operator nonaktif/
+                // akun sistem dulu tampil 2, sekarang benar 1.
+                Tables\Columns\TextColumn::make('active_operators_count')
                     ->label('Operator')
-                    ->state(fn (User $record): ?int => $record->role === 'owner' ? (int) $record->operators_count : null)
+                    ->state(fn (User $record): ?int => $record->role === 'owner' ? (int) $record->active_operators_count : null)
                     ->placeholder('—')
                     ->alignCenter(),
 
@@ -467,6 +471,10 @@ class UserResource extends Resource
             'ownedKiosks',
             'ownedKiosks as owned_active_kiosks_count' => fn ($q) => $q->where('kiosks.is_active', true),
             'ownedTrips', 'operators', 'operatedTrips', 'commissions',
+            // Alias TERPISAH dari 'operators' di atas — kolom tabel "Operator" (fix
+            // 23 Okt 2026) butuh AKTIF + bukan akun sistem, tapi deletionBlockReason*
+            // tetap baca 'operators_count' (SEMUA) supaya guard hapus tak berubah.
+            'realOperators as active_operators_count',
         ]);
 
         // Kolom "Komisi/Mika" baris OPERATOR membaca tarif OWNER-nya

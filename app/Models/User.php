@@ -419,6 +419,23 @@ class User extends Authenticatable implements FilamentUser
         return $this->hasMany(User::class, 'owner_id');
     }
 
+    /**
+     * Operator NYATA milik owner ini — AKTIF dan BUKAN akun sistem (operator.migrasi.*
+     * dibuat kios:saldo-awal/OpeningBalance). SATU DEFINISI "jumlah operator" dipakai
+     * UserResource (kolom "Operator"), OwnerPerformanceTable (leaderboard), dan
+     * dashboard owner (kartu "Total Operator") — supaya operator nonaktif/akun sistem
+     * tidak pernah menggelembungkan angka yang owner lihat (BRIEF fix 23 Okt 2026).
+     *
+     * SENGAJA BUKAN operators() yang dipakai guard deletionBlockReason()/withCount
+     * 'operators' polos — guard HAPUS owner harus tetap menghitung SEMUA (termasuk
+     * nonaktif & akun sistem) supaya pesan "tidak bisa dihapus" tidak pernah meleset
+     * (owner dengan 1 operator nonaktif/sistem TETAP punya data yang harus dijaga).
+     */
+    public function realOperators(): HasMany
+    {
+        return $this->operators()->where('role', 'operator')->where('is_active', true)->excludeSystem();
+    }
+
     public function operatedTrips(): HasMany
     {
         return $this->hasMany(Trip::class, 'operator_id');

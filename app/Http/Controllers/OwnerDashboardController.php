@@ -33,7 +33,9 @@ class OwnerDashboardController extends Controller
             'total_kios' => Kiosk::excludeWalkInSentinel()->whereHas('cluster', fn ($q) => $q->where('owner_id', $ownerId))->count(),
             'total_cluster' => Cluster::excludeWalkInSentinel()->where('owner_id', $ownerId)->count(),
             'total_supplier' => Supplier::where('owner_id', $ownerId)->count(),
-            'total_operator' => User::where('role', 'operator')->where('owner_id', $ownerId)->count(),
+            // realOperators() = AKTIF & bukan akun sistem (fix 23 Okt 2026) — dulu
+            // operator nonaktif/akun sistem (operator.migrasi.*) ikut terhitung di sini.
+            'total_operator' => $user->realOperators()->count(),
         ];
 
         // Widget 1 — Omset hari ini: total uang masuk dari settlement hari ini
