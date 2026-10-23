@@ -87,4 +87,95 @@ class DashboardQueryCountTest extends TestCase
         $response->assertSee('Rp 120.000');   // omset
         $response->assertSee('Rp 13.000');    // komisi (10+3)×1.000
     }
+
+    /**
+     * BRIEF 2026-10-23 Tugas 2 — isolasi BERSIH mekanisme N+1 yang diminta brief:
+     * Trip::isMigrationSentinel() (dipanggil accessor mika_komisi/komisi_rian/
+     * untung_bersih_owner) lazy-load relasi `operator` KALAU belum dimuat.
+     *
+     * Dites langsung di level query (bukan lewat HTTP /owner/dashboard) supaya
+     * TIDAK tercampur query agregat per-trip LAIN yang sudah ada sejak sebelum
+     * isMigrationSentinel() (salesSnapshotTotals/getTotalDropReal — itu agregat
+     * SQL asli per trip, bukan relation lazy-load, di luar lingkup perbaikan ini).
+     *
+     * Bukti konkret: 10 trip TANPA eager load = 11 query (1 query trip + 10
+     * lazy-load operator, N+1 murni). 10 trip DENGAN ->with('operator') = 2 query
+     * (1 query trip + 1 query batch operator), KONSTAN berapa pun banyak trip.
+     */
+    public function test_eager_load_operator_prevents_n_plus_one_pada_isMigrationSentinel(): void
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
+        $cluster = Cluster::create(['name' => 'C', 'owner_id' => $owner->id]);
+
+        for ($i = 1; $i <= 10; $i++) {
+            Trip::factory()->create([
+                'owner_id' => $owner->id, 'operator_id' => $operator->id,
+                'starting_cluster_id' => $cluster->id, 'trip_date' => today()->format('Y-m-d'),
+                'trip_number_of_day' => $i, 'started_at' => now(), 'ended_at' => now(),
+            ]);
+        }
+
+        // TANPA eager load — isMigrationSentinel() lazy-load `operator` per trip.
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $tanpaEagerLoad = Trip::where('owner_id', $owner->id)->get();
+        foreach ($tanpaEagerLoad as $trip) {
+            $trip->isMigrationSentinel();
+        }
+        $countTanpaEagerLoad = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        // DENGAN eager load — SATU query batch untuk relasi operator seluruh trip.
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $denganEagerLoad = Trip::where('owner_id', $owner->id)->with('operator')->get();
+        foreach ($denganEagerLoad as $trip) {
+            $trip->isMigrationSentinel();
+        }
+        $countDenganEagerLoad = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        $this->assertSame(11, $countTanpaEagerLoad, 'Tanpa eager load: 1 query trip + 10 lazy-load operator (N+1, satu per trip) = 11.');
+        $this->assertSame(2, $countDenganEagerLoad, 'Dengan with(operator): harus TETAP 2 query (1 trip + 1 batch operator) berapa pun banyak trip — regresi N+1 kalau ini naik.');
+    }
+
+    /**
+     * Sanity check end-to-end: query $untungBersihHariIni yang SUNGGUH dipakai
+     * OwnerDashboardController (dengan ->with(['operator', 'owner']) sejak
+     * 2026-10-23) tidak melakukan lazy-load relasi apa pun — dibuktikan dengan
+     * query log HANYA berisi query trip + 2 query batch relasi (operator, owner),
+     * TANPA baris "where `users`.`id` = ?" (pola lazy-load single-row) berapa pun
+     * banyak trip hari ini.
+     */
+    public function test_dashboard_untung_bersih_hari_ini_query_tidak_lazy_load_relasi(): void
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true, 'hpp_per_mika' => 9500, 'komisi_per_mika' => 1000]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'name' => 'Rian', 'owner_id' => $owner->id]);
+        $cluster = Cluster::create(['name' => 'C', 'owner_id' => $owner->id]);
+
+        for ($i = 1; $i <= 6; $i++) {
+            Trip::factory()->create([
+                'owner_id' => $owner->id, 'operator_id' => $operator->id,
+                'starting_cluster_id' => $cluster->id, 'trip_date' => today()->format('Y-m-d'),
+                'trip_number_of_day' => $i, 'started_at' => now(), 'ended_at' => now(),
+                'qty_carried_total' => 10,
+            ]);
+        }
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $this->actingAs($owner)->get('/owner/dashboard')->assertOk();
+        $lazyLoadRelasi = array_filter(
+            DB::getQueryLog(),
+            fn ($q) => str_contains($q['query'], 'where `users`.`id` = ?')
+        );
+        DB::disableQueryLog();
+
+        $this->assertCount(
+            0,
+            $lazyLoadRelasi,
+            'Ditemukan query lazy-load single-row ke `users` (where users.id = ?) — indikasi relasi operator/owner tak ter-eager-load di suatu loop trip.'
+        );
+    }
 }

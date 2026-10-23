@@ -20,6 +20,16 @@ class User extends Authenticatable implements FilamentUser
     use HasFactory, Notifiable;
 
     /**
+     * Prefix email akun sistem (dibuat command kios:saldo-awal / OpeningBalance,
+     * password acak, nonaktif) — SATU SUMBER KEBENARAN dipakai isSystemAccount(),
+     * scopeExcludeSystem(), Trip::scopeRealOperational()/isMigrationSentinel(),
+     * TripAggregator, dan OwnerDashboardController. Refactor 2026-10-23: dulu
+     * literal 'operator.migrasi.' tersebar di 4 file berbeda, sekarang satu
+     * konstanta — rumus/angka TIDAK berubah, murni konsolidasi string.
+     */
+    public const SYSTEM_OPERATOR_EMAIL_PREFIX = 'operator.migrasi.';
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
@@ -138,7 +148,7 @@ class User extends Authenticatable implements FilamentUser
      */
     public function isSystemAccount(): bool
     {
-        return str_starts_with((string) $this->email, 'operator.migrasi.');
+        return str_starts_with((string) $this->email, self::SYSTEM_OPERATOR_EMAIL_PREFIX);
     }
 
     /**
@@ -147,7 +157,7 @@ class User extends Authenticatable implements FilamentUser
      */
     public function scopeExcludeSystem(Builder $query): Builder
     {
-        return $query->where('email', 'not like', 'operator.migrasi.%');
+        return $query->where('email', 'not like', self::SYSTEM_OPERATOR_EMAIL_PREFIX.'%');
     }
 
     /**

@@ -116,10 +116,22 @@ class OwnerDashboardController extends Controller
         // Widget — Untung bersih hari ini: jumlah untung_bersih_owner dari trip
         // milik owner yang sudah selesai hari ini.
         // where('trip_date', ...) (bukan whereDate) → index kepakai; trip_date bertipe DATE.
+        // ->with(['operator', 'owner']) WAJIB (ditambahkan 2026-10-23): accessor
+        // untung_bersih_owner→komisi_rian→mika_komisi memanggil isMigrationSentinel()
+        // (lazy-load 'operator' kalau belum dimuat) DAN untung_kotor→salesSnapshotTotals()
+        // →getHpp() (lazy-load 'owner' utk fallback HPP) — tanpa eager load KEDUANYA,
+        // ->sum() di atas N trip hari ini menembak 2×N query tambahan (N+1). Eager load
+        // membuatnya 2 query batch (1 per relasi), berapa pun banyak trip hari ini (lihat
+        // DashboardQueryCountTest::test_eager_load_operator_prevents_n_plus_one_pada_isMigrationSentinel
+        // untuk bukti jumlah query). Query per-trip LAIN (settlement/delivery agregat
+        // salesSnapshotTotals & getTotalDropReal) tetap ada — itu agregat SQL asli per
+        // trip (bukan relation lazy-load), sudah begitu sejak sebelum isMigrationSentinel()
+        // ada, di luar lingkup perbaikan N+1 relasi ini.
         $untungBersihHariIni = Trip::where('owner_id', $ownerId)
             ->where('trip_date', today()->toDateString())
             ->whereNotNull('ended_at')
             ->realOperational()
+            ->with(['operator', 'owner'])
             ->get()
             ->sum('untung_bersih_owner');
 
@@ -162,7 +174,7 @@ class OwnerDashboardController extends Controller
             ->whereMonth('trips.trip_date', $now->month)
             // Trip sentinel migrasi dikecualikan (lihat Trip::scopeRealOperational()) —
             // users sudah di-join di atas, jadi cukup cek pola email di sini.
-            ->where(fn ($q) => $q->whereNull('users.email')->orWhere('users.email', 'not like', 'operator.migrasi.%'))
+            ->where(fn ($q) => $q->whereNull('users.email')->orWhere('users.email', 'not like', User::SYSTEM_OPERATOR_EMAIL_PREFIX.'%'))
             ->where('deliveries.delivery_type', '!=', 'bs_redistribution')
             ->groupBy('trips.operator_id', 'users.name')
             ->selectRaw('trips.operator_id, users.name as operator_name, COALESCE(SUM(deliveries.qty_delivered), 0) as drop_mika')

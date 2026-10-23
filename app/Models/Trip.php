@@ -91,7 +91,7 @@ class Trip extends Model
      */
     public function scopeRealOperational(Builder $query): Builder
     {
-        return $query->whereDoesntHave('operator', fn ($q) => $q->where('email', 'like', 'operator.migrasi.%'));
+        return $query->whereDoesntHave('operator', fn ($q) => $q->where('email', 'like', User::SYSTEM_OPERATOR_EMAIL_PREFIX.'%'));
     }
 
     /**

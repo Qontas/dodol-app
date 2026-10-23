@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Delivery;
 use App\Models\KioskVisit;
 use App\Models\Settlement;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -140,7 +141,7 @@ class TripAggregator
             DB::table('trips')
                 ->join('users', 'users.id', '=', 'trips.operator_id')
                 ->whereIn('trips.id', $tripIds)
-                ->where('users.email', 'like', 'operator.migrasi.%')
+                ->where('users.email', 'like', User::SYSTEM_OPERATOR_EMAIL_PREFIX.'%')
                 ->pluck('trips.id')
                 ->all()
         );
