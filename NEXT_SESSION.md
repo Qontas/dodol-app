@@ -1,6 +1,42 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 23 Oktober 2026*
 
+## 🔴 BRIEF KOLOM KOMISI & FEE DI MANAJEMEN USER (23 Okt 2026) — SELESAI, tampilan saja, boleh push
+Brief terpisah (bukan lanjutan "BRIEF 5 TUGAS" di bawah) — murni tampilan `UserResource`, **tidak
+ada migrasi, tidak ada akses prod, tidak ada angka uang yang berubah**. **596 test PASS** (naik
+dari baseline 588 di akhir sesi sebelumnya, +8 test baru). Commit atomik, lihat `git log`.
+
+1. **Kolom "Komisi Operator /Mika" baris OWNER** — prefix `Bayar Rp X` diganti `Default Rp X`
+   (angka SAMA, cuma teksnya diluruskan: itu tarif DEFAULT usaha, bukan "yang owner bayar" —
+   operator bisa punya tarif KHUSUS berbeda). Description kecil `Operator: Rp MIN – Rp MAX`
+   ditambahkan DI BAWAH baris owner itu kalau ADA operator AKTIFnya (bukan akun sistem,
+   `realOperators()`) yang tarif EFEKTIFnya ≠ default (MIN/MAX dihitung atas tarif efektif
+   SEMUA operator aktifnya, termasuk yang ikut default) — kosong kalau semua sama dengan
+   default, atau owner tak punya operator aktif. Baris operator/super admin tidak berubah.
+   **Anti-N+1:** MIN/MAX dibaca lewat SATU subquery correlated (`addSelect` di
+   `getEloquentQuery()`), bukan dihitung per baris — query count tabel tetap konstan berapa
+   pun jumlah operator per owner (test khusus untuk ini).
+2. **Kolom baru "Fee Aplikasi"** (setelah kolom komisi) — baris owner `Rp 300 /mika`
+   (`app_fee_per_pack`; null/0 → `Rp 0`), baris lain `—`. **HANYA visible super admin** —
+   owner JUGA bisa membuka `UserResource` ini untuk operatornya sendiri (lihat **UI_INVENTORY
+   B8.2** untuk kenapa itu penting), jadi `->visible()` di kolom ini (paralel dengan field
+   form "Fee Aplikasi" yang sudah ada) adalah pengaman sungguhan, bukan sekadar "owner tak
+   pernah lewat sini". Dibuktikan `assertDontSee`/`assertTableColumnHidden`.
+3. **8 test baru** (`tests/Feature/Admin/UserResourceKomisiFeeColumnTest.php`): label
+   `Default`, description muncul saat ada tarif beda (500/1000/1500 → `Rp 500 – Rp 1.500`),
+   tanpa description kalau semua ikut default atau owner tanpa operator aktif, operator
+   nonaktif dikecualikan dari MIN/MAX, kolom fee tampil ke super admin + tersembunyi dari
+   owner, query count konstan. Satu test lama (`OperatorKhususKomisiFormTest`) disesuaikan
+   dari `assertSee('Bayar Rp 1.000')` ke `assertSee('Default Rp 1.000')` (label berubah
+   sengaja, bukan regresi).
+4. **Dokumen**: `docs/UI_INVENTORY.md` **B8.2** diperbarui (label `Default`, description
+   rentang, kolom baru "Fee Aplikasi" dengan pointer anti-N+1). `NEXT_SESSION.md`: entry ini.
+   Tidak ada file "Panduan" terpisah di repo ini (dicek, tidak ada yang perlu diperbarui).
+
+### ATURAN KERAS yang dipatuhi
+Tidak ada akses/perintah ke DB production. Tidak ada migrasi. Full suite 596 PASS (bukan
+hanya file tersentuh) — zero regresi. Boleh push (tidak ada migrasi baru).
+
 ## 🔴 BRIEF 5 TUGAS: fee aplikasi, kolom Owner, grafik bar, hitungan operator (23 Okt 2026) — SELESAI, **JANGAN PUSH** (ada migrasi baru — owner backup DB produksi dulu, baru push sendiri)
 Brief 5 tugas + Laporan Akhir. Semua commit atomik per tugas, tidak ada akses/perintah ke DB
 production di manapun di sesi ini. **588 test PASS** (naik dari baseline 544 di awal sesi ini —

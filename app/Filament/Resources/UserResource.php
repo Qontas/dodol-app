@@ -7,6 +7,7 @@ use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Filament\Forms;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Form;
@@ -262,6 +263,43 @@ class UserResource extends Resource
     // resolveOwnerDefaultKomisiRate() dipindah ke trait HasKomisiKhususOperatorField
     // (23 Okt 2026, BRIEF D9) — dipakai bersama OperatorResource, lihat trait-nya.
 
+    /**
+     * Description kolom "Komisi Operator /Mika" untuk baris OWNER: "Operator: Rp
+     * MIN – Rp MAX" kalau ADA operator aktifnya yang tarif efektif ≠ tarif default
+     * owner, atau null (tanpa description) kalau semua sama dengan default — ATAU
+     * owner itu tidak punya operator aktif sama sekali (BRIEF Kolom Komisi & Fee, 23 Okt 2026).
+     *
+     * operator_komisi_min/max dibaca dari kolom hasil subquery correlated yang
+     * ditambahkan getEloquentQuery() (SATU select, ikut query utama) — bukan
+     * dihitung di sini, supaya tabel tetap NOL query tambahan per baris.
+     */
+    protected static function komisiOperatorRangeDescription(User $record): ?string
+    {
+        if ($record->role !== 'owner' || $record->operator_komisi_min === null) {
+            return null;
+        }
+
+        $default = $record->getKomisiPerMikaValue();
+        $min = (float) $record->operator_komisi_min;
+        $max = (float) $record->operator_komisi_max;
+
+        if (abs($min - $default) < 0.005 && abs($max - $default) < 0.005) {
+            return null;
+        }
+
+        return 'Operator: Rp '.number_format($min, 0, ',', '.').' – Rp '.number_format($max, 0, ',', '.');
+    }
+
+    /** "Rp 300 /mika" untuk tarif > 0, "Rp 0" untuk null/0 (BRIEF Kolom Komisi & Fee). */
+    protected static function formatAppFeePerPack(float $value): string
+    {
+        if ($value <= 0.0) {
+            return 'Rp 0';
+        }
+
+        return 'Rp '.number_format($value, 0, ',', '.').' /mika';
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -334,13 +372,22 @@ class UserResource extends Resource
                 // seolah owner MENERIMA komisi, padahal itu tarif yang owner BAYAR ke
                 // operatornya — beda arti dgn baris operator (tarif yang operator
                 // TERIMA, dibaca dari owner-nya ATAU tarif khususnya sendiri). Prefix
-                // "Bayar"/"Terima" per baris meluruskan ini TANPA mengubah angka (fix
+                // "Terima" untuk operator meluruskan ini TANPA mengubah angka (fix
                 // 20 Okt 2026); suffix "(khusus)"/"(ikut owner)" ditambah 21 Okt 2026
                 // supaya owner/super admin bisa lihat sekilas siapa yang di-override.
                 //
+                // Baris OWNER (fix 23 Okt 2026, BRIEF Kolom Komisi & Fee): prefix "Bayar" diganti jadi
+                // "Default" — angkanya memang tarif default usaha owner, bukan "yang
+                // owner bayar" (operator bisa punya tarif KHUSUS yang berbeda). Kalau
+                // ADA operator aktifnya yang tarif efektif ≠ default, description kecil
+                // "Operator: Rp MIN – Rp MAX" menunjukkan rentang tarif efektif SEMUA
+                // operator aktif owner itu (lihat komisiOperatorRangeDescription()).
+                //
                 // $record->owner sudah di-eager-load (->with('owner') di bawah) — baca
                 // komisi_per_mika_khusus langsung dari $record (kolom sendiri), NOL
-                // query tambahan.
+                // query tambahan. MIN/MAX operator dibaca dari operator_komisi_min/max
+                // (subquery correlated SATU select, ikut query utama — lihat
+                // getEloquentQuery()), bukan query per baris.
                 Tables\Columns\TextColumn::make('komisi_efektif_per_mika')
                     ->label('Komisi Operator /Mika')
                     ->state(fn (User $record): ?float => match ($record->role) {
@@ -356,7 +403,7 @@ class UserResource extends Resource
                         $rupiah = 'Rp '.number_format((float) $state, 0, ',', '.');
 
                         if ($record->role === 'owner') {
-                            return "Bayar {$rupiah}";
+                            return "Default {$rupiah}";
                         }
 
                         if ($record->role === 'operator') {
@@ -367,6 +414,26 @@ class UserResource extends Resource
 
                         return $rupiah;
                     })
+                    ->description(fn (User $record): ?string => static::komisiOperatorRangeDescription($record))
+                    ->alignCenter(),
+
+                // BRIEF Kolom Komisi & Fee (23 Okt 2026) — "Fee Aplikasi" per baris OWNER, dibaca
+                // dari app_fee_per_pack (lihat Section 'Fee Aplikasi' form & B8.2).
+                // HANYA super admin yang boleh melihat kolom ini — owner JUGA bisa
+                // membuka UserResource ini (untuk operatornya sendiri, lihat komentar
+                // panjang di Section form "Fee Aplikasi" di atas), jadi ->visible() di
+                // SINI (bukan cuma "owner tak pernah lewat resource ini") adalah
+                // pengaman sungguhan, paralel dengan field form-nya.
+                //
+                // Tanpa query tambahan: app_fee_per_pack kolom asli $record (SELECT *
+                // default), tak perlu eager load/subquery seperti kolom komisi di atas.
+                Tables\Columns\TextColumn::make('app_fee_per_pack')
+                    ->label('Fee Aplikasi')
+                    ->state(fn (User $record): ?string => $record->role === 'owner'
+                        ? static::formatAppFeePerPack($record->getAppFeePerPackValue())
+                        : null)
+                    ->placeholder('—')
+                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false)
                     ->alignCenter(),
 
                 Tables\Columns\TextColumn::make('hpp_per_mika')
@@ -545,6 +612,32 @@ class UserResource extends Resource
         // UserListQueryCountTest merah acak — jumlah baris operator di halaman 1
         // bergantung nama random, jadi query count ikut naik-turun (diukur 5..9).
         $query->with('owner');
+
+        // BRIEF Kolom Komisi & Fee (23 Okt 2026) — MIN/MAX tarif komisi EFEKTIF operator aktif
+        // (bukan akun sistem) milik tiap owner, untuk description kolom "Komisi
+        // Operator /Mika" (komisiOperatorRangeDescription() di atas). "Efektif" =
+        // komisi_per_mika_khusus operator itu kalau diisi, kalau tidak ikut
+        // komisi_per_mika OWNER (users.komisi_per_mika — kolom BARIS LUAR, karena
+        // operator yang ikut default memakai tarif OWNER-nya, bukan tarif dirinya
+        // sendiri yang memang kosong untuk role operator).
+        //
+        // SATU subquery correlated per alias, ikut SELECT utama (addSelect) — bukan
+        // query terpisah per baris. Dipakai juga untuk baris operator/super admin
+        // (owner_id mereka tak match siapa pun → null, diabaikan di helper di atas).
+        $query->addSelect([
+            'operator_komisi_min' => DB::table('users as uo')
+                ->selectRaw('MIN(COALESCE(uo.komisi_per_mika_khusus, users.komisi_per_mika))')
+                ->whereColumn('uo.owner_id', 'users.id')
+                ->where('uo.role', 'operator')
+                ->where('uo.is_active', true)
+                ->where('uo.email', 'not like', User::SYSTEM_OPERATOR_EMAIL_PREFIX.'%'),
+            'operator_komisi_max' => DB::table('users as uo')
+                ->selectRaw('MAX(COALESCE(uo.komisi_per_mika_khusus, users.komisi_per_mika))')
+                ->whereColumn('uo.owner_id', 'users.id')
+                ->where('uo.role', 'operator')
+                ->where('uo.is_active', true)
+                ->where('uo.email', 'not like', User::SYSTEM_OPERATOR_EMAIL_PREFIX.'%'),
+        ]);
 
         if (auth()->user()?->isSuperAdmin()) {
             return $query; // super admin lihat semua user (kecuali akun sistem)

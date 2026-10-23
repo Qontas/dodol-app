@@ -95,9 +95,12 @@ class OperatorKhususKomisiFormTest extends TestCase
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         Livewire::actingAs($super);
 
+        // Label baris owner "Bayar Rp X" diganti jadi "Default Rp X" (BRIEF Kolom Komisi &
+        // Fee, 23 Okt 2026, lihat UserResourceKomisiFeeColumnTest) — angkanya
+        // SAMA, cuma teksnya diluruskan (owner tak "membayar" dirinya sendiri).
         Livewire::test(ListUsers::class)
             ->assertOk()
-            ->assertSee('Bayar Rp 1.000')          // owner row
+            ->assertSee('Default Rp 1.000')         // owner row
             ->assertSee('Terima Rp 800 (khusus)')   // operator khusus row
             ->assertSee('Terima Rp 1.000 (ikut owner)'); // operator default row
 
