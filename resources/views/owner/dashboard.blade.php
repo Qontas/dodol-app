@@ -503,7 +503,13 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    {{-- TUGAS 3 (BRIEF 23 Okt 2026, lanjutan, rekomendasi audit performa #5a) —
+         Chart.js dibundle lewat Vite (resources/js/owner-chart.js), BUKAN lagi
+         CDN tanpa versi (risiko supply-chain: isi CDN itu bisa berubah kapan
+         saja tanpa jejak). HANYA dimuat di halaman ini (@vite di sini, bukan
+         di layouts/owner.blade.php) supaya tak ikut terbundle ke semua
+         halaman owner. window.Chart ditempel oleh owner-chart.js. --}}
+    @vite(['resources/js/owner-chart.js'])
     <script>
         document.addEventListener("DOMContentLoaded", function () {
             const canvas = document.getElementById('omsetChart');
