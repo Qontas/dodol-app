@@ -1,6 +1,67 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 23 Oktober 2026*
 
+## 🔴 D9: OWNER BISA ATUR KOMISI KHUSUS OPERATOR SENDIRI + rapikan prefix akun sistem (23 Okt 2026) — SELESAI & PUSHED
+**544 test hijau (dari 538 baseline — 538 itu sendiri = 536 + 2 dari Tugas 2 di sesi ini).**
+Brief ini punya 3 tugas, dikerjakan & commit atomik per tugas.
+
+### Tugas 1 — OperatorResource (sisi owner) bisa atur komisi khusus — commit `4ca8554`
+Latar: owner yang **membayar** komisi operatornya, tapi selama ini field
+`komisi_per_mika_khusus` cuma bisa diisi lewat `UserResource` (super admin) — gap D9 di
+`docs/UI_INVENTORY.md`. Owner harus minta bantuan super admin untuk tarif khusus per
+operator.
+- **Form** `OperatorResource` (`ManageOperators`) dapat Section baru **"Komisi Khusus"**:
+  field `komisi_per_mika_khusus`, label `Komisi Khusus per Mika (Rp)`, numeric/nullable/
+  minValue(0). Helper text: `Kosongkan untuk ikut tarif default usaha (Rp X). Berlaku
+  untuk trip yang dimulai SETELAH disimpan.` — X = tarif owner yang login.
+- **Rumus tarif default TIDAK dobel**: dipindah ke trait baru
+  `app/Filament/Concerns/HasKomisiKhususOperatorField::resolveOwnerDefaultKomisiRate()`,
+  dipakai di `UserResource` DAN `OperatorResource`. `UserResource.php` method private lama
+  dihapus, komentar usang di atas Section "Komisi Khusus Operator" diperbaiki supaya
+  menyebut KEDUA entry point yang sekarang benar-benar ada.
+- **Tabel**: kolom "Komisi /Mika" diubah dari seragam (tarif owner login semua baris) jadi
+  **per-baris**: `$record->getEffectiveKomisiPerMikaValue()` + suffix `(khusus)` / `(ikut
+  default)`. `->with('owner')` ditambah di `OperatorResource::getEloquentQuery()` supaya
+  tidak N+1 — dites `UserListQueryCountTest::test_daftar_operator_owner_query_konstan`
+  (sudah ada, komentarnya diperbarui — dulu "kebetulan stabil tanpa relasi", sekarang
+  benar-benar menjaga eager load).
+- **Keamanan** (test baru di `tests/Feature/Owner/OperatorResourceTest.php`): owner A
+  memount aksi edit pada operator milik owner B → **tidak pernah ter-mount**
+  (`getTableRecord()` Filament sendiri gagal karena `getEloquentQuery()` discoped
+  `owner_id`), dibuktikan `assertTableActionNotMounted()` + DB operator B tak berubah.
+  Operator (bukan owner) dapat 403 di `/owner-panel/operators` (`canAccessPanel()`).
+- Tidak ada migrasi (kolom `komisi_per_mika_khusus` sudah ada sejak BRIEF 2). Trip yang
+  sudah berjalan tidak tersentuh (snapshot `komisi_per_mika_snapshot` tetap beku).
+
+### Tugas 2 — Rapikan prefix akun sistem + perbaiki N+1 `untungBersihHariIni` — commit `758746e`
+- `User::SYSTEM_OPERATOR_EMAIL_PREFIX` (konstanta baru, `'operator.migrasi.'`) menggantikan
+  literal string yang sebelumnya tersebar di `User::isSystemAccount()`/`scopeExcludeSystem()`,
+  `Trip::scopeRealOperational()`, `TripAggregator`, `OwnerDashboardController` — murni
+  refactor, angka tidak berubah.
+- **N+1 baru ditemukan & diperbaiki**: `Trip::isMigrationSentinel()` (dipanggil accessor
+  `mika_komisi`/`komisi_rian`/`untung_bersih_owner`) lazy-load relasi `operator`, DAN
+  `salesSnapshotTotals()`→`getHpp()` lazy-load relasi `owner` — keduanya kalau belum
+  di-eager-load. `OwnerDashboardController::index()` sekarang `->with(['operator', 'owner'])`
+  pada query `$untungBersihHariIni`. Bukti: 10 trip tanpa eager load = 11 query (N+1
+  murni), dengan `->with('operator')` = TETAP 2 query berapa pun banyak trip (lihat
+  `DashboardQueryCountTest::test_eager_load_operator_prevents_n_plus_one_pada_isMigrationSentinel`).
+
+### Tugas 3 — Dokumen
+- `docs/UI_INVENTORY.md`: **B8.1** ditulis ulang (Section "Komisi Khusus" + kolom tabel
+  baru OperatorResource, teks verbatim); **B8.2** komentar gap tentang UserResource
+  diperbaiki; **D9 ditandai ✅ SELESAI** dengan ringkasan fix & pointer commit.
+- `NEXT_SESSION.md`: entry ini.
+
+### ATURAN KERAS yang dipatuhi (sesuai brief)
+Tidak ada akses/perintah ke DB production. Tidak ada migrasi baru. Trip yang sudah
+berjalan/berakhir tidak berubah angkanya (dibuktikan test suite 544 PASS, termasuk semua
+test lama yang mengunci angka trip aktif).
+
+### TEST
+544 PASS (baseline 538 + 6 test baru Tugas 1: create via OperatorResource dengan/tanpa
+tarif khusus, helper text tarif default, tampilan kolom tabel per-baris, keamanan lintas
+owner, blokir akses operator). Full suite, bukan hanya file tersentuh.
+
 ## 🔴 TIGA PERBAIKAN KECIL: hapus field mati, trip sentinel migrasi di komisi, dokumentasi (23 Okt 2026) — SELESAI & PUSHED
 **536 test hijau (dari 529 baseline, +7 test baru).** Regresi utuh dijalankan (bukan hanya file
 tersentuh). Delta 0 dibuktikan untuk owner Ismi (id=2) — lihat poin 2 di bawah.

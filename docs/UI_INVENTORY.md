@@ -732,13 +732,17 @@ Sumber: `app/Filament/Resources/OperatorResource.php`
 
 **Catatan:** Field komisi persen (`commission_rate`) **sudah dihapus** dari form. Komentar kode: `Field 'Tarif Komisi' persen DIBUANG: legacy, tak dipakai bayar. Komisi operator = Rp/mika drop dari setting owner (owner/settings).` (`OperatorResource.php:76–77`)
 
+Section **Komisi Khusus** — ditambahkan 23 Okt 2026 (**D9**, lihat juga **B8.2**):
+- `komisi_per_mika_khusus` — label verbatim `Komisi Khusus per Mika (Rp)`, numerik, nullable, min 0. Helper text dinamis: `Kosongkan untuk ikut tarif default usaha (Rp X.XXX). Berlaku untuk trip yang dimulai SETELAH disimpan.` — di mana `X.XXX` adalah tarif komisi OWNER YANG LOGIN (`auth()->user()->getKomisiPerMikaValue()`; resource ini selalu dilihat owner, tidak ada field `owner_id` untuk dipilih seperti di UserResource). Rumus tarif default dipakai ULANG dari `UserResource` lewat trait `App\Filament\Concerns\HasKomisiKhususOperatorField::resolveOwnerDefaultKomisiRate()` — tidak ada rumus dobel. Kosong = ikut tarif default usaha; diisi = override satu tarif flat khusus operator ini. (`OperatorResource.php:88–115`)
+- Field ini **TIDAK menyentuh trip yang sudah berjalan** — hanya dibaca saat trip BARU dimulai (`User::getEffectiveKomisiPerMikaValue()` dipanggil dari `StartTrip::startTrip()`, dibekukan ke `trips.komisi_per_mika_snapshot`; lihat **C7**).
+
 **Kolom Tabel:**
 
 | Kolom | Label (verbatim) | Catatan |
 |---|---|---|
 | `name` | `Nama` | bold |
 | `email` | `Email` | copyable |
-| `komisi_per_mika` | `Komisi/Mika` | Membaca tarif dari owner (auth user), format `Rp X.XXX`; bukan dari record operator |
+| `komisi_per_mika` | `Komisi /Mika` | **Diubah 23 Okt 2026 (D9)** — dulu seragam (tarif owner login utk semua baris), sekarang PER BARIS: `$record->getEffectiveKomisiPerMikaValue()` + suffix, format `Rp X.XXX (khusus)` (kalau `komisi_per_mika_khusus` diisi) atau `Rp X.XXX (ikut default)` (kalau kosong, ikut tarif owner). `->with('owner')` di `getEloquentQuery()` mencegah N+1 (dites `UserListQueryCountTest::test_daftar_operator_owner_query_konstan`). |
 | `is_active` | `Aktif` | icon boolean |
 | `created_at` | `Dibuat` | hidden by default |
 
@@ -770,9 +774,9 @@ Section **Role & Akses:**
 - `is_active` — Toggle; user tidak bisa menonaktifkan akunnya sendiri. (`UserResource.php:127–130`)
 
 Section **Komisi Khusus Operator** (visible hanya jika `role = 'operator'`) — ditambahkan 21 Okt 2026:
-- `komisi_per_mika_khusus` — `Komisi Khusus (Rp)`, numerik, nullable, min 0. Helper text dinamis: `Kosongkan untuk ikut tarif default usaha (Rp X.XXX)` — di mana `X.XXX` adalah tarif komisi OWNER yang terkait operator ini (owner viewer: dirinya sendiri; super admin: owner yang dipilih di field `owner_id`, field itu `->live()` supaya helper ikut berubah). Kosong = ikut tarif default usaha; diisi = override satu tarif flat khusus operator ini. (`UserResource.php:149–164,221–232`)
+- `komisi_per_mika_khusus` — `Komisi Khusus (Rp)`, numerik, nullable, min 0. Helper text dinamis: `Kosongkan untuk ikut tarif default usaha (Rp X.XXX)` — di mana `X.XXX` adalah tarif komisi OWNER yang terkait operator ini (owner viewer: dirinya sendiri; super admin: owner yang dipilih di field `owner_id`, field itu `->live()` supaya helper ikut berubah). Kosong = ikut tarif default usaha; diisi = override satu tarif flat khusus operator ini. (`UserResource.php:149–164`)
 - Field ini **TIDAK menyentuh trip yang sudah berjalan** — hanya dibaca saat trip BARU dimulai (`User::getEffectiveKomisiPerMikaValue()` dipanggil dari `StartTrip::startTrip()`, lalu dibekukan ke `trips.komisi_per_mika_snapshot`; lihat **C7**).
-- **Catatan gap**: komentar kode (`UserResource.php:138–140`) menyebut field ini "diisi di sini (owner membuat/mengubah operatornya) ATAU form Edit super admin" — namun `OperatorResource` (sisi owner, **B8.1**) **TIDAK** menampilkan field `komisi_per_mika_khusus` ini sama sekali. Saat ini owner **tidak bisa** mengatur komisi khusus untuk operatornya sendiri lewat UI; hanya super admin yang bisa, lewat `UserResource`. Lihat **D9**.
+- **Diperbaiki 23 Okt 2026 (D9 ✅ SELESAI)**: komentar kode di atas Section ini (`UserResource.php`, sekitar baris 138–140) kini menyebut KEDUA entry point yang sungguh ada — form `UserResource` ini (owner membuat/mengubah operatornya LEWAT Users, atau super admin lewat Edit) **DAN** `OperatorResource` (menu "Operator" di panel owner, lihat **B8.1**) yang sejak tanggal ini juga punya field `komisi_per_mika_khusus` sendiri. Dua form berbeda, satu kolom DB yang sama, rumus tarif default dibagi lewat trait `HasKomisiKhususOperatorField` (tidak dobel). Owner sekarang **bisa** mengatur komisi khusus operatornya sendiri tanpa lewat super admin.
 
 Section **Tarif & Komisi** (visible hanya jika `role = 'owner'`):
 - `harga_mika` — `Harga Mika (Rp)`, default 200, helper `Harga modal mika per kemasan. Default: Rp 200`
@@ -1102,10 +1106,10 @@ Akun sistem dibuat otomatis oleh `OpeningBalance` (untuk migrasi saldo awal kios
 
 ---
 
-### D9. Owner Tidak Bisa Atur Komisi Khusus Operator Sendiri (Hanya Super Admin)
+### D9. Owner Tidak Bisa Atur Komisi Khusus Operator Sendiri (Hanya Super Admin) — ✅ SELESAI (23 Okt 2026)
 
-Komentar kode di `UserResource.php:138–140` menyatakan field `komisi_per_mika_khusus` (Section **"Komisi Khusus Operator"**, lihat **B8.2**) "diisi di sini (owner membuat/mengubah operatornya) ATAU form Edit super admin" — menyiratkan owner seharusnya bisa mengisinya saat membuat/mengubah operatornya sendiri.
+~~Komentar kode di `UserResource.php:138–140` menyatakan field `komisi_per_mika_khusus` (Section **"Komisi Khusus Operator"**, lihat **B8.2**) "diisi di sini (owner membuat/mengubah operatornya) ATAU form Edit super admin" — menyiratkan owner seharusnya bisa mengisinya saat membuat/mengubah operatornya sendiri.~~
 
-Namun `OperatorResource` (`app/Filament/Resources/OperatorResource.php`, sisi owner — **B8.1**) **tidak** menampilkan field ini sama sekali; form-nya hanya berisi Section "Informasi Akun" (nama/email/password) dan "Status" (`is_active`). Saat ini **hanya super admin** yang bisa mengatur `komisi_per_mika_khusus` untuk operator manapun, lewat `UserResource`. Owner yang ingin memberi tarif komisi khusus ke salah satu operatornya harus minta bantuan super admin — tidak bisa dilakukan sendiri dari panel owner.
+~~Namun `OperatorResource` (`app/Filament/Resources/OperatorResource.php`, sisi owner — **B8.1**) **tidak** menampilkan field ini sama sekali...~~
 
-Dampak: gap fungsional kecil (bukan bug kalkulasi — field tetap bekerja benar begitu terisi), tapi komentar kode tidak sesuai kenyataan dan UI owner tidak lengkap dibanding yang diisyaratkan.
+**Diperbaiki**: `OperatorResource` sekarang punya Section **"Komisi Khusus"** sendiri dengan field `komisi_per_mika_khusus` (lihat **B8.1** untuk teks verbatim) — owner bisa mengatur tarif khusus operatornya tanpa minta bantuan super admin. Rumus tarif default dibagi dengan `UserResource` lewat trait `App\Filament\Concerns\HasKomisiKhususOperatorField` (tidak dobel rumus). Kolom tabel "Komisi /Mika" di `ManageOperators` diubah jadi per-baris (tarif efektif + suffix khusus/ikut default), dengan `->with('owner')` menjaga tidak N+1. Komentar usang di `UserResource.php` juga diperbaiki agar menyebut kedua entry point yang sekarang benar-benar ada. Keamanan: owner A tidak bisa memount aksi edit pada operator milik owner B (scoped `getEloquentQuery()`); operator (bukan owner) ditolak 403 di `/owner-panel/operators`. Lihat commit `4ca8554`, 6 test baru (`tests/Feature/Owner/OperatorResourceTest.php`).
