@@ -139,6 +139,7 @@ Tiap baris kios di daftar (`active-trip.blade.php:210-300`) menampilkan: nama ki
 - Foto kios bisa ditambah/diganti lewat **“Foto Ulang”**, **“🖼️ Galeri”**, **“📷 Ambil Foto”**, atau **“🖼️ Dari Galeri”**; saat diproses label berubah menjadi **“Menyimpan…”**. (resources/views/livewire/operator/active-trip.blade.php:607-651)
 - Status di bagian atas modal tampil sebagai salah satu dari: **“Kedai ini: ada titipan … mika (… biji).”**, **“Kedai ini: cash-only (tak ada titipan).”**, atau **“Kedai ini: belum ada titipan berjalan.”** (resources/views/livewire/operator/active-trip.blade.php:663-678)
 - Bila ada catatan, judulnya **“📌 Catatan Kedai”** dan isi `store_note` ditampilkan apa adanya. (resources/views/livewire/operator/active-trip.blade.php:681-687)
+- Di layar pertama (sebelum aksi dipilih), bila kios punya koordinat tersimpan, muncul tautan **“Navigasi ke Kios”** yang membuka Google Maps ke titik tersebut. Bila kios **belum punya koordinat**, tombol abu **“Lokasi belum diisi”** menggantikannya (ditambahkan 21 Okt 2026, fix keluhan lapangan — sebelumnya tombol navigasi hilang diam-diam dan operator mengira itu bug). Tombol ini membuka toggle Alpine.js (`x-data="{ showInfo: false }"`), bukan form — operator tidak punya rute untuk mengedit lokasi kios sendiri. Penjelasan yang tampil: **“Kios ini belum punya titik lokasi tersimpan, jadi tombol navigasi tidak muncul. Minta owner melengkapinya lewat menu Kios (panel owner) — tandai pin di peta atau tempel link Google Maps. Kios baru yang kamu daftarkan sendiri lewat ‘Kios Baru’ otomatis diminta lokasi GPS saat itu juga.”** (resources/views/livewire/operator/active-trip.blade.php:852-892)
 
 **Banner dan pelunasan sebelum memilih aksi**
 
@@ -247,6 +248,7 @@ Tiap baris kios di daftar (`active-trip.blade.php:210-300`) menampilkan: nama ki
 - GPS diberi timeout 15 detik dan otomatis mencoba sekali lagi dengan akurasi rendah bila gagal selain izin ditolak. Auto-GPS gagal secara senyap; pesan hanya muncul setelah tombol manual ditekan. (resources/views/livewire/operator/create-kiosk.blade.php:418-468)
 - Pesan GPS persis: **“GPS tidak didukung browser ini.”**, **“Gagal mendapatkan lokasi. Coba lagi.”**, **“Izin lokasi ditolak. Buka ikon gembok di address bar > Izin > Lokasi > Izinkan, lalu coba lagi. Kamu tetap bisa simpan kios tanpa lokasi atau tandai manual di peta.”**, **“Sinyal GPS tidak didapat. Coba lagi di tempat terbuka, atau tandai lokasi manual di peta.”**, dan **“Waktu habis mencari lokasi. Coba lagi, atau tandai lokasi manual di peta.”** (resources/views/livewire/operator/create-kiosk.blade.php:429-462)
 - Bila tile gagal, tampil **“⚠️ Gambar peta gagal dimuat (jaringan). Kamu masih bisa menandai lokasi lewat tombol GPS atau tempel link Google Maps, atau simpan kios tanpa lokasi.”** (resources/views/livewire/operator/create-kiosk.blade.php:221-229)
+- Setiap titik yang didapat dari GPS menampilkan **“Akurasi ±… meter”** di bawah peta, plus lingkaran radius akurasi biru (`L.circle`) digambar di sekitar pin. Akurasi lebih dari 50 meter dianggap kurang akurat dan memicu peringatan kuning eksplisit: **“⚠️ Lokasi kurang akurat (±… m). Pastikan GPS mode akurasi tinggi, coba di luar ruangan, atau geser pin ke titik yang benar.”** Keduanya hilang lagi begitu titik dipindah manual lewat klik peta (tanpa data akurasi). (resources/views/livewire/operator/create-kiosk.blade.php:540-591)
 
 **Foto dan HEIC**
 
@@ -767,18 +769,25 @@ Section **Role & Akses:**
 - `owner_id` — Select `Owner`; hanya muncul jika super admin sedang edit operator (visible + required conditional). (`UserResource.php:118–119`)
 - `is_active` — Toggle; user tidak bisa menonaktifkan akunnya sendiri. (`UserResource.php:127–130`)
 
+Section **Komisi Khusus Operator** (visible hanya jika `role = 'operator'`) — ditambahkan 21 Okt 2026:
+- `komisi_per_mika_khusus` — `Komisi Khusus (Rp)`, numerik, nullable, min 0. Helper text dinamis: `Kosongkan untuk ikut tarif default usaha (Rp X.XXX)` — di mana `X.XXX` adalah tarif komisi OWNER yang terkait operator ini (owner viewer: dirinya sendiri; super admin: owner yang dipilih di field `owner_id`, field itu `->live()` supaya helper ikut berubah). Kosong = ikut tarif default usaha; diisi = override satu tarif flat khusus operator ini. (`UserResource.php:149–164,221–232`)
+- Field ini **TIDAK menyentuh trip yang sudah berjalan** — hanya dibaca saat trip BARU dimulai (`User::getEffectiveKomisiPerMikaValue()` dipanggil dari `StartTrip::startTrip()`, lalu dibekukan ke `trips.komisi_per_mika_snapshot`; lihat **C7**).
+- **Catatan gap**: komentar kode (`UserResource.php:138–140`) menyebut field ini "diisi di sini (owner membuat/mengubah operatornya) ATAU form Edit super admin" — namun `OperatorResource` (sisi owner, **B8.1**) **TIDAK** menampilkan field `komisi_per_mika_khusus` ini sama sekali. Saat ini owner **tidak bisa** mengatur komisi khusus untuk operatornya sendiri lewat UI; hanya super admin yang bisa, lewat `UserResource`. Lihat **D9**.
+
 Section **Tarif & Komisi** (visible hanya jika `role = 'owner'`):
-- `harga_mika` — `Harga Mika (Rp)`, default 200
-- `komisi_per_mika` — `Komisi Reguler (Rp)`, default 500
-- `komisi_kios_baru_per_mika` — `Komisi Kios Baru (Rp)`, default 1000
-- **`hpp_per_mika` TIDAK ada di form ini** — komentar: `hpp_per_mika DIHAPUS dari form ini — HPP sekarang per-varian produk (ProductVariant::cost_per_pack), bukan satu angka global per owner. Kolom tabel readonly super-admin (di bawah) DIBIARKAN — informasional, audit data lama, bukan jalur kalkulasi aktif.` (`UserResource.php:152–156`)
+- `harga_mika` — `Harga Mika (Rp)`, default 200, helper `Harga modal mika per kemasan. Default: Rp 200`
+- `komisi_per_mika` — `Komisi Reguler (Rp)`, default 1000, helper `Komisi per mika yang diletakkan operator (basis drop). Default: Rp 1.000`
+- **`komisi_kios_baru_per_mika` TIDAK ada di form ini** — dihapus 23 Okt 2026 (lihat **C8**, **D4**). Kolom DB sengaja tidak didrop.
+- **`hpp_per_mika` TIDAK ada di form ini** — komentar: `hpp_per_mika DIHAPUS dari form ini — HPP sekarang per-varian produk (ProductVariant::cost_per_pack), bukan satu angka global per owner. Kolom tabel readonly super-admin (di bawah) DIBIARKAN — informasional, audit data lama, bukan jalur kalkulasi aktif.` (`UserResource.php:185–210`)
 
 **Kolom Tabel** (super admin melihat semua; owner hanya lihat operatornya):
-- `hpp_per_mika` — `HPP/Mika` — **HANYA visible untuk super admin**, `toggleable(hidden by default)` — informasional/audit saja. (`UserResource.php:250–251`)
+- `owned_active_kiosks_count` — `Kios`; hanya terisi untuk baris owner (jumlah kios aktif miliknya), `—` untuk operator/super admin. Dibaca dari `withCount('ownedKiosks')` yang sudah dimuat `getEloquentQuery()` — nol query tambahan per baris. Ditambahkan 21 Okt 2026. (`UserResource.php:271–275`)
+- `operators_count` — `Operator`; sama seperti di atas, jumlah operator milik owner tersebut. (`UserResource.php:277–281`)
+- `komisi_efektif_per_mika` — `Komisi Operator /Mika`. Baris **owner**: `Bayar Rp X.XXX` (tarif yang owner BAYAR, dari `getKomisiPerMikaValue()`). Baris **operator**: `Terima Rp X.XXX (khusus)` jika `komisi_per_mika_khusus` diisi, atau `Terima Rp X.XXX (ikut owner)` jika kosong (tarif efektif dari `getEffectiveKomisiPerMikaValue()`). Prefix Bayar/Terima ditambahkan 20 Okt 2026 (supaya baris owner tidak terbaca seolah owner MENERIMA komisi); suffix (khusus)/(ikut owner) ditambahkan 21 Okt 2026. (`UserResource.php:283–325`)
+- `hpp_per_mika` — `HPP/Mika` — **HANYA visible untuk super admin**, `toggleable(hidden by default)` — informasional/audit saja. (`UserResource.php:327–331`)
 - `harga_mika` — `Harga Mika` — HANYA super admin, toggleable hidden.
 - `komisi_per_mika` — `Komisi Reguler` — HANYA super admin, toggleable hidden.
-- `komisi_kios_baru_per_mika` — `Komisi Kios Baru` — HANYA super admin, toggleable hidden.
-- `komisi_efektif_per_mika` — `Komisi Operator /Mika`; untuk baris owner: `Bayar Rp X.XXX`, untuk baris operator: `Terima Rp X.XXX`. (`UserResource.php:225–244`)
+- **Kolom `komisi_kios_baru_per_mika` ("Komisi Kios Baru") DIHAPUS dari tabel** (23 Okt 2026) — field ini tidak berfungsi, lihat **C8**. (`UserResource.php:345–346`)
 
 **Aturan Hapus (UserResource):**
 - Super Admin: tombol hapus **disembunyikan total** (`->hidden()`). (`UserResource.php:313`)
@@ -791,13 +800,35 @@ Section **Tarif & Komisi** (visible hanya jika `role = 'owner'`):
 
 ---
 
+#### B8.3 Dashboard Super Admin — Widget "Leaderboard Owner Hari Ini"
+
+Navigasi: Dashboard panel Admin (hanya super admin, `AdminPanelProvider`)
+Sumber: `app/Filament/Widgets/OwnerPerformanceTable.php`
+
+Widget tabel berjudul **“Leaderboard Owner Hari Ini”**, satu baris per owner, kolom lebar penuh. Hanya tampil untuk super admin (`canView()`). Kolomnya persis:
+- **“Nama Owner”** — nama owner, searchable + sortable.
+- **“Operator”** — jumlah operator milik owner tersebut.
+- **“Kios Aktif”** — jumlah kios aktif milik owner tersebut.
+- **“Trip Hari Ini”** — jumlah trip (real, bukan sentinel) hari ini.
+- **“Omset Hari Ini”** — `Rp ...`.
+- **“Komisi Operator Hari Ini”** — `Rp ...`.
+- **“Untung Bersih Hari Ini”** — `Rp ...`.
+- **“Total Trip Bulan Ini”** — jumlah trip bulan ini.
+- **“Omset Bulan Ini”** — `Rp ...`.
+
+**Catatan performa (dirombak 21 Okt 2026):** versi sebelumnya menembak 7 query terpisah PER BARIS owner (N×7, makin lambat makin banyak owner). Sekarang 2 query owner-level + `TripAggregator::for()` SATU KALI untuk semua owner sekaligus → total konstan ~9 query **berapa pun banyak owner** (diverifikasi oleh `OwnerPerformanceTableQueryCountTest`, 9 query baik untuk 1 owner maupun 5 owner).
+
+Angka omset/komisi/untung bersih dibaca dari `TripAggregator` — rumus **identik** dengan accessor `Trip` (termasuk `komisi_per_mika_snapshot` per-trip, lihat **C7**), bukan tarif owner LIVE. Trip sentinel migrasi (**C14**) dikecualikan dari semua angka ini (lihat **C7**, **D8**).
+
+---
+
 ### B9. Settings (PALING PENTING — cek paling teliti)
 
 Halaman Settings owner: `GET /owner/settings`, `PUT /owner/settings/update`
 Controller: `app/Http/Controllers/OwnerSettingsController.php`
 View: `resources/views/owner/settings.blade.php`
 
-**STATUS 20 OKTOBER 2026: SEMUA 9 PENGATURAN SUDAH PUNYA INPUT DAN DAPAT DISIMPAN OWNER.** Form dibagi menjadi tiga bagian agar kegunaan setiap nilai jelas.
+**STATUS 23 OKTOBER 2026: SEMUA 8 PENGATURAN SUDAH PUNYA INPUT DAN DAPAT DISIMPAN OWNER.** Form dibagi menjadi tiga bagian agar kegunaan setiap nilai jelas. (Sebelumnya 9 pengaturan per 20 Okt 2026 — `komisi_kios_baru_per_mika` DIHAPUS dari form 23 Okt 2026 karena field ini non-fungsional, lihat **C8**, **D4**.)
 
 ---
 
@@ -813,10 +844,9 @@ View: `resources/views/owner/settings.blade.php`
 #### B9.2 Harga & Komisi
 
 1. **`harga_mika` — Harga Mika (Rp)**, angka minimal 0, fallback Rp 200.
-2. **`komisi_per_mika` — Komisi Reguler per Mika (Rp)**, angka minimal 0, accessor fallback Rp 1.000.
-3. **`komisi_kios_baru_per_mika` — Komisi Kios Baru per Mika (Rp)**, angka minimal 0, fallback Rp 1.000.
+2. **`komisi_per_mika` — Komisi Reguler per Mika (Rp)**, angka minimal 0, accessor fallback Rp 1.000. Helper text (diperbaiki 23 Okt 2026): `Komisi per mika yang diletakkan operator (basis drop). Default: Rp 1.000.` — sebelumnya salah menyebut `Default: Rp 500`, lihat **D2**.
 
-`hpp_per_mika` tidak berada di form ini karena HPP aktif sekarang berasal dari biaya per varian produk (`ProductVariant::cost_per_pack`).
+`hpp_per_mika` tidak berada di form ini karena HPP aktif sekarang berasal dari biaya per varian produk (`ProductVariant::cost_per_pack`). `komisi_kios_baru_per_mika` tidak lagi berada di form ini (dihapus 23 Okt 2026) — lihat **C8**, **D4**.
 
 ---
 
@@ -845,7 +875,7 @@ Controller hanya menjalankan `auth()->user()->update($data)` dan tidak menerima 
 | Identitas Usaha | Nama Usaha | `business_name` | **YA** | `Cemilan Qontas`; maks. 60 karakter |
 | Harga & Komisi | Harga Mika | `harga_mika` | **YA** | Rp 200; min. 0 |
 | Harga & Komisi | Komisi Reguler per Mika | `komisi_per_mika` | **YA** | Rp 1.000; min. 0 |
-| Harga & Komisi | Komisi Kios Baru per Mika | `komisi_kios_baru_per_mika` | **YA** | Rp 1.000; min. 0 |
+| Harga & Komisi | ~~Komisi Kios Baru per Mika~~ | `komisi_kios_baru_per_mika` | **TIDAK** (dihapus 23 Okt 2026) | Kolom DB tetap ada, default Rp 1.000; tidak lagi divalidasi/ditulis dari form ini — lihat **D4** |
 | Default Kedai Baru | Interval Ideal Kunjungan | `default_target_visit_interval_days` | **YA** | 10 hari; 1–365 |
 | Default Kedai Baru | Interval Peringatan Kunjungan | `default_warning_visit_interval_days` | **YA** | 14 hari; 1–365 dan ≥ ideal |
 | Default Kedai Baru | Batas Kios Laris | `default_fast_mover_threshold_days` | **YA** | 7 hari; 1–365 |
@@ -909,19 +939,24 @@ Per baris delivery yang ter-settle. Fallback `cost_snapshot NULL → owner.hpp_p
 ### C7. Komisi Rian (basis DROP)
 
 ```
-komisi_rian = mika_komisi × komisi_per_mika_owner
+komisi_rian = mika_komisi × komisi_per_mika_trip
 ```
 Dimana:
-- `mika_komisi = getTotalDropReal()` = SUM deliveries kecuali `delivery_type = 'bs_redistribution'`. (`Trip.php:65–70`, `Trip.php:280–283`)
-- `komisi_per_mika_owner` = `owner.komisi_per_mika ?? 1000`. (`Trip.php:183–186`)
+- `mika_komisi = getTotalDropReal()` = SUM deliveries kecuali `delivery_type = 'bs_redistribution'`, dipaksa `0` untuk trip sentinel migrasi (lihat **C14**). (`Trip.php:65–70`, `Trip.php:280–283`)
+- `komisi_per_mika_trip` = **tarif BEKU per-trip** (`trips.komisi_per_mika_snapshot`), bukan lagi tarif owner/operator LIVE. Accessor: `(float) ($this->komisi_per_mika_snapshot ?? $this->owner?->komisi_per_mika ?? 1000)` — fallback lama (owner/1000) hanya untuk trip pra-fitur ini yang belum di-backfill. (`Trip.php:219–231`)
+- Nilai snapshot **ditulis sekali** saat trip dimulai: `StartTrip::startTrip()` memanggil `auth()->user()->getEffectiveKomisiPerMikaValue()` (operator yang login) dan membekukannya ke kolom tersebut — perubahan tarif owner/operator SETELAHNYA tidak mengubah trip yang sudah berjalan. (`StartTrip.php:360,373`)
+- `User::getEffectiveKomisiPerMikaValue()` = `komisi_per_mika_khusus` operator (jika diisi, lihat **B8.2**) atau tarif default owner. (`User.php:317–330`)
+- Trip lama (sebelum fitur ini) di-backfill lewat command `trips:backfill-komisi-snapshot {--owner} {--dry-run} {--force} {--chunk}` — dry-run secara default, tidak pernah menimpa nilai yang sudah terisi.
 - Stop kios tanpa drop baru → `getTotalDropReal() = 0` → komisi 0.
 - BS daur-ulang (`bs_redistribution`) **exclude** dari komisi.
 
 Sumber: `Trip::getKomisiRianAttribute()` (`Trip.php:289–292`).
 
-### C8. Komisi Kios Baru (DILEBUR)
+### C8. Komisi Kios Baru (DILEBUR, dan DIHAPUS dari UI)
 
 Bonus komisi kios baru **sudah dilebur** ke tarif flat. `getKomisiKiosBaruAttribute()` mengembalikan `0.0`. Legacy alias `getKomisiRegulerAttribute()` = `komisi_rian` penuh. (`Trip.php:298–306`)
+
+**Status 23 Oktober 2026**: karena field ini terbukti non-fungsional (lihat **D4**), input `komisi_kios_baru_per_mika` **dihapus sepenuhnya dari UI** — form `/owner/settings` (`OwnerSettingsController.php`, `settings.blade.php`) dan form + kolom tabel `UserResource` (super admin). Kolom DB `users.komisi_kios_baru_per_mika` **sengaja dipertahankan** (bukan di-drop) untuk audit data lama; tidak lagi divalidasi atau ditulis dari form manapun. Lihat `NEXT_SESSION.md` (entri 23 Okt 2026) untuk detail investigasi.
 
 ### C9. Untung Bersih Owner
 
@@ -967,8 +1002,8 @@ Sumber: `Kiosk.php:75–81`.
 Kios yang sudah punya titipan berjalan sebelum masuk sistem diberi **saldo awal** via `OpeningBalance::create()`. Proses:
 1. Cek idempotensi: jika sudah ada delivery pending → tidak menumpuk. (`OpeningBalance.php:40–42`)
 2. Set `first_titip_date = kemarin` agar tidak terhitung kios baru. (`OpeningBalance.php:51–53`)
-3. Buat delivery konsinyasi via `ConsignmentDrop::record()` dengan trip migrasi sentinel (tanggal `2000-01-01`). (`OpeningBalance.php:56–61`, `OpeningBalance.php:73–75`)
-4. Trip migrasi: tidak melewati flow end-trip normal → tidak menghasilkan komisi. (`OpeningBalance.php:79–80`)
+3. Buat delivery konsinyasi via `ConsignmentDrop::record()` dengan trip migrasi sentinel (tanggal `2000-01-01`, bisa juga tanggal historis asli lewat `kios:saldo-awal`/`SeedKioskSaldoAwal`). (`OpeningBalance.php:56–61`, `OpeningBalance.php:73–75`)
+4. Trip migrasi dikenali lewat `Trip::isMigrationSentinel()` (operator-nya akun sistem `operator.migrasi.owner{N}@cemilanqontas.id`, lihat `User::isSystemAccount()`). **Diperbaiki 23 Okt 2026** (investigasi BRIEF 2 poin 2): sebelumnya trip sentinel ini ikut terhitung di komisi (mika yang "di-drop" via saldo awal dihitung sebagai drop operator sungguhan, memunculkan komisi/kerugian palsu). Sekarang `mika_komisi` dipaksa `0` untuk trip sentinel (`Trip::getMikaKomisiAttribute()`), `Trip::scopeRealOperational()` mengecualikannya dari Riwayat Trip, laporan bulanan, dashboard, dan `TripAggregator`; `TripDeleteController` juga menolak mengarsipkannya. Kemampuan "Tagih + Titip Ulang" untuk menagih titipan lama kios ini **tidak terpengaruh** — perbaikan hanya di sisi pelaporan/komisi, bukan di jalur penagihan. Dibuktikan delta 0 untuk trip nyata owner Ismi (lihat `NEXT_SESSION.md`, entri 23 Okt 2026). (`Trip.php`, `OpeningBalance.php:79–80`)
 
 Penanda kios lama (tidak ada kolom flag): **"punya delivery konsinyasi pending"** — diturunkan murni dari data (`doesntHave('settlement')`). (`OpeningBalance.php:18–20`)
 
@@ -1017,14 +1052,11 @@ Default kustom dipakai pada jalur pembuatan kios owner maupun operator tanpa mem
 
 ---
 
-### D2. Inkonsistensi Default `komisi_per_mika` di Settings vs UserResource
+### D2. ✅ SELESAI — Inkonsistensi Default `komisi_per_mika` di Settings vs UserResource
 
-- **Halaman Settings** (`settings.blade.php:44`) menampilkan helperText: `Komisi per mika yang terjual pada kios biasa. Default: Rp 500.`
-- **Model accessor** `getKomisiPerMikaValue()` fallback ke **Rp 1.000**, bukan Rp 500. (`User.php:304–306`)
-- **Migration** `2026_07_11_000001` mengubah DB default dari Rp 500 → Rp 1.000. (`2026_07_11_000001_change_komisi_per_mika_default_to_1000.php:22`)
-- **UserResource** (`UserResource.php:168`) helperText: `Komisi per mika untuk kios biasa. Default: Rp 500`
+Temuan awal: helperText di Settings (`settings.blade.php`) dan `UserResource` masih menyebut `Default: Rp 500`, padahal migration `2026_07_11_000001` sudah mengubah default DB ke Rp 1.000 dan accessor `getKomisiPerMikaValue()` fallback ke Rp 1.000 — teks tidak akurat sebagai panduan pengguna.
 
-Jadi helperText di dua form (Settings + UserResource) masih menyebut `Default: Rp 500` padahal migration sudah ubah default DB ke Rp 1.000 dan accessor fallback ke Rp 1.000. Teks ini **tidak akurat** sebagai panduan pengguna.
+**Status 23 Oktober 2026: diperbaiki** (bagian dari investigasi BRIEF 2 poin 1). Helper text sekarang: `Komisi per mika yang diletakkan operator (basis drop). Default: Rp 1.000.` (`settings.blade.php:71`, `UserResource.php:202`).
 
 ---
 
@@ -1034,13 +1066,11 @@ Kolom `users.hpp_per_mika` masih ada di DB dan model (fillable, cast, accessor d
 
 ---
 
-### D4. Komisi Kios Baru — Dua Tarif di DB, Satu Dipakai
+### D4. ✅ SELESAI — Komisi Kios Baru — Dua Tarif di DB, Satu Dipakai
 
-- DB memiliki dua kolom: `komisi_per_mika` (reguler) dan `komisi_kios_baru_per_mika` (kios baru).
-- Keduanya ada di Settings form.
-- Namun `Trip::getKomisiKiosBaruAttribute()` mengembalikan `0.0` — bonus kios baru sudah **dilebur** ke tarif reguler (`komisi_per_mika`). (`Trip.php:303–306`)
-- Artinya `komisi_kios_baru_per_mika` di DB dan Settings form **tidak dipakai** dalam kalkulasi komisi trip saat ini. Field ini memunculkan input di UI namun tidak berdampak ke perhitungan.
-- Satu-satunya tarif yang berdampak ke komisi: `komisi_per_mika`.
+Temuan awal: DB memiliki dua kolom (`komisi_per_mika` reguler dan `komisi_kios_baru_per_mika` kios baru), keduanya punya input di Settings form dan UserResource, tapi `Trip::getKomisiKiosBaruAttribute()` mengembalikan `0.0` — bonus kios baru sudah **dilebur** ke tarif reguler sejak sebelum temuan ini ditulis. Artinya `komisi_kios_baru_per_mika` memunculkan input di UI namun tidak berdampak ke perhitungan apa pun.
+
+**Status 23 Oktober 2026: diperbaiki** (investigasi BRIEF 2 poin 1). Field `komisi_kios_baru_per_mika` **dihapus dari UI** — form `/owner/settings` dan form + kolom tabel `UserResource` — supaya tidak lagi menyesatkan pengguna dengan input yang tak berpengaruh. Kolom DB sengaja **tidak di-drop** (audit data lama). Satu-satunya tarif yang berdampak ke komisi tetap `komisi_per_mika` (sekarang dibekukan per-trip via `komisi_per_mika_snapshot`, lihat **C7**). Lihat **C8** untuk detail lengkap.
 
 ---
 
@@ -1067,3 +1097,15 @@ Migration `2026_10_17_000004` menyebut `(menu Settings owner)` sebagai tujuan ko
 ### D8. Akun Sistem (operator.migrasi.*) — Disembunyikan Tanpa Keterangan
 
 Akun sistem dibuat otomatis oleh `OpeningBalance` (untuk migrasi saldo awal kios lama) menggunakan pola email `operator.migrasi.owner{N}@cemilanqontas.id`, dengan password acak dan `is_active = false`. Akun ini disembunyikan dari semua listing UI (`->excludeSystem()`) dan diblokir dari edit/hapus. Owner mungkin tidak menyadari keberadaannya. (`User.php:136–148`, `OpeningBalance.php:83–91`)
+
+**Catatan 23 Oktober 2026**: trip yang dibuat atas nama akun sistem ini (trip sentinel migrasi) sebelumnya ikut mencemari angka komisi/laporan — sudah diperbaiki, lihat **C14** dan **C7**. Keberadaan akun itu sendiri (tersembunyi tanpa keterangan di UI manapun) **masih** merupakan temuan terbuka — tidak diubah oleh perbaikan 23 Okt 2026.
+
+---
+
+### D9. Owner Tidak Bisa Atur Komisi Khusus Operator Sendiri (Hanya Super Admin)
+
+Komentar kode di `UserResource.php:138–140` menyatakan field `komisi_per_mika_khusus` (Section **"Komisi Khusus Operator"**, lihat **B8.2**) "diisi di sini (owner membuat/mengubah operatornya) ATAU form Edit super admin" — menyiratkan owner seharusnya bisa mengisinya saat membuat/mengubah operatornya sendiri.
+
+Namun `OperatorResource` (`app/Filament/Resources/OperatorResource.php`, sisi owner — **B8.1**) **tidak** menampilkan field ini sama sekali; form-nya hanya berisi Section "Informasi Akun" (nama/email/password) dan "Status" (`is_active`). Saat ini **hanya super admin** yang bisa mengatur `komisi_per_mika_khusus` untuk operator manapun, lewat `UserResource`. Owner yang ingin memberi tarif komisi khusus ke salah satu operatornya harus minta bantuan super admin — tidak bisa dilakukan sendiri dari panel owner.
+
+Dampak: gap fungsional kecil (bukan bug kalkulasi — field tetap bekerja benar begitu terisi), tapi komentar kode tidak sesuai kenyataan dan UI owner tidak lengkap dibanding yang diisyaratkan.

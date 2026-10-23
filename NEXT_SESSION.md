@@ -1,5 +1,119 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 18 Oktober 2026*
+*Sesi terakhir: 23 Oktober 2026*
+
+## 🔴 TIGA PERBAIKAN KECIL: hapus field mati, trip sentinel migrasi di komisi, dokumentasi (23 Okt 2026) — SELESAI & PUSHED
+**536 test hijau (dari 529 baseline, +7 test baru).** Regresi utuh dijalankan (bukan hanya file
+tersentuh). Delta 0 dibuktikan untuk owner Ismi (id=2) — lihat poin 2 di bawah.
+
+### 1) "Komisi Kios Baru per Mika" — field non-fungsional DIHAPUS dari UI, kolom DB DIPERTAHANKAN
+Investigasi: bonus kios-baru sudah dilebur ke tarif reguler sejak "KOMISI RIAN → BASIS DROP
+(OPSI Y)" (11 Juli 2026) — `Trip::getKomisiKiosBaruAttribute()` hardcode `return 0.0;` sejak itu.
+Field ini di form owner Settings & Filament super-admin UserResource TIDAK PERNAH berpengaruh ke
+satu angka pun sejak tanggal tersebut — murni jebakan UI ("isi 800, ternyata tak dipakai").
+- **Dihapus**: field form `resources/views/owner/settings.blade.php` (+ validasi di
+  `OwnerSettingsController@update`); field form & kolom tabel di
+  `app/Filament/Resources/UserResource.php` (super-admin).
+- **DIPERTAHANKAN (sengaja)**: kolom DB `users.komisi_kios_baru_per_mika` — tidak didrop, cuma
+  tak lagi ditulis/divalidasi dari form manapun. Reversible kalau suatu saat dihidupkan lagi.
+- **Dikoreksi**: helper text "Komisi Reguler per Mika" di kedua form salah ("Default: Rp 500")
+  → diperbaiki jadi "Default: Rp 1.000" (fallback asli `User::getKomisiPerMikaValue()`).
+  Helper text juga diperjelas: "Komisi per mika yang **diletakkan** operator (basis drop)" —
+  bukan "terjual" (istilah lama keliru sejak basis komisi pindah ke drop).
+  (Trip, laporan bulanan, Riwayat Trip, detail trip, export) tidak ada yang menampilkan
+  `komisi_kios_baru`/`komisiKiosBaru` sebagai angka terpisah — hanya kolom informasional
+  "mika kios baru"/`mika_kios_baru` (jumlah mika, BUKAN rupiah komisi) yang tetap ada, sesuai
+  keputusan brief ini. Tak ada edit lagi diperlukan di surface tersebut.
+- Test lama yang mengirim/mengecek field ini (`HppPerOwnerTest`, `SuperAdminUserGuardTest`)
+  diperbarui: assert field TIDAK ADA di form (bukan "hidden"), dan kirim field lama via POST
+  langsung (klien basi/replay) dibuktikan diam-diam diabaikan (test
+  `test_komisi_kios_baru_per_mika_ignored_even_if_submitted`).
+
+### 2) Trip sentinel migrasi (saldo awal kios lama) KELIRU ikut hitungan komisi — DIPERBAIKI
+**Temuan**: trip sentinel (dibuat `OpeningBalance::migrationTripFor()`, trip_date `2000-01-01`,
+operator = akun sistem `operator.migrasi.owner{id}@cemilanqontas.id`, dipakai untuk menampung
+delivery konsinyasi PENDING "saldo awal" kios lama sebelum masuk sistem) ikut dihitung
+`Trip::getMikaKomisiAttribute()` seperti trip biasa. Begitu kios lama itu akhirnya ditagih
+("Tagih + Titip Ulang"), delivery konsinyasi-nya tetap TERCATAT di trip sentinel ini (bukan di
+trip aktif yang menagih) — jadi `mika_komisi` trip sentinel jadi besar (seluruh mika saldo awal
+yang pernah dititipkan), dan karena trip sentinel tak punya kunjungan ter-settle (`untung_kotor`
+= 0), hasilnya `untung_bersih_owner` jadi **kerugian negatif besar yang tak nyata** pada baris
+2000-01-01 (dibuktikan: `mika_komisi=148, komisi_rian=74.000, untung_bersih_owner=-74.000` untuk
+skenario demo kios 148-mika, tarif 500/mika).
+Jalur kedua yang membuat trip sentinel: command `kios:saldo-awal` (SeedKioskSaldoAwal, migrasi
+massal dari spreadsheet) — bedanya trip_date di sini BISA jatuh di bulan nyata manapun (tanggal
+historis spreadsheet), bukan selalu 2000-01-01. Ini titik risiko utama (jika kebetulan jatuh di
+bulan laporan yang sedang dilihat owner) — sudah dicakup fix & test di bawah.
+
+**Fix (satu sumber kebenaran, sejalan `User::isSystemAccount()`/`scopeExcludeSystem()` yang
+sudah ada untuk kasus serupa di picker)**:
+- `Trip::isMigrationSentinel()` — true kalau `operator->isSystemAccount()` (email
+  `operator.migrasi.*`).
+- `Trip::scopeRealOperational()` — exclude trip sentinel dari query listing/agregat.
+- `Trip::getMikaKomisiAttribute()` — paksa `0.0` untuk sentinel (otomatis men-nolkan
+  `komisi_rian` & `untung_bersih_owner` lewat accessor turunan yang sudah ada).
+- `TripAggregator::for()` — lapis pertahanan kedua: paksa `mika_komisi`/`komisi`/`untung_bersih`
+  0 untuk id sentinel yang lolos filter caller (jaring pengaman, bukan jalur utama).
+- `->realOperational()` dipasang di SEMUA query Trip yang membangun listing/agregat:
+  `TripHistoryController::index()`, `MonthlyReportController::buildMonthlyData()` (query utama
+  + `$totalDiantarRow`, titik risiko "tanggal kebetulan jatuh di bulan nyata"),
+  `OwnerDashboardController` (untung bersih hari ini, komisi per operator, 5 trip terbaru,
+  `monthlySummary()`), `OwnerPerformanceTable` widget (admin).
+- `TripDeleteController::destroy()` — guard 403 kalau coba arsip trip sentinel (cegah bentrok
+  unique constraint `firstOrCreate()` di `migrationTripFor()` kalau sentinel pernah diarsip).
+- **TIDAK diubah**: `ReportsVerifyLockedNumbers` command (sengaja — murni mencerminkan accessor
+  Trip aktif, jadi otomatis ikut benar begitu accessor-nya benar; lihat poin "bukti delta 0").
+- Billing kios lama ("Tagih + Titip Ulang") **tidak disentuh sama sekali** — fix ini hanya
+  menonolkan ANGKA KOMISI/UNTUNG trip sentinel, bukan memfilter `Delivery`/`KioskVisit` yang
+  dipakai jalur penagihan (`doesntHave('settlement')`). Dibuktikan via test E2E yang sudah ada
+  (`JatahOpeningBalanceE2ETest`) tetap hijau tanpa diubah.
+
+**⚠️ Bukti delta 0 (gate keamanan brief) — owner Ismi (id=2), lokal**: seed skenario
+representatif (1 trip sentinel 2000-01-01 dgn saldo awal 148 mika + 1 trip nyata Juli 2026 +
+1 trip nyata Oktober 2026, masing-masing tagih+titip omset 120.000), lalu `git stash` khusus
+file-file fix di atas untuk reproduksi kode LAMA (buggy), simpan snapshot
+`reports:verify-locked-numbers 2 --save`, `git stash pop` (kode baru aktif), lalu
+`reports:verify-locked-numbers 2 --before=<snapshot lama>`:
+```
+===== DIFF ANGKA TERKUNCI — Ismi Qontas Lubis (id=2) =====
+| Lokasi        | Metrik              | Sebelum    | Sesudah | Delta      |
+| trip #5       | mika_komisi         | 148.00     | 0.00    | -148.00    |
+| trip #5       | komisi_rian         | 74,000.00  | 0.00    | -74,000.00 |
+| trip #5       | untung_bersih_owner | -74,000.00 | 0.00    | 74,000.00  |
+| bulan 2000-01 | mika_komisi         | 148.00     | 0.00    | -148.00    |
+| bulan 2000-01 | komisi_rian         | 74,000.00  | 0.00    | -74,000.00 |
+| bulan 2000-01 | untung_bersih_owner | -74,000.00 | 0.00    | 74,000.00  |
+```
+**Baris bulan `2026-07` dan `2026-10` TIDAK MUNCUL sama sekali di diff** — artinya delta 0 persis
+untuk trip nyata, sesuai syarat brief. Hanya baris `2000-01`/trip sentinel yang berubah (dari
+kerugian palsu ke nol, sesuai niat fix). Data demo sudah dibersihkan dari DB lokal setelah
+verifikasi (lihat `git log` tak ada jejak — ini murni runtime tinker, tak ada migration/seeder
+baru). Snapshot JSON before/after tersimpan lokal (gitignored) di
+`storage/app/locked-numbers/owner-2-{BEFORE,AFTER}-fix.json` untuk audit lanjutan kalau perlu.
+
+**Test baru**: `OpeningBalanceTest::test_sentinel_trip_contributes_zero_commission_and_loss`,
+`::test_real_trip_is_not_a_sentinel`; `TripAggregatorTest::test_sentinel_trip_commission_forced_zero_even_if_passed_in`;
+`TripHistoryTest::test_sentinel_trip_excluded_from_riwayat_list`,
+`::test_sentinel_trip_excluded_from_monthly_report_and_contributes_no_loss` (tanggal sentinel
+disengaja = hari ini, simulasi kasus risiko "tanggal kebetulan jatuh di bulan nyata" dari jalur
+`kios:saldo-awal`), `::test_sentinel_trip_cannot_be_archived`.
+
+### 3) `docs/UI_INVENTORY.md` — diperbarui mencerminkan perubahan sejak audit 20 Okt
+Ditambahkan: GPS accuracy UI (Akurasi ±X meter + lingkaran radius + peringatan >50m, A9), tombol
+"Lokasi belum diisi" (A6), widget super admin "Leaderboard Owner Hari Ini" (B8.3, baru),
+Section "Komisi Khusus Operator" + kolom Kios/Operator/komisi efektif di UserResource (B8.2,
+ditulis ulang), snapshot komisi per-trip beku `komisi_per_mika_snapshot` (C7, ditulis ulang).
+Settings diturunkan dari "9 pengaturan" ke "8 pengaturan" (B9, B9.2, B9.4). Temuan lama D2
+(helper "Default: Rp 500") dan D4 (dua tarif di DB) ditandai ✅ SELESAI merujuk ke poin 1 di atas;
+D8 (akun sistem tersembunyi) diberi catatan bahwa bagian komisinya (bukan keberadaan akunnya)
+sudah diperbaiki di poin 2. C8 ditulis ulang ("DILEBUR, dan DIHAPUS dari UI") dan C14 poin 4
+diperbarui mencerminkan fix poin 2. **Temuan baru D9**: owner TIDAK BISA mengatur komisi khusus
+operatornya sendiri lewat `OperatorResource` — field `komisi_per_mika_khusus` hanya ada di
+`UserResource` (super admin), padahal komentar kode menyiratkan owner seharusnya bisa. Belum
+diperbaiki di sesi ini (di luar scope tiga perbaikan kecil) — hanya didokumentasikan sebagai gap.
+
+### TEST
+536 PASS (baseline 529 + 2 OpeningBalanceTest + 1 TripAggregatorTest + 3 TripHistoryTest + 1
+HppPerOwnerTest baru = 536). Full suite, bukan hanya file tersentuh.
 
 ## 🔴 KUNJUNGAN DOBEL LINTAS OPERATOR — tampilan+badge, blokir tagih, dashboard (18 Okt 2026) — SELESAI & PUSHED
 **504 test hijau (dari 497 baseline).** 2 commit atomik (pakai `KioskCardInfoTest` dari sesi
