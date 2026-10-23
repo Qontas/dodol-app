@@ -204,11 +204,18 @@ class OwnerDashboardController extends Controller
             ->all();
 
         $chartLabels = [];
+        $chartFullDates = [];
         $chartData = [];
 
+        // Label singkat Indonesia "15 Okt" (BRIEF TUGAS 3, 23 Okt 2026) — APP_LOCALE
+        // proyek ini 'en' & tak ada Carbon::setLocale(), jadi format('d M') bawaan
+        // akan jadi "15 Oct" (Inggris). $bulanShortArr di atas SUDAH ada untuk
+        // kebutuhan sama (ringkasan periode) — dipakai ulang di sini, bukan
+        // ditulis dobel. chartFullDates (tanggal lengkap) untuk judul tooltip JS.
         for ($date = clone $startDate; $date <= $endDate; $date->addDay()) {
             $formattedDate = $date->format('Y-m-d');
-            $chartLabels[] = $date->format('d M');
+            $chartLabels[] = $date->day.' '.$bulanShortArr[$date->month];
+            $chartFullDates[] = $date->day.' '.$bulanIdArr[$date->month].' '.$date->year;
             $chartData[] = (int) ($dailyOmsetRaw[$formattedDate] ?? 0);
         }
 
@@ -362,6 +369,7 @@ class OwnerDashboardController extends Controller
             'belumBayarPerKios',
             'untungBersihHariIni',
             'chartLabels',
+            'chartFullDates',
             'chartData',
             'activeTrips',
             'completedTrips',

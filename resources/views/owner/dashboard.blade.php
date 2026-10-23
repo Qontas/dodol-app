@@ -478,12 +478,21 @@
             </div>
         </div>
 
-        {{-- Chart Omset --}}
+        {{-- Chart Omset — BRIEF TUGAS 3 (23 Okt 2026): bar chart, tinggi responsif
+             (260px HP / 320px laptop via Tailwind h-[...] — view ini sudah dikompilasi
+             lewat app.css/Vite, beda dari widget admin yang pakai CSS Filament
+             precompiled). Teks kosong kalau 30 hari nihil (lihat kondisi di bawah). --}}
         <div class="bg-white rounded-lg border border-slate-200 p-5 mt-6">
             <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Tren Omset (30 Hari Terakhir)</h2>
-            <div class="relative w-full" style="height: 320px;">
-                <canvas id="omsetChart"></canvas>
-            </div>
+            @if (collect($chartData)->every(fn ($v) => (float) $v === 0.0))
+                <div class="h-[260px] sm:h-[320px] flex items-center justify-center text-sm text-slate-500">
+                    Belum ada omset 30 hari terakhir.
+                </div>
+            @else
+                <div class="relative w-full h-[260px] sm:h-[320px]">
+                    <canvas id="omsetChart"></canvas>
+                </div>
+            @endif
         </div>
 
         <div class="mt-6">
@@ -497,29 +506,41 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         document.addEventListener("DOMContentLoaded", function () {
-            const ctx = document.getElementById('omsetChart').getContext('2d');
-            
-            const gradient = ctx.createLinearGradient(0, 0, 0, 300);
-            gradient.addColorStop(0, 'rgba(217, 119, 6, 0.3)');
-            gradient.addColorStop(1, 'rgba(217, 119, 6, 0)');
-            
+            const canvas = document.getElementById('omsetChart');
+            if (!canvas) {
+                return; // state kosong (lihat kondisi di atas) — tak ada canvas untuk dirender
+            }
+            const ctx = canvas.getContext('2d');
+
+            // BRIEF TUGAS 3 — angka Rp ringkas untuk sumbu Y ("15rb", "1,2jt").
+            function formatRpSingkat(value) {
+                value = Number(value) || 0;
+                const abs = Math.abs(value);
+                if (abs >= 1000000) {
+                    return (value / 1000000).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + 'jt';
+                }
+                if (abs >= 1000) {
+                    return (value / 1000).toLocaleString('id-ID', { maximumFractionDigits: 0 }) + 'rb';
+                }
+                return value.toLocaleString('id-ID');
+            }
+
+            // Angka Rp LENGKAP untuk tooltip ("Rp 14.400") — beda dari sumbu Y yang disingkat.
+            function formatRpLengkap(value) {
+                return 'Rp ' + Math.round(Number(value) || 0).toLocaleString('id-ID');
+            }
+
+            const fullDates = {!! json_encode($chartFullDates) !!};
+            const isMobile = window.matchMedia('(max-width: 639px)').matches;
+
             new Chart(ctx, {
-                type: 'line',
+                type: 'bar',
                 data: {
                     labels: {!! json_encode($chartLabels) !!},
                     datasets: [{
                         label: 'Omset',
                         data: {!! json_encode($chartData) !!},
-                        borderColor: '#d97706',
-                        backgroundColor: gradient,
-                        fill: true,
-                        tension: 0.3,
-                        borderWidth: 2,
-                        pointBackgroundColor: '#d97706',
-                        pointHoverRadius: 6,
-                        pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: '#d97706',
-                        pointHoverBorderWidth: 2,
+                        backgroundColor: '#d97706',
                     }]
                 },
                 options: {
@@ -527,19 +548,19 @@
                     maintainAspectRatio: false,
                     plugins: {
                         legend: {
-                            display: false
+                            // Satu series tetap ditampilkan (brief: "legend di atas,
+                            // kecil") — beda dari versi line chart lama yang disembunyikan.
+                            display: true,
+                            position: 'top',
+                            labels: { boxWidth: 10, font: { size: 11 } }
                         },
                         tooltip: {
                             callbacks: {
-                                label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) {
-                                        label += ': ';
-                                    }
-                                    if (context.parsed.y !== null) {
-                                        label += new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(context.parsed.y);
-                                    }
-                                    return label;
+                                title: function (items) {
+                                    return fullDates[items[0].dataIndex];
+                                },
+                                label: function (context) {
+                                    return context.dataset.label + ': ' + formatRpLengkap(context.parsed.y);
                                 }
                             }
                         }
@@ -548,8 +569,9 @@
                         y: {
                             beginAtZero: true,
                             ticks: {
-                                callback: function(value) {
-                                    return 'Rp ' + new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(value);
+                                maxTicksLimit: 4,
+                                callback: function (value) {
+                                    return formatRpSingkat(value);
                                 },
                                 font: {
                                     size: 10
@@ -561,6 +583,10 @@
                         },
                         x: {
                             ticks: {
+                                maxRotation: 0,
+                                minRotation: 0,
+                                autoSkip: true,
+                                maxTicksLimit: isMobile ? 6 : 10,
                                 font: {
                                     size: 10
                                 }

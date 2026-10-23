@@ -108,6 +108,67 @@ class DashboardTest extends TestCase
     }
 
     /**
+     * BRIEF TUGAS 3 (23 Okt 2026) — chart "Tren Omset" line → bar. Label
+     * format Indonesia tanpa rotasi ("15 Okt"), chartFullDates untuk tooltip,
+     * dan tipe bar dirender di view. Angka chartData tetap diuji di test di
+     * atas (TIDAK berubah) — test ini hanya mengunci bagian tampilan baru.
+     */
+    public function test_owner_dashboard_chart_label_format_and_bar_type(): void
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $cluster = Cluster::create(['name' => 'Cluster Owner', 'owner_id' => $owner->id]);
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $cluster->id]);
+        $variant = ProductVariant::factory()->create(['sale_price_per_pack' => 12000, 'is_active' => true]);
+        $delivery = Delivery::factory()->create(['kiosk_id' => $kiosk->id, 'product_variant_id' => $variant->id, 'qty_delivered' => 5]);
+
+        Settlement::factory()->create([
+            'delivery_id' => $delivery->id,
+            'visit_date' => today(),
+            'qty_sold' => 75,
+            'qty_returned_fresh' => 0,
+            'qty_returned_expired' => 0,
+            'amount_due' => 60000,
+            'amount_paid' => 60000,
+            'status' => 'paid',
+        ]);
+
+        $response = $this->actingAs($owner)->get('/owner/dashboard');
+        $response->assertOk();
+        $response->assertViewHas('chartFullDates');
+
+        $chartLabels = $response->viewData('chartLabels');
+        $chartFullDates = $response->viewData('chartFullDates');
+
+        $this->assertCount(30, $chartFullDates);
+
+        // Label singkat "15 Okt" (bukan locale Inggris "15 Oct").
+        $bulanShort = [1 => 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+        $this->assertSame(today()->day.' '.$bulanShort[today()->month], end($chartLabels));
+
+        // Tanggal lengkap untuk tooltip, bukan sekadar label singkat.
+        $bulanPanjang = [1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+        $this->assertSame(today()->day.' '.$bulanPanjang[today()->month].' '.today()->year, end($chartFullDates));
+
+        $response->assertSee("type: 'bar'", false);
+        $response->assertDontSee('Belum ada omset 30 hari terakhir');
+    }
+
+    /**
+     * BRIEF TUGAS 3 — state kosong kalau omset 30 hari nihil: teks tampil,
+     * canvas/chart TIDAK dirender (hemat, tak ada grafik batang rata nol).
+     */
+    public function test_owner_dashboard_chart_empty_state_when_no_omset(): void
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+
+        $response = $this->actingAs($owner)->get('/owner/dashboard');
+
+        $response->assertOk();
+        $response->assertSee('Belum ada omset 30 hari terakhir');
+        $response->assertDontSee('id="omsetChart"', false);
+    }
+
+    /**
      * Widget kerugian titipan: hanya settlement write-off (Stop Tanpa Tagih)
      * bulan berjalan milik owner ini yang dijumlahkan; mika x HPP per mika.
      */
