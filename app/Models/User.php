@@ -53,6 +53,7 @@ class User extends Authenticatable implements FilamentUser
         'default_fast_mover_threshold_days',
         'kios_baru_days',
         'default_qty_mika',
+        'app_fee_per_pack',
     ];
 
     /**
@@ -89,6 +90,7 @@ class User extends Authenticatable implements FilamentUser
             'default_fast_mover_threshold_days' => 'integer',
             'kios_baru_days' => 'integer',
             'default_qty_mika' => 'integer',
+            'app_fee_per_pack' => 'decimal:2',
         ];
     }
 
@@ -343,6 +345,32 @@ class User extends Authenticatable implements FilamentUser
         }
 
         return $this->getKomisiPerMikaValue();
+    }
+
+    /**
+     * TUGAS 4 (BRIEF 23 Okt 2026) — tarif fee aplikasi (Rp per kemasan/mika)
+     * yang OWNER ini bayar ke pemilik aplikasi. Null = 0 (default; owner lama/
+     * Ismi sendiri tetap Rp 0, tak perlu backfill). BEDA dari komisi Rian:
+     * field ini TIDAK punya varian "khusus operator" — satu tarif per owner.
+     */
+    public function getAppFeePerPackValue(): float
+    {
+        return (float) ($this->app_fee_per_pack ?? 0);
+    }
+
+    /**
+     * Tarif fee aplikasi EFEKTIF untuk user ini, dipakai StartTrip untuk
+     * mengisi trips.app_fee_per_pack_snapshot — simetris dengan
+     * getEffectiveKomisiPerMikaValue() supaya titik panggil StartTrip tidak
+     * perlu peduli role siapa yang login (operator ikut tarif owner-nya).
+     */
+    public function getEffectiveAppFeePerPackValue(): float
+    {
+        if ($this->isOperator()) {
+            return (float) ($this->owner?->getAppFeePerPackValue() ?? 0);
+        }
+
+        return $this->getAppFeePerPackValue();
     }
 
     /**

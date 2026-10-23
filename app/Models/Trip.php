@@ -34,6 +34,7 @@ class Trip extends Model
         'starting_cluster_id',
         'notes',
         'komisi_per_mika_snapshot',
+        'app_fee_per_pack_snapshot',
     ];
 
     protected $casts = [
@@ -41,6 +42,7 @@ class Trip extends Model
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
         'komisi_per_mika_snapshot' => 'decimal:2',
+        'app_fee_per_pack_snapshot' => 'decimal:2',
     ];
 
     /** Cache instance untuk salesSnapshotTotals() — lihat docblock method-nya. */

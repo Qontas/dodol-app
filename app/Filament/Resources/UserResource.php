@@ -216,6 +216,46 @@ class UserResource extends Resource
                         // isian ini TIDAK berpengaruh ke perhitungan apa pun. Kolom DB
                         // komisi_kios_baru_per_mika SENGAJA TIDAK didrop, lihat NEXT_SESSION.md.
                     ]),
+
+                // TUGAS 4b (BRIEF 23 Okt 2026) — fee yang owner partner BAYAR ke pemilik
+                // aplikasi (Rp per kemasan/mika diantar operatornya), BUKAN tarif bisnis
+                // owner sendiri → dipisah dari section "Tarif & Komisi" di atas sengaja.
+                //
+                // 🔴 KOREKSI (jangan diasumsikan lagi "owner tak pernah lewat sini"): owner
+                // JUSTRU BISA membuka resource admin UserResource ini juga — bukan cuma
+                // super admin (AdminPanelProvider authMiddleware: 'owner,super_admin') —
+                // untuk mengelola OPERATOR miliknya sendiri (getEloquentQuery() di bawah
+                // men-scope owner ke role='operator' AND owner_id=dirinya, paralel dengan
+                // OperatorResource di panel owner). Owner TIDAK PERNAH bisa melihat baris
+                // role='owner' (termasuk dirinya) lewat resource ini — jadi Section ini
+                // (visible kalau role==='owner') secara alami tak pernah tampil untuk owner
+                // yang login via UI normal. TAPI itu karena pilihan 'owner' tak pernah ada
+                // di opsi Select role untuk non-super-admin (lihat options() di atas) DAN
+                // CreateUser/EditUser memaksa role='operator'+owner_id=dirinya untuk
+                // auth()->user()->isOwner() — BUKAN karena resource/path ini tak terjangkau
+                // owner. Maka ->visible()/->dehydrated() isSuperAdmin() di FIELD di bawah
+                // adalah PENGAMAN UTAMA (bukan sekadar defense-in-depth di atas jalur yang
+                // sudah tak terjangkau) — satu-satunya yang menolak payload role='owner'
+                // yang ditempa manual (mis. Livewire set('data.role','owner')) walau UI
+                // normal tak pernah menawarkan jalan ke sana. Lihat
+                // AppFeeUserResourceFieldTest untuk pembuktian payload tempaan ini.
+                //
+                // ->dehydrated(false) untuk non-super-admin memastikan field ini TIDAK IKUT
+                // masuk ke array data yang dipakai $record->update() — bukan cuma
+                // disembunyikan visual, request tempaan pun tak berpengaruh.
+                Section::make('Fee Aplikasi')
+                    ->description('HANYA Super Admin — fee yang owner ini bayar ke pemilik aplikasi per kemasan (mika) yang diantar operatornya.')
+                    ->visible(fn (Get $get): bool => $get('role') === 'owner' && (auth()->user()?->isSuperAdmin() ?? false))
+                    ->schema([
+                        Forms\Components\TextInput::make('app_fee_per_pack')
+                            ->label('Fee Aplikasi per Kemasan (Rp)')
+                            ->numeric()
+                            ->nullable()
+                            ->minValue(0)
+                            ->helperText('Rp per mika yang diantar operator owner ini. Kosongkan = Rp 0 (mis. owner sendiri/Ismi).')
+                            ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false)
+                            ->dehydrated(fn (): bool => auth()->user()?->isSuperAdmin() ?? false),
+                    ]),
             ]);
     }
 

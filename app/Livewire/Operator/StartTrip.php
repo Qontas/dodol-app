@@ -359,6 +359,11 @@ class StartTrip extends Component
         // cuma berlaku untuk trip BARU berikutnya.
         $komisiPerMikaSnapshot = auth()->user()->getEffectiveKomisiPerMikaValue();
 
+        // TUGAS 4 (BRIEF 23 Okt 2026) — tarif fee aplikasi dibekukan sama persis
+        // seperti komisi di atas: ubah tarif owner SETELAH titik ini tidak pernah
+        // menyentuh trip ini lagi.
+        $appFeePerPackSnapshot = auth()->user()->getEffectiveAppFeePerPackValue();
+
         // Proteksi 2: Jaring Throwable Total (Menangkap segala jenis error database)
         try {
             $trip = Trip::create([
@@ -371,6 +376,7 @@ class StartTrip extends Component
                 'qty_carried_total' => $this->qtyCarried,
                 'notes' => $notes,
                 'komisi_per_mika_snapshot' => $komisiPerMikaSnapshot,
+                'app_fee_per_pack_snapshot' => $appFeePerPackSnapshot,
             ]);
         } catch (\Throwable $e) {
             // Segala macam ledakan duplikasi data diserap di sini.
