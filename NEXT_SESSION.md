@@ -37,7 +37,7 @@ dari baseline 588 di akhir sesi sebelumnya, +8 test baru). Commit atomik, lihat 
 Tidak ada akses/perintah ke DB production. Tidak ada migrasi. Full suite 596 PASS (bukan
 hanya file tersentuh) — zero regresi. Boleh push (tidak ada migrasi baru).
 
-## 🔴 BRIEF 5 TUGAS: fee aplikasi, kolom Owner, grafik bar, hitungan operator (23 Okt 2026) — SELESAI, **JANGAN PUSH** (ada migrasi baru — owner backup DB produksi dulu, baru push sendiri)
+## 🔴 BRIEF 5 TUGAS: fee aplikasi, kolom Owner, grafik bar, hitungan operator (23 Okt 2026) — SELESAI, **SUDAH DI-PUSH & DEPLOY 23 Okt 2026 sore**; migrasi jalan; tarif fee KualiStories = Rp 300 diisi via panel admin; backfill `trips:backfill-app-fee-snapshot --owner=5 --rate=300 --force` → 5 trip; `reports:verify-locked-numbers 2` di prod identik baseline (2000-01 = 0)
 Brief 5 tugas + Laporan Akhir. Semua commit atomik per tugas, tidak ada akses/perintah ke DB
 production di manapun di sesi ini. **588 test PASS** (naik dari baseline 544 di awal sesi ini —
 lihat rincian per tugas). Tidak ada satu angka uang lama (omset/HPP/komisi/untung bersih) yang
@@ -197,7 +197,9 @@ ada migrasi baru (`2026_10_23_000001`/`…000002`, kolom `app_fee_per_pack`/
 - Tidak ada hal di luar spesifikasi brief yang ambigu — satu-satunya isu yang ditemukan (bug di
   atas) punya jawaban benar yang tak ambigu dari rumus brief sendiri, jadi diperbaiki langsung
   (bukan diberhentikan untuk ditanya) sesuai instruksi "proceed" brief.
-- **JANGAN PUSH** — dipatuhi; tidak ada `git push` dijalankan di sesi ini.
+- **SUDAH DI-PUSH & DEPLOY** 23 Okt 2026 sore — migrasi jalan di prod, tarif fee KualiStories
+  Rp 300 diisi via panel admin, backfill `trips:backfill-app-fee-snapshot --owner=5 --rate=300
+  --force` → 5 trip, `reports:verify-locked-numbers 2` di prod identik baseline (2000-01 = 0).
 
 ## 🔴 D9: OWNER BISA ATUR KOMISI KHUSUS OPERATOR SENDIRI + rapikan prefix akun sistem (23 Okt 2026) — SELESAI & PUSHED
 **544 test hijau (dari 538 baseline — 538 itu sendiri = 536 + 2 dari Tugas 2 di sesi ini).**
