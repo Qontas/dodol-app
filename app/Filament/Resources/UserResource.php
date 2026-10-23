@@ -226,17 +226,15 @@ class UserResource extends Resource
     {
         return $table
             ->columns([
+                // Email DIGABUNG sebagai description di bawah nama (bukan kolom terpisah)
+                // supaya tabel tak terlalu lebar di HP. Search tetap mencakup email
+                // (->searchable(['name','email']) — satu kotak cari, dua kolom DB).
                 Tables\Columns\TextColumn::make('name')
                     ->label('Nama')
-                    ->searchable()
+                    ->searchable(['name', 'email'])
                     ->sortable()
-                    ->weight('bold'),
-
-                Tables\Columns\TextColumn::make('email')
-                    ->label('Email')
-                    ->searchable()
-                    ->copyable()
-                    ->placeholder('—'),
+                    ->weight('bold')
+                    ->description(fn (User $record): ?string => $record->email),
 
                 Tables\Columns\TextColumn::make('role')
                     ->label('Role')
@@ -253,6 +251,18 @@ class UserResource extends Resource
                         'operator' => 'Operator',
                         default => $state,
                     })
+                    ->sortable(),
+
+                // Owner dari baris OPERATOR — "—" untuk baris owner/super admin (tak
+                // relevan). Ditaruh dekat Nama/Role supaya kelihatan di HP tanpa scroll
+                // jauh. Relasi 'owner' SUDAH di-eager-load (getEloquentQuery di bawah) →
+                // NOL query tambahan per baris. Filament menangani searchable()/
+                // sortable() lintas relasi BelongsTo secara native (whereRelation /
+                // subquery orderBy) — tak butuh query closure manual.
+                Tables\Columns\TextColumn::make('owner.name')
+                    ->label('Owner')
+                    ->placeholder('—')
+                    ->searchable()
                     ->sortable(),
 
                 // BRIEF 2 Section 4 — ringkasan per OWNER di daftar user: jumlah kios
@@ -363,6 +373,16 @@ class UserResource extends Resource
                         'owner' => 'Owner',
                         'operator' => 'Operator',
                     ]),
+
+                // Hanya super admin yang perlu/boleh menyaring operator lintas owner —
+                // tampilan owner sendiri SUDAH otomatis discoped ke operatornya sendiri
+                // (getEloquentQuery di bawah), dan daftar nama owner di opsi filter ini
+                // TIDAK BOLEH bocor ke panel owner (tenant data leak).
+                SelectFilter::make('owner_id')
+                    ->label('Owner')
+                    ->options(fn (): array => User::query()->where('role', 'owner')->orderBy('name')->pluck('name', 'id')->all())
+                    ->searchable()
+                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false),
 
                 TernaryFilter::make('is_active')
                     ->label('Status')
