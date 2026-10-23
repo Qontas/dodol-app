@@ -146,4 +146,33 @@ class TripAggregatorTest extends TestCase
     {
         $this->assertSame([], TripAggregator::for([], 1000));
     }
+
+    /**
+     * JARING PENGAMAN — kalau trip id sentinel migrasi (operator akun sistem, pola email
+     * operator.migrasi.*) lolos ke TripAggregator::for() (seharusnya sudah difilter
+     * pemanggil lewat Trip::scopeRealOperational()), komisinya tetap dipaksa 0 di sini.
+     * Lihat investigasi BRIEF 2026-10-23 poin 2.
+     */
+    public function test_sentinel_trip_commission_forced_zero_even_if_passed_in(): void
+    {
+        $sistem = User::factory()->create([
+            'role' => 'operator', 'is_active' => false,
+            'owner_id' => $this->owner->id,
+            'email' => 'operator.migrasi.owner'.$this->owner->id.'@cemilanqontas.id',
+        ]);
+        $sentinel = Trip::factory()->create([
+            'owner_id' => $this->owner->id, 'operator_id' => $sistem->id,
+            'trip_date' => '2000-01-01', 'trip_number_of_day' => 1,
+            'started_at' => '2000-01-01', 'ended_at' => '2000-01-01',
+            'qty_carried_total' => 0,
+        ]);
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
+        $this->drop($sentinel, $kiosk, 148, 'consignment');
+
+        $batch = TripAggregator::for([$sentinel->id], 1000);
+
+        $this->assertSame(0.0, $batch[$sentinel->id]['mika_komisi']);
+        $this->assertSame(0.0, $batch[$sentinel->id]['komisi']);
+        $this->assertSame(0.0, $batch[$sentinel->id]['untung_bersih']);
+    }
 }

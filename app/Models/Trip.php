@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToOwner;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -58,6 +59,39 @@ class Trip extends Model
     public function deliveries(): HasMany
     {
         return $this->hasMany(Delivery::class);
+    }
+
+    /**
+     * Trip MIGRASI SENTINEL (saldo awal kedai lama) — dibuat OpeningBalance::
+     * migrationTripFor() (trip_date 2000-01-01) ATAU command kios:saldo-awal /
+     * SeedKioskSaldoAwal (trip_date = tanggal spreadsheet asli, BUKAN 2000-01-01,
+     * ended_reason teks berbeda). Trip TEKNIS buat nyimpen titipan kedai lama,
+     * BUKAN perjalanan nyata — tak boleh menyumbang komisi/untung/kerugian, tak
+     * boleh tampil di Riwayat Trip / agregat laporan mana pun.
+     *
+     * SATU SUMBER KEBENARAN: operator trip ini akun sistem (User::isSystemAccount(),
+     * pola email operator.migrasi.*) — BUKAN trip_date/ended_reason, karena dua jalur
+     * pembuatan di atas pakai trip_date & ended_reason yang BERBEDA (operator-nya
+     * konsisten di keduanya, lihat investigasi BRIEF 2026-10-23 poin 2). Titipan
+     * (delivery pending) yang dibuat trip ini TETAP berlaku & bisa ditagih normal —
+     * method ini TIDAK menyentuh deliveries/kiosk_visits, cuma visibilitas trip itu
+     * sendiri di komisi/listing/agregat.
+     */
+    public function isMigrationSentinel(): bool
+    {
+        return (bool) $this->operator?->isSystemAccount();
+    }
+
+    /**
+     * Scope: trip OPERASIONAL NYATA saja, exclude sentinel migrasi (lihat
+     * isMigrationSentinel()). Pakai di SEMUA query listing/agregat trip yang
+     * dibaca manusia atau dipakai basis laporan (Riwayat Trip, dashboard, laporan
+     * bulanan, leaderboard admin). JANGAN dipakai pada query delivery/pending-
+     * titipan (itu harus tetap jalan untuk kedai lama).
+     */
+    public function scopeRealOperational(Builder $query): Builder
+    {
+        return $query->whereDoesntHave('operator', fn ($q) => $q->where('email', 'like', 'operator.migrasi.%'));
     }
 
     /**
@@ -288,9 +322,17 @@ class Trip extends Model
      *
      * SENGAJA TERPISAH dari mika_terjual (basis LAKU, dipakai omset/HPP/untung
      * yang sudah benar & lulus test) — JANGAN dicampur.
+     *
+     * Trip SENTINEL migrasi (isMigrationSentinel()) dipaksa 0 — titipan saldo awal
+     * kedai lama bukan "mika diletakkan operator", tak boleh menghasilkan komisi
+     * atau untung_bersih negatif (lihat investigasi BRIEF 2026-10-23 poin 2).
      */
     public function getMikaKomisiAttribute(): float
     {
+        if ($this->isMigrationSentinel()) {
+            return 0.0;
+        }
+
         return (float) $this->getTotalDropReal();
     }
 

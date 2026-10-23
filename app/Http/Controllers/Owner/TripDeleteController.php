@@ -16,6 +16,14 @@ class TripDeleteController extends Controller
             403
         );
 
+        // Trip sentinel migrasi (saldo awal kedai lama) tak boleh diarsip: trip ini
+        // disembunyikan dari Riwayat Trip (scopeRealOperational), bukan via arsip, dan
+        // kolom unik (owner_id, ended_reason, operator_id) dibaca OpeningBalance::
+        // migrationTripFor() lewat firstOrCreate() — kalau diarsip, SoftDeletes global
+        // scope membuatnya tak ketemu lagi → firstOrCreate mencoba INSERT baris baru
+        // dengan kombinasi sama → 500 (unique constraint). Lihat Trip::isMigrationSentinel().
+        abort_if($trip->isMigrationSentinel(), 403, 'Trip migrasi saldo awal tidak bisa diarsip.');
+
         // ARSIP (soft delete), BUKAN hapus permanen. Trait SoftDeletes pada model Trip
         // membuat delete() hanya mengisi kolom deleted_at → trip disembunyikan dari
         // dashboard & laporan/agregat, TAPI TIDAK ada DB DELETE sehingga FK cascade

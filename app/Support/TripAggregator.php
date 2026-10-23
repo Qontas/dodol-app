@@ -131,10 +131,24 @@ class TripAggregator
             ->whereIn('id', $tripIds)
             ->pluck('komisi_per_mika_snapshot', 'id');
 
+        // (8) Trip SENTINEL migrasi (lihat Trip::isMigrationSentinel()) — JARING PENGAMAN:
+        //     pemanggil (dashboard/laporan/Riwayat Trip) seharusnya sudah memfilter trip
+        //     id-nya lewat Trip::scopeRealOperational() SEBELUM sampai ke sini, tapi kalau
+        //     ada id sentinel yang lolos, komisinya tetap dipaksa 0 di sini juga — satu
+        //     query batch (bukan N+1), join trips→users cek pola email operator sistem.
+        $sentinelTripIds = array_flip(
+            DB::table('trips')
+                ->join('users', 'users.id', '=', 'trips.operator_id')
+                ->whereIn('trips.id', $tripIds)
+                ->where('users.email', 'like', 'operator.migrasi.%')
+                ->pluck('trips.id')
+                ->all()
+        );
+
         $out = [];
         foreach ($tripIds as $id) {
             $mikaDiantar = (int) ($deliveryAgg[$id]->mika_diantar ?? 0);
-            $dropKomisi = (float) ($deliveryAgg[$id]->drop_komisi ?? 0);
+            $dropKomisi = isset($sentinelTripIds[$id]) ? 0.0 : (float) ($deliveryAgg[$id]->drop_komisi ?? 0);
             $fallbackHpp = (float) ($fallbackHppByTrip[$id] ?? 9500);
 
             // Akumulasi PER-BARIS delivery snapshot (units_per_pack_snapshot/unit_price/

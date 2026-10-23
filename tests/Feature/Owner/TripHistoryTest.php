@@ -323,6 +323,61 @@ class TripHistoryTest extends TestCase
         $this->assertContains($response->status(), [403, 404]);
     }
 
+    /**
+     * REGRESI — investigasi BRIEF 2026-10-23 poin 2: trip sentinel migrasi (saldo awal
+     * kedai lama, operator akun sistem operator.migrasi.*) dikecualikan dari Riwayat Trip
+     * & agregat laporan bulanan, dan tak bisa diarsip (cegah bentrok firstOrCreate).
+     */
+    private function sentinelTrip(string $date = '2000-01-01'): Trip
+    {
+        $sistem = User::factory()->create([
+            'role' => 'operator', 'is_active' => false,
+            'owner_id' => $this->owner->id,
+            'email' => 'operator.migrasi.owner'.$this->owner->id.'@cemilanqontas.id',
+        ]);
+
+        return Trip::factory()->create([
+            'owner_id' => $this->owner->id, 'operator_id' => $sistem->id,
+            'trip_date' => $date, 'trip_number_of_day' => 1,
+            'started_at' => $date, 'ended_at' => $date,
+            'qty_carried_total' => 0,
+        ]);
+    }
+
+    public function test_sentinel_trip_excluded_from_riwayat_list(): void
+    {
+        $sentinel = $this->sentinelTrip();
+        $this->drop($sentinel, Kiosk::factory()->create(['cluster_id' => $this->cluster->id]), 148, 'consignment');
+        $real = $this->endedTrip(today(), 1);
+
+        $trips = $this->actingAs($this->owner)->get('/owner/trips')->viewData('trips');
+
+        $this->assertSame(1, $trips->total());
+        $this->assertSame($real->id, $trips->first()->id);
+    }
+
+    public function test_sentinel_trip_excluded_from_monthly_report_and_contributes_no_loss(): void
+    {
+        $sentinel = $this->sentinelTrip(today()->format('Y-m-d')); // seandainya jatuh di bulan ini
+        $this->drop($sentinel, Kiosk::factory()->create(['cluster_id' => $this->cluster->id]), 148, 'consignment');
+
+        $data = MonthlyReportController::buildMonthlyData(today()->format('Y-m'), $this->owner->id);
+
+        $this->assertFalse($data['trips']->pluck('id')->contains($sentinel->id), 'Trip sentinel tak boleh masuk daftar trip laporan bulanan.');
+        $this->assertEqualsWithDelta(0, $data['totals']['komisi'], 0.01);
+        $this->assertEqualsWithDelta(0, $data['totals']['untung_bersih'], 0.01);
+    }
+
+    public function test_sentinel_trip_cannot_be_archived(): void
+    {
+        $sentinel = $this->sentinelTrip();
+
+        $response = $this->actingAs($this->owner)->delete(route('owner.trips.destroy', $sentinel));
+
+        $response->assertForbidden();
+        $this->assertFalse(Trip::withTrashed()->find($sentinel->id)->trashed());
+    }
+
     public function test_non_owner_cannot_restore(): void
     {
         $trip = $this->endedTrip(today(), 1);

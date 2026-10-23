@@ -92,4 +92,49 @@ class OpeningBalanceTest extends TestCase
         $this->assertNotNull($delivery, 'OpeningBalance harus sukses walau ada trip nyata kemarin (tak 500).');
         $this->assertNotNull(Delivery::where('kiosk_id', $kiosk->id)->doesntHave('settlement')->first());
     }
+
+    /**
+     * REGRESI — investigasi BRIEF 2026-10-23 poin 2: trip sentinel migrasi (saldo awal
+     * kedai lama) dulu ikut MENGHASILKAN komisi/kerugian (mika_komisi = qty titipan,
+     * komisi_rian = qty × tarif, untung_bersih negatif) karena getTotalDropReal() sumnya
+     * tak peduli apakah trip ini sentinel atau operasional. Sekarang Trip::
+     * isMigrationSentinel() (via operator User::isSystemAccount()) memaksa 0.
+     */
+    public function test_sentinel_trip_contributes_zero_commission_and_loss(): void
+    {
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'default_qty_mika' => 148]);
+
+        $delivery = OpeningBalance::create($kiosk, 148);
+        $this->assertNotNull($delivery);
+
+        $sentinel = Trip::find($delivery->trip_id);
+        $this->assertNotNull($sentinel);
+
+        $this->assertTrue($sentinel->isMigrationSentinel(), 'Trip migrasi harus terdeteksi sebagai sentinel.');
+        $this->assertSame(0.0, $sentinel->mika_komisi, 'mika_komisi sentinel harus 0, bukan qty titipan.');
+        $this->assertSame(0.0, $sentinel->komisi_rian, 'komisi_rian sentinel harus 0.');
+        $this->assertSame(0.0, $sentinel->untung_bersih_owner, 'untung_bersih_owner sentinel harus 0, bukan negatif.');
+
+        // Titipannya TETAP delivery pending biasa — masih bisa ditagih (Tagih + Titip Ulang).
+        $this->assertNotNull(Delivery::where('kiosk_id', $kiosk->id)->doesntHave('settlement')->first());
+    }
+
+    /** Trip OPERASIONAL biasa (operator manusia) bukan sentinel — tak boleh ikut ter-nolkan. */
+    public function test_real_trip_is_not_a_sentinel(): void
+    {
+        $operator = User::factory()->create([
+            'role' => 'operator', 'owner_id' => $this->owner->id, 'is_active' => true,
+        ]);
+        $trip = Trip::create([
+            'owner_id' => $this->owner->id,
+            'operator_id' => $operator->id,
+            'trip_date' => today()->toDateString(),
+            'trip_number_of_day' => 1,
+            'started_at' => today(),
+            'ended_at' => today(),
+            'qty_carried_total' => 10,
+        ]);
+
+        $this->assertFalse($trip->isMigrationSentinel());
+    }
 }

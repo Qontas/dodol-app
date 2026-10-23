@@ -30,6 +30,10 @@ class MonthlyReportController extends Controller
             ->whereNotNull('ended_at')
             ->whereYear('trip_date', $year)
             ->whereMonth('trip_date', $mon)
+            // Trip sentinel migrasi (saldo awal kedai lama) dikecualikan — bisa jatuh
+            // di bulan laporan NYATA kalau dibuat via kios:saldo-awal (trip_date =
+            // tanggal spreadsheet, bukan 2000-01-01). Lihat Trip::scopeRealOperational().
+            ->realOperational()
             ->with(['operator', 'startingCluster', 'visits', 'deliveries'])
             ->orderBy('trip_date')
             ->get();
@@ -124,7 +128,8 @@ class MonthlyReportController extends Controller
         $totalDiantarRow = \App\Models\Delivery::whereHas('trip', function ($q) use ($ownerId, $year, $mon) {
             $q->where('owner_id', $ownerId)
               ->whereYear('trip_date', $year)
-              ->whereMonth('trip_date', $mon);
+              ->whereMonth('trip_date', $mon)
+              ->realOperational();
         })->selectRaw('
                 COALESCE(SUM(qty_delivered), 0) as mika,
                 COALESCE(SUM(qty_delivered * COALESCE(units_per_pack_snapshot, 15)), 0) as biji

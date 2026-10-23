@@ -119,6 +119,7 @@ class OwnerDashboardController extends Controller
         $untungBersihHariIni = Trip::where('owner_id', $ownerId)
             ->where('trip_date', today()->toDateString())
             ->whereNotNull('ended_at')
+            ->realOperational()
             ->get()
             ->sum('untung_bersih_owner');
 
@@ -159,6 +160,9 @@ class OwnerDashboardController extends Controller
             ->whereNotNull('trips.ended_at')
             ->whereYear('trips.trip_date', $now->year)
             ->whereMonth('trips.trip_date', $now->month)
+            // Trip sentinel migrasi dikecualikan (lihat Trip::scopeRealOperational()) —
+            // users sudah di-join di atas, jadi cukup cek pola email di sini.
+            ->where(fn ($q) => $q->whereNull('users.email')->orWhere('users.email', 'not like', 'operator.migrasi.%'))
             ->where('deliveries.delivery_type', '!=', 'bs_redistribution')
             ->groupBy('trips.operator_id', 'users.name')
             ->selectRaw('trips.operator_id, users.name as operator_name, COALESCE(SUM(deliveries.qty_delivered), 0) as drop_mika')
@@ -200,9 +204,12 @@ class OwnerDashboardController extends Controller
             ->with(['operator', 'startingCluster', 'visits.kiosk', 'deliveries'])
             ->get();
 
-        // Completed trips for ended trip reports
+        // Completed trips for ended trip reports — trip sentinel migrasi dikecualikan
+        // (lihat Trip::scopeRealOperational()), supaya tak muncul di widget "5 trip
+        // terbaru" saat owner baru punya sedikit trip operasional.
         $completedTrips = Trip::whereNotNull('ended_at')
             ->where('owner_id', $ownerId)
+            ->realOperational()
             ->with(['operator', 'startingCluster', 'visits.kiosk', 'deliveries'])
             ->latest('ended_at')
             ->take(5)
@@ -418,7 +425,8 @@ class OwnerDashboardController extends Controller
         $dropMika = (float) Delivery::whereHas('trip', fn ($q) => $q->where('owner_id', $ownerId)
                 ->whereNotNull('ended_at')
                 ->whereYear('trip_date', $year)
-                ->whereMonth('trip_date', $mon))
+                ->whereMonth('trip_date', $mon)
+                ->realOperational())
             ->where('delivery_type', '!=', 'bs_redistribution')
             ->sum('qty_delivered');
 

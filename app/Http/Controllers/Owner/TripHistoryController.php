@@ -31,6 +31,9 @@ class TripHistoryController extends Controller
         $query = Trip::query()
             ->where('owner_id', $ownerId)
             ->whereNotNull('ended_at')
+            // Trip sentinel migrasi (saldo awal kedai lama) BUKAN perjalanan nyata —
+            // dikecualikan dari Riwayat Trip (lihat Trip::scopeRealOperational()).
+            ->realOperational()
             ->with('operator');
 
         // Status arsip (SoftDeletes). aktif = default (global scope buang trashed).

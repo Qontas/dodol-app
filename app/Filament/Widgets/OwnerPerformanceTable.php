@@ -121,9 +121,13 @@ class OwnerPerformanceTable extends BaseWidget
         // SATU query: semua trip BULAN INI lintas SEMUA owner ("hari ini" adalah
         // subset-nya, difilter di PHP — hemat satu query lagi karena hari ini
         // selalu ada di dalam rentang bulan ini).
+        // Trip sentinel migrasi dikecualikan (lihat Trip::scopeRealOperational()) —
+        // bisa jatuh di bulan ini kalau dibuat via kios:saldo-awal (trip_date =
+        // tanggal spreadsheet, bukan 2000-01-01).
         $monthTrips = Trip::whereIn('owner_id', $owners->pluck('id'))
             ->whereMonth('trip_date', now()->month)
             ->whereYear('trip_date', now()->year)
+            ->realOperational()
             ->get(['id', 'owner_id', 'trip_date']);
 
         $allTripIds = $monthTrips->pluck('id')->all();
