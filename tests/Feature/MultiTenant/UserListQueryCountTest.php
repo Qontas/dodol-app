@@ -129,10 +129,12 @@ class UserListQueryCountTest extends TestCase
         // memakai tanggal bawaan factory yang sama.
         // Nama EKSPLISIT & berurutan — alasan sama dengan test di atas: tabel diurut
         // `name asc` + halaman 1 hanya 10 baris, jadi nama random bikin komposisi
-        // halaman (dan query count) berubah tiap run. Saat ini kolom ManageOperators
-        // tak memuat relasi per baris sehingga hitungannya kebetulan stabil; nama
-        // eksplisit menjaga agar penambahan kolom relasi nanti muncul sebagai MERAH
-        // yang jujur, bukan merah acak.
+        // halaman (dan query count) berubah tiap run. Sejak BRIEF D9 (23 Okt 2026)
+        // kolom "Komisi /Mika" ManageOperators MEMUAT relasi `owner` per baris
+        // (getEffectiveKomisiPerMikaValue() → $record->owner?->…) — dibuat KONSTAN
+        // lewat ->with('owner') di OperatorResource::getEloquentQuery(), bukan lagi
+        // "kebetulan stabil" seperti sebelumnya. Nama eksplisit tetap dipertahankan
+        // agar regresi (eager load terlepas) muncul sebagai MERAH yang jujur.
         $ke = 0;
         $buatOperator = function () use ($owner, &$ke) {
             $ke++;

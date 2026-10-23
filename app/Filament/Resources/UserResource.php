@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Concerns\HasKomisiKhususOperatorField;
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -19,6 +20,8 @@ use Filament\Tables\Table;
 
 class UserResource extends Resource
 {
+    use HasKomisiKhususOperatorField;
+
     protected static ?string $model = User::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
@@ -135,9 +138,14 @@ class UserResource extends Resource
                     ]),
 
                 // BRIEF 2 Section 3 — tarif komisi KHUSUS untuk SATU operator, nullable.
-                // Kosong = ikut tarif default usaha (owner-nya). Diisi di sini (owner
-                // membuat/mengubah operatornya) ATAU form Edit super admin (owner_id
-                // dipilih manual, lihat helper text di bawah yang baca owner TERSEBUT).
+                // Kosong = ikut tarif default usaha (owner-nya). Diisi DI SINI (owner
+                // membuat/mengubah operatornya LEWAT Users, ATAU form Edit super admin
+                // dengan owner_id dipilih manual, lihat helper text di bawah yang baca
+                // owner TERSEBUT) — DAN, sejak 23 Okt 2026 (BRIEF D9), bisa JUGA diisi
+                // owner lewat panel operatornya sendiri (OperatorResource, menu
+                // "Operator" di /owner-panel) — dua form berbeda, SATU kolom DB yang
+                // sama (komisi_per_mika_khusus), rumus tarif default dibagi lewat trait
+                // HasKomisiKhususOperatorField supaya tak dobel.
                 //
                 // Hanya SATU field (bukan "reguler"+"kios baru") — komisi sudah flat
                 // satu tarif sejak sebelum BRIEF 2 (lihat Trip::getKomisiKiosBaruAttribute
@@ -211,25 +219,8 @@ class UserResource extends Resource
             ]);
     }
 
-    /**
-     * Tarif default usaha (owner) yang berlaku untuk operator yang SEDANG diisi di form —
-     * owner viewer: selalu dirinya sendiri (operator yang dibuat/diedit owner SELALU
-     * terikat ke owner itu, lihat CreateUser/EditUser mutate*BeforeSave). Super admin:
-     * owner yang DIPILIH di field 'owner_id' (bisa berubah sebelum disimpan, makanya
-     * field itu ->live()). Fallback 1000 kalau owner belum dipilih (form create kosong).
-     */
-    private static function resolveOwnerDefaultKomisiRate(Get $get): float
-    {
-        if (auth()->user()?->isOwner()) {
-            return auth()->user()->getKomisiPerMikaValue();
-        }
-
-        $ownerId = $get('owner_id');
-
-        return $ownerId
-            ? (float) (User::find($ownerId)?->getKomisiPerMikaValue() ?? 1000)
-            : 1000.0;
-    }
+    // resolveOwnerDefaultKomisiRate() dipindah ke trait HasKomisiKhususOperatorField
+    // (23 Okt 2026, BRIEF D9) — dipakai bersama OperatorResource, lihat trait-nya.
 
     public static function table(Table $table): Table
     {
