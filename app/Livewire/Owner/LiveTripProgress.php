@@ -137,7 +137,14 @@ class LiveTripProgress extends Component
             // Komisi berjalan (Opsi Y — basis DROP): tarif x mika yang DILETAKKAN,
             // exclude BS daur-ulang. Sama dengan accessor Trip::komisi_rian /
             // getTotalDropReal(), dihitung dari deliveries yang sudah di-eager-load.
-            $komisiPerMika = (float) ($trip->owner?->komisi_per_mika ?? 1000);
+            //
+            // 🔴 DIPERBAIKI 24 Okt 2026 (BRIEF "Satu Sumber Kebenaran Komisi", fix C) —
+            // dulu $trip->owner?->komisi_per_mika (tarif owner LIVE), mengabaikan
+            // trips.komisi_per_mika_snapshot DAN tarif khusus operator — trip aktif milik
+            // operator bertarif khusus salah, dan angka ikut melompat kalau owner ganti
+            // tarif SAAT trip masih berjalan. Baris di bawah ini IDENTIK (bukan hasil
+            // panggilan, Trip::getKomisiPerMika() private) Trip::getKomisiPerMika().
+            $komisiPerMika = (float) ($trip->komisi_per_mika_snapshot ?? $trip->owner?->komisi_per_mika ?? 1000);
             $mikaKomisi = (float) $trip->deliveries
                 ->where('delivery_type', '!=', 'bs_redistribution')
                 ->sum('qty_delivered');

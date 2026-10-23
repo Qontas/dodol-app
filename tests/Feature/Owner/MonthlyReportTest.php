@@ -104,9 +104,14 @@ class MonthlyReportTest extends TestCase
             'qty_delivered' => 5,
         ]);
 
-        // Commission for Owner A in June 2026
-        // cash_collected_reported = 100000, margin_rate_assumed = 0.25, commission_rate = 0.2
-        // commission_amount = 100000 * 0.25 * 0.2 = 5000.00
+        // Commission for Owner A in June 2026 — SENGAJA dibuat dengan angka yang TAK
+        // NYAMBUNG ke komisi trip asli (commission_amount = 100000*0.25*0.2 = 5000,
+        // vs komisi trip sebenarnya 20 mika x Rp 1.000 = 20.000). Ini justru buktikan
+        // fix E (BRIEF "Satu Sumber Kebenaran Komisi" 24 Okt 2026): kalau
+        // 'rekap_komisi' masih baca tabel `commissions`, test ini akan lolos dengan
+        // 5000 yang SALAH. Baris Commission::create() ini SENGAJA dipertahankan
+        // (bukan dihapus) sebagai jaring pengaman — tabel `commissions` tetap ditulis
+        // seperti biasa, test ini pastikan tampilan TAK lagi membacanya.
         Commission::create([
             'trip_id' => $tripA->id,
             'operator_id' => $operatorA->id,
@@ -177,12 +182,14 @@ class MonthlyReportTest extends TestCase
         // Modal Mika: 20 * 300 = 6000
         $response->assertViewHas('modal_mika', 6000);
 
-        // Rekap Komisi: 5000
-        $response->assertViewHas('rekap_komisi', 5000);
+        // Rekap Komisi: 20 mika x Rp 1.000 (tarif default owner A, TripAggregator) =
+        // 20.000 — BUKAN 5.000 dari Commission::commission_amount (lihat komentar di
+        // atas). Sama dengan 'komisi' di $totals / tabel "Rekap Per Trip" halaman ini.
+        $response->assertViewHas('rekap_komisi', 20000);
 
         // Check if values are rendered in the HTML view
         $response->assertSee('20 mika');
         $response->assertSee('Rp 6.000');
-        $response->assertSee('Rp 5.000');
+        $response->assertSee('Rp 20.000');
     }
 }

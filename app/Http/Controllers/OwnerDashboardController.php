@@ -10,7 +10,6 @@ use App\Models\ProcurementBatch;
 use App\Models\Settlement;
 use App\Models\Supplier;
 use App\Models\Trip;
-use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
@@ -138,18 +137,44 @@ class OwnerDashboardController extends Controller
             ->sum('untung_bersih_owner');
 
         // Widget — RINGKASAN BULAN INI: omset, untung bersih, komisi operator untuk
-        // bulan berjalan (1 s/d hari ini). Semua agregat di level DB (SUM), tanpa loop
-        // PHP per-trip. Rumus & scope IDENTIK totals MonthlyReportController (trip ended
-        // saja) supaya angka tak pernah beda dua versi. Perbandingan vs bulan lalu murah
-        // (agregat yang sama, bulan sebelumnya). Lihat monthlySummary().
-        $hppPerMikaVal = $user->getHppPerMikaValue();
+        // bulan berjalan (1 s/d hari ini). Rumus & scope IDENTIK totals
+        // MonthlyReportController (trip ended, realOperational, tidak diarsip) supaya
+        // angka tak pernah beda dua versi. Perbandingan vs bulan lalu murah (agregat
+        // yang sama, bulan sebelumnya). Lihat monthlySummary().
+        //
+        // 🔴 DIPERBAIKI 24 Okt 2026 (BRIEF "Satu Sumber Kebenaran Komisi", fix A) —
+        // dulu komisi bulan ini & bulan lalu dihitung SUM(qty_delivered) × tarif owner
+        // LIVE ($komisiPerMikaVal) di monthlySummary() lama: begitu owner ganti tarif
+        // hari ini, angka BULAN LALU pun ikut berubah (trip lama dihitung ulang pakai
+        // tarif baru) — padahal trip itu sudah membeku tarifnya sendiri sejak dimulai
+        // (trips.komisi_per_mika_snapshot, lihat Trip::getKomisiPerMika()). Sekarang
+        // monthlySummary() delegasi ke TripAggregator::for() yang membaca snapshot
+        // PER TRIP (fallback tarif live HANYA untuk trip pra-snapshot yang belum
+        // di-backfill) — identik pola yang sudah benar di MonthlyReportController/
+        // TripHistoryController/OwnerPerformanceTable. $komisiPerMikaVal di bawah ini
+        // kini HANYA dipakai sebagai fallback tersebut, bukan lagi tarif yang menentukan
+        // SELURUH komisi bulan ini/lalu.
         $komisiPerMikaVal = $user->getKomisiPerMikaValue();
 
         $now = today();
         $lastMonth = $now->copy()->subMonthNoOverflow();
 
-        $ringkasanBulanIni = $this->monthlySummary($ownerId, $now->year, $now->month, $hppPerMikaVal, $komisiPerMikaVal);
-        $ringkasanBulanLalu = $this->monthlySummary($ownerId, $lastMonth->year, $lastMonth->month, $hppPerMikaVal, $komisiPerMikaVal);
+        // Trip + TripAggregator bulan ini dihitung SEKALI di sini — dipakai utk
+        // ringkasan total ($ringkasanBulanIni) DAN breakdown per operator
+        // ($komisiPerOperator) di bawah, supaya tak menembak TripAggregator dua kali
+        // untuk trip id yang sama persis.
+        $tripsBulanIni = Trip::where('owner_id', $ownerId)
+            ->whereNotNull('ended_at')
+            ->whereYear('trip_date', $now->year)
+            ->whereMonth('trip_date', $now->month)
+            ->realOperational()
+            ->with('operator')
+            ->get(['id', 'operator_id']);
+
+        $aggBulanIni = \App\Support\TripAggregator::for($tripsBulanIni->pluck('id')->all(), $komisiPerMikaVal);
+
+        $ringkasanBulanIni = $this->sumAgg($aggBulanIni);
+        $ringkasanBulanLalu = $this->monthlySummary($ownerId, $lastMonth->year, $lastMonth->month, $komisiPerMikaVal);
 
         // Delta % vs bulan lalu (null kalau bulan lalu 0 → tak ada basis banding).
         $pctDelta = function ($now, $prev) {
@@ -164,27 +189,29 @@ class OwnerDashboardController extends Controller
             'komisi' => $pctDelta($ringkasanBulanIni['komisi'], $ringkasanBulanLalu['komisi']),
         ];
 
-        // Rincian komisi per-operator bulan ini (1 grouped query). Ditampilkan hanya
-        // kalau owner punya >1 operator — kalau 1, angka total sudah = angka operator itu.
-        $komisiPerOperator = Delivery::query()
-            ->join('trips', 'trips.id', '=', 'deliveries.trip_id')
-            ->leftJoin('users', 'users.id', '=', 'trips.operator_id')
-            ->whereNull('trips.deleted_at') // join manual → tak kena SoftDeletes global scope
-            ->where('trips.owner_id', $ownerId)
-            ->whereNotNull('trips.ended_at')
-            ->whereYear('trips.trip_date', $now->year)
-            ->whereMonth('trips.trip_date', $now->month)
-            // Trip sentinel migrasi dikecualikan (lihat Trip::scopeRealOperational()) —
-            // users sudah di-join di atas, jadi cukup cek pola email di sini.
-            ->where(fn ($q) => $q->whereNull('users.email')->orWhere('users.email', 'not like', User::SYSTEM_OPERATOR_EMAIL_PREFIX.'%'))
-            ->where('deliveries.delivery_type', '!=', 'bs_redistribution')
-            ->groupBy('trips.operator_id', 'users.name')
-            ->selectRaw('trips.operator_id, users.name as operator_name, COALESCE(SUM(deliveries.qty_delivered), 0) as drop_mika')
-            ->get()
-            ->map(fn ($r) => [
-                'operator' => $r->operator_name ?? '—',
-                'komisi' => (int) round(((float) $r->drop_mika) * $komisiPerMikaVal),
-            ])
+        // Rincian komisi per-operator bulan ini ($tripsBulanIni/$aggBulanIni, dihitung
+        // di atas). Ditampilkan hanya kalau owner punya >1 operator — kalau 1, angka
+        // total sudah = angka operator itu.
+        //
+        // 🔴 DIPERBAIKI 24 Okt 2026 (BRIEF "Satu Sumber Kebenaran Komisi", fix B) —
+        // dulu SUM(qty_delivered) × tarif owner LIVE ($komisiPerMikaVal), jadi SALAH
+        // kalau operator punya tarif KHUSUS (komisi_per_mika_khusus) berbeda dari
+        // default owner, dan ikut berubah untuk trip LAMA saat owner ganti tarif hari
+        // ini. Sekarang dijumlahkan per operator_id dari $aggBulanIni (TripAggregator,
+        // tarif beku per-trip) di PHP, bukan query/rumus baru.
+        $komisiPerOperator = $tripsBulanIni
+            ->groupBy('operator_id')
+            ->map(function ($trips) use ($aggBulanIni) {
+                $komisi = 0;
+                foreach ($trips as $trip) {
+                    $komisi += $aggBulanIni[$trip->id]['komisi'] ?? 0;
+                }
+
+                return [
+                    'operator' => $trips->first()->operator?->name ?? '—',
+                    'komisi' => (int) round($komisi),
+                ];
+            })
             ->sortByDesc('komisi')
             ->values();
 
@@ -405,75 +432,64 @@ class OwnerDashboardController extends Controller
 
     /**
      * Ringkasan finansial satu bulan untuk owner, HANYA dari trip yang SUDAH SELESAI
-     * (ended_at) — scope & rumus IDENTIK totals MonthlyReportController::buildMonthlyData
-     * supaya angka tak pernah beda dua versi. Semua agregat di level DB (SUM), 3 query.
+     * (ended_at), NYATA (realOperational, exclude sentinel migrasi) dan TIDAK DIARSIP
+     * (SoftDeletes global scope Trip — query model otomatis exclude deleted_at) — scope
+     * IDENTIK totals MonthlyReportController::buildMonthlyData supaya angka tak pernah
+     * beda dua versi.
      *
-     * Rumus (mirror Trip::salesSnapshotTotals() — per-BARIS delivery snapshot, bukan
-     * lagi qty_sold-total/15 dikali satu HPP flat):
-     *   omset        = SUM(settlements.amount_paid) atas delivery yg di-settle kunjungan
-     *                  aktif trip bulan ini (basis LAKU, = Trip::omset_val)
-     *   untung_kotor = Σ per-baris (qty_sold/units_per_pack_snapshot) × (unit_price −
-     *                  cost_snapshot)                                (= Trip::untung_kotor)
-     *   komisi       = SUM(qty_delivered non-BS) × komisi_per_mika (= Trip::komisi_rian, basis DROP)
-     *   untung_bersih= untung_kotor − komisi                       (= Trip::untung_bersih_owner)
-     *
-     * $fallbackHpp dipakai HANYA untuk baris lolos cost_snapshot NULL (jalur delivery
-     * lama sebelum snapshot ada) — bukan lagi HPP flat yang menentukan SELURUH hasil.
+     * 🔴 DIROMBAK 24 Okt 2026 (BRIEF "Satu Sumber Kebenaran Komisi", fix A) — dulu
+     * method ini menghitung ULANG omset/untung_kotor per-baris settlement (duplikat
+     * Trip::salesSnapshotTotals()) dan komisi = SUM(qty_delivered) × $komisiPerMika
+     * (tarif owner LIVE, parameter ini) — trip bulan LALU pun ikut berubah komisinya
+     * begitu owner ganti tarif HARI INI, karena tak pernah membaca
+     * trips.komisi_per_mika_snapshot. Sekarang: ambil ID trip bulan itu SEKALI, lalu
+     * TripAggregator::for() (SATU SUMBER KEBENARAN yang sama dipakai MonthlyReportController/
+     * TripHistoryController/OwnerPerformanceTable) — rumusnya membaca tarif BEKU
+     * per-trip, $komisiPerMika di sini HANYA fallback untuk trip pra-snapshot yang
+     * belum di-backfill.
      */
-    private function monthlySummary(int $ownerId, int $year, int $mon, float $fallbackHpp, float $komisiPerMika): array
+    private function monthlySummary(int $ownerId, int $year, int $mon, float $komisiPerMika): array
     {
-        // Delivery yg di-settle oleh kunjungan AKTIF (belum dikoreksi) trip SELESAI owner
-        // bulan ini. Sama persis sumber Trip::omset_val / Trip::mika_terjual.
-        $settledDeliveryIds = KioskVisit::active()
-            ->whereNotNull('settled_delivery_id')
-            ->whereHas('trip', fn ($q) => $q->where('owner_id', $ownerId)
-                ->whereNotNull('ended_at')
-                ->whereYear('trip_date', $year)
-                ->whereMonth('trip_date', $mon))
-            ->pluck('settled_delivery_id');
+        $tripIds = Trip::where('owner_id', $ownerId)
+            ->whereNotNull('ended_at')
+            ->whereYear('trip_date', $year)
+            ->whereMonth('trip_date', $mon)
+            ->realOperational()
+            ->pluck('id')
+            ->all();
 
-        $saleRows = Settlement::whereIn('settlements.delivery_id', $settledDeliveryIds)
-            ->join('deliveries', 'deliveries.id', '=', 'settlements.delivery_id')
-            ->get([
-                'settlements.amount_paid',
-                'settlements.qty_sold',
-                'deliveries.unit_price',
-                'deliveries.cost_snapshot',
-                'deliveries.units_per_pack_snapshot',
-            ]);
+        return $this->sumAgg(\App\Support\TripAggregator::for($tripIds, $komisiPerMika));
+    }
 
+    /**
+     * Jumlahkan hasil TripAggregator::for() (keyed by trip id) menjadi satu ringkasan
+     * bulan — dipakai monthlySummary() (bulan lalu) dan langsung dari $aggBulanIni
+     * di index() (bulan ini, lihat komentar di sana) supaya trip id yang sama tak
+     * pernah dihitung TripAggregator dua kali.
+     */
+    private function sumAgg(array $agg): array
+    {
         $omset = 0.0;
-        $mikaTerjual = 0.0;
         $untungKotor = 0.0;
-        foreach ($saleRows as $row) {
-            $units = max(1, (int) ($row->units_per_pack_snapshot ?? 15));
-            $mikaRow = ((float) $row->qty_sold) / $units;
-            $cost = $row->cost_snapshot !== null ? (float) $row->cost_snapshot : $fallbackHpp;
-            $price = (float) $row->unit_price;
+        $komisi = 0.0;
+        $untungBersih = 0.0;
+        $mikaTerjual = 0.0;
+        $dropMika = 0.0;
 
-            $omset += (float) $row->amount_paid;
-            $mikaTerjual += $mikaRow;
-            $untungKotor += $mikaRow * ($price - $cost);
+        foreach ($agg as $row) {
+            $omset += $row['omset'];
+            $untungKotor += $row['untung_kotor'];
+            $komisi += $row['komisi'];
+            $untungBersih += $row['untung_bersih'];
+            $mikaTerjual += $row['mika_terjual'];
+            $dropMika += $row['mika_komisi'];
         }
-
-        // Komisi Rian basis DROP: mika diletakkan (exclude BS daur-ulang) × tarif.
-        // Clause !='bs_redistribution' identik Trip::getTotalDropReal() (delivery_type
-        // NOT NULL DEFAULT 'consignment', jadi tak ada jebakan NULL).
-        $dropMika = (float) Delivery::whereHas('trip', fn ($q) => $q->where('owner_id', $ownerId)
-                ->whereNotNull('ended_at')
-                ->whereYear('trip_date', $year)
-                ->whereMonth('trip_date', $mon)
-                ->realOperational())
-            ->where('delivery_type', '!=', 'bs_redistribution')
-            ->sum('qty_delivered');
-
-        $komisi = $dropMika * $komisiPerMika;
 
         return [
             'omset' => $omset,
             'untung_kotor' => $untungKotor,
             'komisi' => $komisi,
-            'untung_bersih' => $untungKotor - $komisi,
+            'untung_bersih' => $untungBersih,
             'mika_terjual' => $mikaTerjual,
             'drop_mika' => $dropMika,
         ];

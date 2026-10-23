@@ -37,7 +37,14 @@ class TripExportController extends Controller
             'businessName' => $trip->owner?->getBusinessNameValue() ?? 'Cemilan Qontas',
             'operatorName' => $trip->operator?->name ?? '—',
             'clusterName' => $trip->startingCluster?->name ?? 'Semua Kios',
-            'komisiPerMika' => (int) ($trip->owner?->getKomisiPerMikaValue() ?? 1000),
+            // 🔴 DIPERBAIKI 24 Okt 2026 (BRIEF "Satu Sumber Kebenaran Komisi", fix D) —
+            // dulu $trip->owner?->getKomisiPerMikaValue() (tarif owner LIVE): label "Rp X
+            // × mika drop" bisa tak cocok dengan 'total_komisi' di bawah (yang SUDAH benar,
+            // dari $trip->komisi_rian / snapshot) begitu owner ganti tarif setelah trip ini
+            // selesai, atau kalau operatornya bertarif khusus. Baris ini IDENTIK (bukan
+            // panggilan, Trip::getKomisiPerMika() private) Trip::getKomisiPerMika() —
+            // X × mika_komisi SEKARANG selalu = total_komisi yang ditampilkan.
+            'komisiPerMika' => (int) ($trip->komisi_per_mika_snapshot ?? $trip->owner?->komisi_per_mika ?? 1000),
             'summary' => [
                 'mika_dibawa' => $mikaDibawa,
                 'mika_drop' => $mikaDrop,

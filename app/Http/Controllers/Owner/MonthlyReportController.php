@@ -140,11 +140,15 @@ class MonthlyReportController extends Controller
 
         $modalMika = $totalMikaDiantar * $hargaMika;
 
-        $rekapKomisi = (float) \App\Models\Commission::whereHas('trip', function ($q) use ($ownerId, $year, $mon) {
-            $q->where('owner_id', $ownerId)
-              ->whereYear('trip_date', $year)
-              ->whereMonth('trip_date', $mon);
-        })->sum('commission_amount');
+        // 🔴 DIPERBAIKI 24 Okt 2026 (BRIEF "Satu Sumber Kebenaran Komisi", fix E) — dulu
+        // SUM(commission_amount) dari tabel `commissions` (ditulis belakangan, hasil
+        // reverse-engineer omset×margin×tarif%, lihat ActiveTrip::confirmEndTrip() —
+        // beda rumus & bisa beda rounding tipis dari komisi_rian snapshot). Sekarang
+        // pakai $totals['komisi'] — SUMBER YANG SAMA dengan tabel "Rekap Per Trip" di
+        // halaman ini (TripAggregator, tarif beku per-trip), supaya dua angka komisi
+        // di satu halaman tak pernah berbeda. Tabel `commissions` tetap ditulis seperti
+        // semula di ActiveTrip, hanya TIDAK lagi dibaca untuk tampilan ini.
+        $rekapKomisi = (float) $totals['komisi'];
 
         return [
             'month' => $month,

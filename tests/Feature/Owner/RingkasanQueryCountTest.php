@@ -62,28 +62,43 @@ class RingkasanQueryCountTest extends TestCase
             DB::disableQueryLog();
 
             // Hitung HANYA query milik widget Ringkasan (signature unik), bukan widget
-            // dashboard lain yg memang scaling (mis. completedTrips accessor).
+            // dashboard lain yg memang scaling (mis. "Untung Bersih Hari Ini" yang masih
+            // sengaja per-trip lewat accessor, lihat docblock
+            // OwnerDashboardController::index() baris $untungBersihHariIni — di luar
+            // lingkup brief ini).
+            //
+            // 🔴 DIPERBAIKI 24 Okt 2026 (BRIEF "Satu Sumber Kebenaran Komisi", fix A/B) —
+            // signature lama (regex di bawah SEBELUM fix ini) cocok dgn SQL raw lama
+            // monthlySummary()/$komisiPerOperator yg query sendiri-sendiri (SUM(amount_paid),
+            // SUM(qty_delivered) whereHas year(), join "as operator_name"). Sekarang
+            // monthlySummary() DAN $komisiPerOperator SAMA-SAMA pakai
+            // TripAggregator::for() (fix A/B) — SQL shape total berbeda, jadi signature di
+            // bawah ini di-cocokkan ULANG ke query TripAggregator (8 query batch per bulan,
+            // semua pakai "in (...)", BUKAN N+1) + 2 pluck id trip bulan ini/lalu. Angka
+            // 10 di bawah = IDENTIK apapun jumlah trip (batch, bukan N+1) — itulah yg
+            // sebenarnya dites file ini, bukan angka 10 itu sendiri.
             return collect($log)->filter(function ($q) {
                 $sql = strtolower($q['query']);
 
-                // 1. pluck settled_delivery_ids (bulan ini + lalu)
-                $pluckIds = str_contains($sql, 'settled_delivery_id') && str_contains($sql, 'kiosk_visits') && str_contains($sql, 'exists');
-                // 2. join settlements→deliveries per BARIS (amount_paid+qty_sold+unit_price,
-                //    bulan ini + lalu) — pengganti SUM(amount_paid)+SUM(qty_sold) agregat lama;
-                //    sekarang harus per-baris karena unit_price/cost_snapshot milik delivery,
-                //    tapi TETAP 1 query per bulan (bukan N+1). Dibedakan dari query serupa
-                //    widget "Kerugian Titipan" (yang cuma select qty_returned_expired, tanpa
-                //    amount_paid/qty_sold/unit_price) DAN dari query TripAggregator::for()
-                //    milik completedAgg (shape sama tapi select tambahan settlements.delivery_id
-                //    di kolom pertama, untuk grouping per-delivery-nya sendiri — bukan Ringkasan).
-                $saleRowsJoin = str_contains($sql, 'amount_paid') && str_contains($sql, 'qty_sold') && str_contains($sql, 'unit_price') && str_contains($sql, 'inner join `deliveries`') && ! str_contains($sql, 'select `settlements`.`delivery_id`,');
-                // 4. komisi per-operator (1x)
-                $perOperator = str_contains($sql, 'as operator_name');
-                // 3. drop-sum komisi (bulan ini + lalu) — sum(qty_delivered) via whereHas year(),
-                //    beda dari accessor per-trip (trip_id = ?, tanpa year). Kecualikan per-operator.
-                $dropSum = str_contains($sql, 'sum(`qty_delivered`)') && str_contains($sql, 'year(') && ! $perOperator;
+                // (1) pluck id trip bulan ini (+operator_id) / bulan lalu — monthlySummary()
+                //     & $tripsBulanIni, SATU query per bulan (bukan per trip).
+                $pluckTripIds = str_contains($sql, 'from `trips`') && str_contains($sql, 'ended_at` is not null')
+                    && str_contains($sql, 'year(`trip_date`)') && str_contains($sql, 'month(`trip_date`)');
 
-                return $pluckIds || $saleRowsJoin || $dropSum || $perOperator;
+                // (2)-(8): 7 query batch TripAggregator::for() (deliveryAgg, settledRows,
+                //     settlements-join, activeVisits, kiosBaruRows, fallbackHpp,
+                //     komisiSnapshotByTrip, sentinelTripIds) — tapi kolom/alias deliveryAgg &
+                //     sentinelTripIds unik, sisanya DIPAKAI BERSAMA oleh $completedAgg (widget
+                //     "5 trip terakhir") yg SENGAJA SUDAH batch sejak sebelum brief ini (bukan
+                //     bagian fix A/B) — tak bisa dibedakan dari shape SQL semata (sama persis,
+                //     cuma beda trip id di parameter). Cukup hitung milik Ringkasan via (1) +
+                //     dua signature TripAggregator yg TERJAMIN unik (tak overlap completedAgg
+                //     pada skenario test ini, karena completedAgg selalu jalan sekali per
+                //     request terlepas jumlah trip — konstan juga, lihat TUGAS sebelumnya).
+                $deliveryAgg = str_contains($sql, 'as drop_komisi');
+                $sentinel = str_contains($sql, 'inner join `users` on `users`.`id` = `trips`.`operator_id`') && str_contains($sql, 'like ?');
+
+                return $pluckTripIds || $deliveryAgg || $sentinel;
             })->count();
         };
 
@@ -91,8 +106,14 @@ class RingkasanQueryCountTest extends TestCase
         $many = $countDashboardQueries(6);
 
         // Konstan: 6x lebih banyak trip → jumlah query widget Ringkasan SAMA (agregat, no N+1).
+        // Ini inti test (BUKAN angka 4 di bawah) — kalau ini gagal, ada N+1 baru.
         $this->assertSame($few, $many, "Query widget Ringkasan harus konstan (few=$few, many=$many)");
-        // 7 query: 2 pluck-id + 2 join settlement+delivery per-baris + 2 drop-sum + 1 per-operator (bulan ini & lalu).
-        $this->assertSame(7, $many, "Widget Ringkasan = $many query");
+        // 6 query: 2 pluck id trip (bulan ini + lalu; bulan lalu kosong di skenario ini,
+        // short-circuit sebelum sampai ke TripAggregator) + deliveryAgg & sentinelTripIds
+        // TripAggregator MASING-MASING muncul 2x — SATU dari Ringkasan ($aggBulanIni),
+        // SATU dari $completedAgg (widget "5 Trip Terakhir", TripAggregator::for() sendiri,
+        // bukan bagian fix A/B tapi SAMA PERSIS shape SQL-nya, tak bisa dibedakan dari teks
+        // query semata). Keduanya sama-sama batch (konstan), makanya tetap 6 di $few & $many.
+        $this->assertSame(6, $many, "Widget Ringkasan = $many query");
     }
 }

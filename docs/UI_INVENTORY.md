@@ -427,7 +427,7 @@ Halaman web (`resources/views/owner/reports/monthly.blade.php`): judul **"Lapora
 3 kartu baris berikut (`resources/views/owner/reports/monthly.blade.php:57-72`):
 - **"Total Mika Diantar"** (+biji) — total `qty_delivered` semua delivery trip bulan ini (`app/Http/Controllers/Owner/MonthlyReportController.php:124-134`).
 - **"Modal Mika"** — `total_mika_diantar × harga_mika` (harga_mika dari setting owner, fallback 200) (`app/Http/Controllers/Owner/MonthlyReportController.php:120,136`).
-- **"Rekap Komisi Operator"** — `SUM(commission_amount)` dari model `Commission` untuk trip bulan ini (`app/Http/Controllers/Owner/MonthlyReportController.php:138-142`).
+- **"Rekap Komisi Operator"** — **Diperbaiki 24 Okt 2026 (BRIEF "Satu Sumber Kebenaran Komisi", fix E)**: dulu `SUM(commission_amount)` dari model `Commission` (rumus reverse-engineer omset×margin×tarif%, ditulis `paid_at` = waktu trip diakhiri — beda sumber & bisa beda angka dari tabel "Rekap Per Trip" di halaman yang sama). Sekarang `$totals['komisi']` — **SUMBER YANG SAMA PERSIS** dengan baris footer TOTAL tabel "Rekap Per Trip" di bawah (keduanya dari `TripAggregator`, tarif beku per-trip `komisi_per_mika_snapshot`), sehingga dua angka komisi di satu halaman tidak pernah berbeda (`app/Http/Controllers/Owner/MonthlyReportController.php:151`, variabel `$rekapKomisi`).
 
 Tabel **"Rekap Per Trip"** (`resources/views/owner/reports/monthly.blade.php:75-125`) kolom: **Tanggal**, **Operator**, **Kios**, **Mika Dititip** (+biji), **Omset**, **Komisi**, **Untung Bersih**, dengan baris footer **"TOTAL"** (`resources/views/owner/reports/monthly.blade.php:110-122`). Setiap baris dibangun per-trip (`$rows`, `app/Http/Controllers/Owner/MonthlyReportController.php:47-59`): `kios_dikunjungi` = jumlah kunjungan (SEMUA, bukan hanya aktif), `mika_drop`/`biji_drop` = sum delivery, `omset`/`komisi`/`untung_bersih` dari agregat batch `TripAggregator`. Kosong → **"Belum ada trip selesai di bulan ini."** (baris 106-108).
 
@@ -862,6 +862,26 @@ Batch query (tanpa N+1): 1 query daftar owner + 2 query agregat batch lintas sem
 
 ---
 
+#### B8.6a Dashboard Super Admin — Widget Stat "Total Komisi Operator Global Hari Ini"
+
+Navigasi: Dashboard panel Admin (hanya super admin, `AdminPanelProvider`)
+Sumber: `app/Filament/Widgets/SuperAdminStatsOverview.php` (satu dari enam `Stat::make()` di widget ini, bukan widget terpisah).
+
+**Diperbaiki 24 Okt 2026 (BRIEF "Satu Sumber Kebenaran Komisi", fix G):** dulu `Commission::whereDate('paid_at', today())->sum('commission_amount')` — tabel `commissions` memakai rumus reverse-engineer omset×margin×tarif% (beda & sedikit beda rounding dari `komisi_rian` snapshot), dan `paid_at` = waktu trip DIAKHIRI (bukan `trip_date` seperti stat "Total Trip Hari Ini" di widget yang sama), jadi trip yang mulai hari ini tapi baru diakhiri besok tak pernah terhitung "hari ini". Sekarang: SATU query id trip NYATA (`Trip::scopeRealOperational()`) dengan `trip_date` hari ini — lintas SEMUA owner, aktif ATAU sudah selesai — lalu `TripAggregator::for()` SATU KALI (query konstan, bukan N+1 per owner/operator). Fallback tarif Rp 1.000 hanya untuk trip pra-snapshot yang belum di-backfill.
+
+---
+
+#### B8.6b Dashboard Super Admin — Widget "Komisi Operator Bulan Ini"
+
+Navigasi: Dashboard panel Admin (hanya super admin, `AdminPanelProvider`)
+Sumber: `app/Filament/Widgets/OperatorKomisiTable.php`
+
+Tabel satu baris per operator aktif (lintas semua owner), kolom: **"Nama Operator"**, **"Owner"**, **"Trip Bulan Ini"** (count), **"Komisi Bulan Ini"**.
+
+**Diperbaiki 24 Okt 2026 (BRIEF "Satu Sumber Kebenaran Komisi", fix G):** dulu `withSum(['commissions as komisi_bulan_ini' => ...whereMonth/whereYear('paid_at')], 'commission_amount')` — sama dua masalah seperti B8.6a (rumus beda, `paid_at` bukan `trip_date`). Sekarang: SATU query trip (`realOperational`, `trip_date` bulan ini, lintas semua operator — **TANPA** filter `ended_at`, jadi trip yang masih aktif bulan ini ikut terhitung) + `TripAggregator::for()` SATU KALI, dijumlahkan per `operator_id` di PHP — pola identik `OwnerPerformanceTable::computeStatsByOwner()`. Query konstan berapa pun banyak operator.
+
+---
+
 #### B8.6 Dashboard Super Admin — Widget "Rincian Fee Aplikasi Harian"
 
 Navigasi: Dashboard panel Admin (hanya super admin, `AdminPanelProvider`)
@@ -1006,6 +1026,8 @@ Dimana:
 - BS daur-ulang (`bs_redistribution`) **exclude** dari komisi.
 
 Sumber: `Trip::getKomisiRianAttribute()` (`Trip.php:289–292`).
+
+**🔴 SATU SUMBER KEBENARAN (BRIEF 24 Okt 2026):** rumus di atas (`mika_komisi × komisi_per_mika_trip`, dibaca via `TripAggregator` atau accessor `Trip`) adalah **SATU-SATUNYA** sumber angka komisi di seluruh aplikasi. Per 24 Okt 2026, tabel `commissions` (model `Commission`, ditulis `ActiveTrip::confirmEndTrip()` dengan rumus TERPISAH & reverse-engineer: `cash_collected_reported × margin_rate_assumed × commission_rate`) **TIDAK LAGI dibaca oleh tampilan APA PUN** — dashboard owner (bulan ini/lalu/per-operator), Laporan Bulanan (tabel + kartu), Riwayat Trip, Laporan Trip (export PDF/Excel), LiveTripProgress, maupun dua widget admin **B8.6a**/**B8.6b**. Tabel `commissions` tetap DITULIS seperti biasa (schema & proses penulisannya tidak diubah) — sekadar tidak lagi jadi sumber tampilan. Test regresi permanen: `tests/Feature/Owner/KomisiSnapshotSingleSourceOfTruthTest.php`.
 
 ### C8. Komisi Kios Baru (DILEBUR, dan DIHAPUS dari UI)
 

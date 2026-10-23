@@ -1,5 +1,88 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 23 Oktober 2026*
+*Sesi terakhir: 24 Oktober 2026*
+
+## 🔴 BRIEF 24 OKT 2026: SATU SUMBER KEBENARAN KOMISI — SELESAI, boleh push (tidak ada migrasi)
+Investigasi sebelumnya (24 Okt 2026) menemukan beberapa tampilan komisi memakai tarif LIVE
+(owner/operator saat ini) atau tabel `commissions`, bukan `trips.komisi_per_mika_snapshot` yang
+sudah terbukti benar (dipakai Laporan Bulanan tabel, Riwayat Trip, `OwnerPerformanceTable`).
+**614 test PASS** (naik dari baseline 606, +8 test baru permanen). `app/Models/Trip.php` dan
+`app/Support/TripAggregator.php` **TIDAK DISENTUH SAMA SEKALI** (dikonfirmasi `git diff --stat`
+kosong) — brief eksplisit melarang mengubah rumus, hanya titik PEMANGGIL yang diperbaiki.
+
+**Fix yang dikerjakan (A–G, satu commit atomik):**
+- **A** — `OwnerDashboardController::monthlySummary()` & `$ringkasanBulanIni`: komisi bulan ini
+  & bulan lalu sekarang dari `TripAggregator::for()` atas trip nyata (realOperational, ended,
+  tidak diarsip) bulan itu — bukan lagi `SUM(qty_delivered) × tarif owner LIVE`. Angka bulan lalu
+  tidak lagi berubah saat owner ganti tarif hari ini.
+- **B** — `$komisiPerOperator`: dijumlahkan per `operator_id` dari hasil `TripAggregator`
+  (`$aggBulanIni`) di PHP, bukan `SUM(qty) × tarif live` — ikut tarif khusus operator & snapshot
+  beku per-trip.
+- **C** — `LiveTripProgress` "Komisi Sejauh Ini": pakai
+  `$trip->komisi_per_mika_snapshot ?? $trip->owner?->komisi_per_mika ?? 1000` (identik
+  `Trip::getKomisiPerMika()`, private jadi tak bisa dipanggil langsung) — bukan lagi tarif owner
+  LIVE murni.
+- **D** — `TripExportController` label "Rp X × mika drop": `X` sekarang dari
+  `komisi_per_mika_snapshot` (fallback owner/1000) — `X × mika_komisi` selalu persis sama dengan
+  `total_komisi` yang ditampilkan di bawahnya.
+- **E** — Laporan Bulanan kartu "Rekap Komisi Operator": pakai `$totals['komisi']` — SUMBER SAMA
+  dengan footer TOTAL tabel "Rekap Per Trip" di halaman yang sama, bukan lagi
+  `Commission::sum('commission_amount')`.
+- **G** — Admin `SuperAdminStatsOverview` ("Total Komisi Operator Global Hari Ini") & admin
+  `OperatorKomisiTable` ("Komisi Bulan Ini" per operator): keduanya pindah ke SATU query trip
+  (`realOperational`, scope tanggal/bulan masing-masing) + `TripAggregator::for()` SATU KALI,
+  dijumlahkan di PHP — bukan lagi `Commission::sum('commission_amount')` yang dasarnya `paid_at`
+  (waktu trip DIAKHIRI, bukan `trip_date`) dan rumus reverse-engineer omset×margin×tarif%
+  (beda rounding dari `komisi_rian` snapshot).
+
+**🔴 Setelah fix ini, TIDAK ADA tampilan yang membaca `commissions.commission_amount` di mana
+pun di aplikasi.** Tabel `commissions` tetap ditulis seperti sebelumnya oleh
+`ActiveTrip::confirmEndTrip()` (schema & proses penulisan TIDAK diubah) — ia berhenti menjadi
+sumber tampilan, bukan berhenti ditulis. Lihat **UI_INVENTORY.md §C7** untuk catatan permanen ini.
+
+**Test regresi permanen** (bukan sementara): `tests/Feature/Owner/KomisiSnapshotSingleSourceOfTruthTest.php`
+— 8 test, membangun ulang skenario investigasi asli (owner default Rp 1.000; operator A tarif
+khusus Rp 800; operator B ikut default; trip B bulan lalu; bulan ini trip A + B1 sebelum owner
+ganti tarif ke Rp 1.200, lalu trip B2 sesudahnya; satu trip aktif A untuk Live/widget "hari ini")
+dan mengecek SEMUA titik tampil sekaligus:
+
+| Tempat | Angka diharapkan | Hasil |
+|---|---|---|
+| Dashboard owner — Ringkasan bulan ini (komisi) | 38.000 (16.000+10.000+12.000) | ✅ |
+| Dashboard owner — Ringkasan bulan lalu (komisi, TAK berubah walau tarif sudah diganti) | 10.000 | ✅ |
+| Dashboard owner — per operator (A) | 16.000 (trip ended saja, aktif dikecualikan) | ✅ |
+| Dashboard owner — per operator (B) | 22.000 (B1+B2 digabung) | ✅ |
+| `LiveTripProgress` "Komisi Sejauh Ini" (trip aktif A, tarif 800) | 1.600 | ✅ |
+| `TripExportController` label X×mika = total_komisi (trip A) | 800×20 = 16.000 | ✅ |
+| Laporan Bulanan — tabel "Rekap Per Trip" (3 baris: A/B1/B2) | 16.000 / 10.000 / 12.000 | ✅ |
+| Laporan Bulanan — kartu "Rekap Komisi Operator" (`rekap_komisi`) | 38.000 (= `$totals['komisi']`) | ✅ |
+| Riwayat Trip — per baris (A/B1/B2/B-lalu) | 16.000 / 10.000 / 12.000 / 10.000 | ✅ |
+| Admin `SuperAdminStatsOverview` "Komisi Operator Global Hari Ini" (hanya trip aktif, tanggal hari ini) | 1.600 | ✅ |
+| Admin `OperatorKomisiTable` "Komisi Bulan Ini" (A, ended+aktif, tanpa filter `ended_at`) | 17.600 (16.000+1.600) | ✅ |
+| Admin `OperatorKomisiTable` "Komisi Bulan Ini" (B) | 22.000 | ✅ |
+
+Regresi pre-existing yang ditemukan & diperbaiki (bukan bug baru dari fix di atas, melainkan test
+LAMA yang masih mengasumsikan sumber data SALAH, yang justru dibuktikan salah oleh fix E/A-B):
+- `MonthlyReportTest::test_monthly_report_calculations_are_accurate_and_scoped_properly` — dulu
+  mengharapkan `rekap_komisi = 5000` (dari baris `Commission::create()` yang sengaja dibuat TAK
+  NYAMBUNG dengan komisi trip asli). Diperbaiki ke `20000` (20 mika × Rp 1.000, angka BENAR) —
+  baris `Commission::create()` sengaja DIPERTAHANKAN sebagai jaring pengaman: kalau regresi,
+  test akan lolos lagi dengan 5000 yang salah.
+- `RingkasanQueryCountTest::test_ringkasan_queries_constant_regardless_of_trip_count` — signature
+  SQL filter-nya ditulis untuk bentuk query LAMA (raw `SUM(amount_paid)`/`SUM(qty_delivered)`)
+  yang sudah tak ada lagi setelah fix A/B pindah ke `TripAggregator::for()` — disesuaikan ke
+  signature baru (`drop_komisi`, sentinel join+like, pluck id trip per bulan). Assert inti
+  (query konstan berapa pun jumlah trip) tidak berubah, hanya cara mendeteksinya.
+
+**Verifikasi tambahan:** `php artisan reports:verify-locked-numbers 2 --save` lalu dijalankan
+ulang tanpa `--save` → IDENTIK (owner id=2 di DB dev lokal ini kosong trip, jadi hasilnya kosong
+di kedua sisi — bukti utama non-regresi tetap `git diff --stat app/Models/Trip.php
+app/Support/TripAggregator.php` kosong sepanjang sesi).
+
+**Dokumentasi:** `docs/UI_INVENTORY.md` — §B4 "Rekap Komisi Operator" diperbaiki (bukan lagi
+`SUM(commission_amount)`), §B8.6a/§B8.6b widget admin baru ditambahkan (sebelumnya tak
+terdokumentasi sama sekali), §C7 ditambah catatan permanen "SATU SUMBER KEBENARAN".
+
+---
 
 ## 🔴 BRIEF 23 OKT 2026 (LANJUTAN): AUDIT PERFORMA + WIDGET FEE HARIAN — SELESAI, boleh push (tidak ada migrasi)
 Brief terpisah, lanjutan dari "BRIEF 5 TUGAS" di bawah (sudah deploy sore harinya) — **tidak ada
