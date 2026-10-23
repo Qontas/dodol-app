@@ -1,6 +1,168 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 23 Oktober 2026*
 
+## 🔴 BRIEF 5 TUGAS: fee aplikasi, kolom Owner, grafik bar, hitungan operator (23 Okt 2026) — SELESAI, **JANGAN PUSH** (ada migrasi baru — owner backup DB produksi dulu, baru push sendiri)
+Brief 5 tugas + Laporan Akhir. Semua commit atomik per tugas, tidak ada akses/perintah ke DB
+production di manapun di sesi ini. **588 test PASS** (naik dari baseline 544 di awal sesi ini —
+lihat rincian per tugas). Tidak ada satu angka uang lama (omset/HPP/komisi/untung bersih) yang
+berubah — dibuktikan `reports:verify-locked-numbers 2` IDENTIK sebelum/sesudah Tugas 4 (satu-
+satunya tugas yang menyentuh jalur hitungan baru; detail di bawah).
+
+### Tugas 1 — Hitungan "Operator" per owner salah — commit `4ff173c`
+Owner Ismi tampil **2** operator padahal aslinya **1**. Investigasi: 3 titik hitung berbeda
+(kolom "Operator" `UserResource`, widget "Leaderboard Owner Hari Ini", kartu "Total Operator"
+dashboard owner) masing-masing menghitung operator MENTAH (`User::where('role','operator')`),
+ikut menyertakan operator **nonaktif** dan **akun sistem** (`operator.migrasi.*`, dibuat
+`kios:saldo-awal`/`OpeningBalance` saat migrasi data lama). Fix: relasi baru
+`User::realOperators()` (aktif & bukan akun sistem) dipakai ulang di ketiga tempat lewat
+withCount/relation yang sama — bukan ditulis ulang per file. Relasi lama `User::operators()`
+**dipertahankan tak berubah** karena dipakai guard delete (`deletionBlockReason*`), yang harus
+tetap menghitung SEMUA operator (termasuk nonaktif/sistem) supaya owner berdata tak bisa
+dihapus begitu saja. Murni hitungan tampilan — tidak menyentuh angka uang.
+
+### Tugas 2 — Kolom + filter "Owner" di Manajemen User — commit `3f1fd18`
+`UserResource` (panel admin): kolom baru **"Owner"** (nama owner untuk baris operator, `—`
+untuk baris owner/super admin — zero query tambahan, relasi `owner.name` sudah di-eager-load).
+Filter `SelectFilter` **"Owner"** (daftar nama owner), dibatasi `visible()` hanya super admin
+(mencegah bocor daftar nama owner lintas tenant). Kolom "Email" terpisah dihapus, digabung jadi
+`description` di bawah kolom "Nama" (tabel lebih ringkas di HP); pencarian tetap mencakup email.
+Query count tabel tetap konstan.
+
+### Tugas 3 — Grafik tren omset: line → bar chart, nyaman HP & laptop — commit `2bdba12`
+Dua grafik diubah: widget admin **"Tren Omset 30 Hari — Top 3 Owner"**
+(`OwnerOmsetChart.php`, lihat **UI_INVENTORY B8.4**) dan grafik owner
+**"Tren Omset (30 Hari Terakhir)"** (`owner/dashboard.blade.php`, **UI_INVENTORY B2**). Label
+sumbu-X format Indonesia tanpa rotasi + autoSkip; sumbu-Y disingkat (`rb`/`jt`); tooltip tanggal
+lengkap + Rp penuh (+ baris Total di widget admin); legend kecil di atas; tinggi chart responsif
+(~260px HP / ~320px laptop); state kosong `"Belum ada omset 30 hari terakhir."` kalau 30 hari
+nihil. **Angka omset itu sendiri (`SUM(amount_paid)`) tidak berubah** — murni tampilan.
+
+**Bug nyata ditemukan & diperbaiki selagi verifikasi browser sungguhan** (bukan ketahuan dari
+test PHPUnit manapun): di view kustom widget admin, tag `<style>` ada di LUAR/SEBELUM root
+element `<x-filament-widgets::widget>`. Livewire butuh SATU root element per komponen dan
+menempel `wire:id` ke elemen pertama yang ditemui di DOM — jadi `<style>` itu malah dianggap
+root, dan seluruh widget (judul, canvas) gagal ter-render di `/admin` pada browser sungguhan,
+walau `TestResponse`/`Livewire::test()` sama sekali tidak mensimulasikan DOM morphing Livewire
+sehingga test manapun tak bisa menangkapnya. Fix: pindahkan `<style>` ke dalam root. Dikunci test
+baru yang memeriksa urutan tag di source Blade — satu-satunya cara PHPUnit menangkap kelas bug
+ini tanpa browser sungguhan — dibuktikan efektif (direproduksi dulu → test merah, dikembalikan →
+hijau). Diverifikasi juga lewat Playwright (system Chrome/Edge) di 390px & 1280px untuk kedua
+chart.
+
+### Tugas 4 — Fee aplikasi per mika, khusus super admin — commit `9e02e4a`
+Konteks bisnis: owner partner membayar fee ke pemilik aplikasi **Rp 300 per kemasan/mika** (semua
+produk sama) yang diantar operatornya. Owner sendiri (Ismi) Rp 0.
+
+**Skema:** `users.app_fee_per_pack` (nullable, `null`=0, hanya dipakai untuk `role='owner'`);
+`trips.app_fee_per_pack_snapshot` (nullable), diisi di `StartTrip::startTrip()` dari tarif owner
+trip (pola identik `komisi_per_mika_snapshot`) — tarif owner berubah SETELAH trip dimulai TIDAK
+PERNAH mengubah trip yang sudah berjalan.
+
+**Pengaturan:** `UserResource` (form owner) Section **"Fee Aplikasi"**, field **"Fee Aplikasi
+per Kemasan (Rp)"**, min 0. HANYA visible & bisa disimpan super admin (`->visible()` DAN
+`->dehydrated()` keduanya cek `isSuperAdmin()`, BUKAN `$get('role')`) — lihat **UI_INVENTORY
+B8.2** untuk penjelasan lengkap kenapa gate di level FIELD ini adalah pengaman utama, bukan
+sekadar defense-in-depth (owner justru BISA membuka `UserResource` ini untuk operatornya
+sendiri). Dibuktikan `AppFeeUserResourceFieldTest` termasuk skenario payload `role` ditempa
+manual.
+
+**ATURAN HITUNG (`App\Support\AppFeeCalculator`, batch query tanpa N+1) — tabel pemetaan
+`delivery_type` → aturan**, didaftar SEBELUM implementasi sesuai perintah brief (hanya 3 nilai
+`delivery_type` yang pernah dipakai di seluruh codebase, diverifikasi via grep `app/`):
+
+| `delivery_type` | Dibuat di mana | Dihitung kena fee? |
+|---|---|---|
+| `consignment` | `ConsignmentDrop.php` (titip normal operator), `SeedKioskSaldoAwal.php`/`kios:saldo-awal` (saldo awal kios lama, trip sentinel) | **TERGANTUNG**: titipan PERTAMA tiap kios → TIDAK dihitung. Titipan ke-2 dst → DIHITUNG. (Lihat catatan "titipan pertama" di bawah.) |
+| `cash_sale` | `ActiveTrip.php`, 3 titik: Titip Cash, Jual Cash Cepat (walk-in) | **SELALU DIHITUNG** (tidak kena aturan "titipan pertama" — bukan konsinyasi). |
+| `bs_redistribution` | `ActiveTrip.php`, 1 titik: Dodol Sisa (redistribusi BS antar kios) | **TIDAK PERNAH DIHITUNG**. |
+
+Di atas pemetaan tipe, dua pengecualian lintas-tipe berlaku lebih dulu (keduanya bikin SELURUH
+delivery di trip itu tak dihitung, apapun `delivery_type`-nya):
+1. **Trip sentinel migrasi** (`Trip::isMigrationSentinel()` — operator-nya akun sistem
+   `operator.migrasi.*`) → tidak dihitung sama sekali.
+2. **Trip diarsip** (soft delete, `trips.deleted_at` terisi) → tidak dihitung sama sekali.
+
+**🔴 Catatan "titipan konsinyasi pertama" — bagian paling gampang salah, dan SUNGGUH pernah
+salah di draft awal implementasi (ketahuan & diperbaiki SEBELUM commit, lihat docblock
+`AppFeeCalculator.php`):** "pertama" dihitung dengan `MIN(d.id) GROUP BY kiosk_id` atas **SEMUA**
+delivery `consignment`, **TERMASUK yang di trip sentinel**. Ini WAJIB — kalau sentinel difilter
+keluar DULU baru `MIN(id)` dihitung, kios lama bersaldo-awal (yang delivery pertamanya SELALU di
+trip sentinel) akan salah menandai delivery NYATA pertamanya sebagai "pertama" dan keliru
+mengecualikannya dari fee — padahal rule brief justru sebaliknya: *"kios lama bersaldo-awal →
+titipan berikutnya BUKAN pertama"*, alias titipan nyata pertama kios lama itu HARUS dihitung.
+Urutan yang benar: hitung `MIN(id)` atas SEMUA delivery konsinyasi dulu (sentinel ikut, sehingga
+delivery sentinel itu sendiri yang "menang" jadi MIN untuk kios lama) → BARU terapkan
+pengecualian trip-sentinel (aturan 1 di atas) secara terpisah. Hasilnya: kios lama → delivery
+sentinel dikecualikan via aturan trip-sentinel (bukan aturan "pertama"), delivery nyata
+pertamanya tetap DIHITUNG. Kios baru (tak punya riwayat sentinel) → delivery nyata pertamanya
+sungguh "pertama" (MIN sungguhan) → TIDAK dihitung, sesuai rencana.
+
+**Fee** = mika kena fee × `trips.app_fee_per_pack_snapshot` (`null`=0). Real-time (bukan
+snapshot bulanan).
+
+**Backfill** tarif owner lama ke trip yang sudah ada: `trips:backfill-app-fee-snapshot
+--owner=N --rate=300 [--force]` — default dry-run, `withTrashed()` (termasuk trip terarsip,
+supaya datanya konsisten walau tak pernah ditagih fee), **tidak pernah menimpa** snapshot yang
+sudah terisi.
+
+**Tampilan:** widget dashboard admin baru **"Fee Aplikasi"** (super admin only, `canView()`,
+`wire:poll.30s`) — lihat **UI_INVENTORY B8.5**. Per owner: Tarif, Mika Kena Fee (hari ini/bulan
+ini/total), Fee Rp (hari ini/bulan ini/total), + baris TOTAL. Owner tarif Rp 0 tetap tampil
+(`Rp 0`, tidak disembunyikan). Query count konstan ~3 query berapa pun banyak owner.
+
+**Fee TIDAK PERNAH muncul** di: dashboard owner, Riwayat Trip, Laporan Bulanan, export PDF/Excel
+(trip & bulanan), layar operator — dibuktikan `AppFeeDoesNotLeakTest`
+(`assertDontSee`/`assertStringNotContainsString` pada semua halaman & export tersebut, dengan
+owner test yang SUNGGUH punya tarif Rp 300 dan trip bersnapshot terisi, supaya test ini MERAH
+kalau suatu saat fee aplikasi tak sengaja ikut terbaca — bukan lolos diam-diam karena datanya
+kosong).
+
+**Skenario wajib brief (poin 4g)** — satu test (`AppFeeCalculatorTest::test_full_brief_4g_
+scenario_owner_a`) membangun SEMUA kasus dalam satu owner: kios lama "Bu Sri" tagih+titip ulang 4
+mika→**4**; kios baru "Pak Amin" titipan pertama 3 mika→**0**; trip berikutnya Pak Amin titip 3
+mika→**3**; Titip Cash 2 mika→**2**; Jual Cash Cepat 2 mika→**2**; Dodol Sisa (bs_redistribution)
+1 mika→**0**; trip sentinel (10 mika)→**0**; trip diarsip (7 mika)→**0**. Total = 11 mika × Rp300
+= **Rp 3.300**. Plus: owner tarif 0 → `Rp0` (bukan disembunyikan); tarif diubah SAAT trip sudah
+berjalan → trip itu tetap pakai tarif lama (snapshot); query count widget konstan untuk 1 vs 5
+owner.
+
+**28 test baru** (`AppFeeCalculatorTest`, `AppFeeWidgetTest`, `AppFeeUserResourceFieldTest`,
+`AppFeeDoesNotLeakTest`, `TripsBackfillAppFeeSnapshotTest`, `StartTripAppFeeSnapshotTest`), SEMUA
+PASS.
+
+### Tugas 5 — Dokumen — commit berikutnya
+`docs/UI_INVENTORY.md`: **B2** (chart owner diperbarui jadi bar), **B8.2** (Section "Fee
+Aplikasi" didokumentasikan), **B8.3** dipertahankan apa adanya + **B8.4** baru (widget chart
+admin "Tren Omset 30 Hari — Top 3 Owner") + **B8.5** baru (widget "Fee Aplikasi"). `NEXT_SESSION.md`:
+entry ini (aturan fee lengkap persis poin 4c brief, termasuk tabel pemetaan `delivery_type` dan
+catatan bug "titipan pertama").
+
+### ATURAN KERAS yang dipatuhi (sesuai brief)
+Tidak ada akses/perintah apapun ke DB production di sesi ini — semua migrasi/backfill/test
+dijalankan di DB dev lokal saja. Tidak ada angka uang lama yang berubah (dibuktikan
+`reports:verify-locked-numbers 2` IDENTIK, lihat Laporan Akhir di bawah). Commit atomik per
+tugas (`4ff173c`, `3f1fd18`, `2bdba12`, `9e02e4a`, + commit dokumen ini). **BELUM di-push** —
+ada migrasi baru (`2026_10_23_000001`/`…000002`, kolom `app_fee_per_pack`/
+`app_fee_per_pack_snapshot`); owner backup DB produksi dulu sebelum push & migrate di prod.
+
+### Laporan Akhir (ringkas — lihat juga respons sesi ini untuk versi lengkap)
+- **Test:** baseline 544 (awal sesi ini, sebelum Tugas 1) → **588 PASS** setelah Tugas 1-4
+  (Tugas 1 +3 → 547, Tugas 2 +6 → 553, Tugas 3 +7 → 560, Tugas 4 +28 → 588). Full suite
+  dijalankan ulang setelah Tugas 4, zero regresi.
+- **`reports:verify-locked-numbers 2`** (lokal): snapshot diambil dengan kode PRE-Tugas-4
+  (`git stash` 4 file tracked yang disentuh Tugas 4), lalu di-diff melawan kode POST-Tugas-4 →
+  **`IDENTIK — delta 0 pada semua trip & agregat bulanan yang cocok.`** Fee aplikasi tidak
+  menyentuh satu pun angka uang lama.
+- **Bug ditemukan & diperbaiki SEBELUM commit** (tak pernah ter-ship ke manapun): (1) Tugas 3 —
+  `<style>` di luar root element Livewire di view widget chart admin (ketahuan lewat verifikasi
+  browser sungguhan, bukan test); (2) Tugas 4 — urutan filter-sentinel vs `MIN(id)` di subquery
+  "titipan pertama" `AppFeeCalculator` (ketahuan selagi menyusun data test skenario 4g, lihat
+  catatan lengkap di atas).
+- Tidak ada hal di luar spesifikasi brief yang ambigu — satu-satunya isu yang ditemukan (bug di
+  atas) punya jawaban benar yang tak ambigu dari rumus brief sendiri, jadi diperbaiki langsung
+  (bukan diberhentikan untuk ditanya) sesuai instruksi "proceed" brief.
+- **JANGAN PUSH** — dipatuhi; tidak ada `git push` dijalankan di sesi ini.
+
 ## 🔴 D9: OWNER BISA ATUR KOMISI KHUSUS OPERATOR SENDIRI + rapikan prefix akun sistem (23 Okt 2026) — SELESAI & PUSHED
 **544 test hijau (dari 538 baseline — 538 itu sendiri = 536 + 2 dari Tugas 2 di sesi ini).**
 Brief ini punya 3 tugas, dikerjakan & commit atomik per tugas.

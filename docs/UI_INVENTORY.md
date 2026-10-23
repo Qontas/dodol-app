@@ -378,7 +378,7 @@ Di atas daftar kios berhenti, jika ada kerugian write-off bulan ini, muncul kota
 
 Grid fisik per trip: **"Kios Dikunjungi"**, **"Kios Lama"**, **"Kios Baru"**, **"Total Mika Dititip"** (+biji) (`resources/views/owner/dashboard.blade.php:405-423`). Grid finansial: **"Mika Terjual"** (+biji), **"Mika Kios Baru (Titip)"** (+biji), **"Modal Dodol"**, **"Keuntungan"** (`resources/views/owner/dashboard.blade.php:426-445`). Grid komisi (latar amber): **"Mika Komisi (Drop)"** (+biji), **"Komisi {operator}"**, **"Untung Bersih Owner"** (`resources/views/owner/dashboard.blade.php:447-461`). Kosong → **"Belum ada trip yang diselesaikan."** (`resources/views/owner/dashboard.blade.php:463-466`). Link bawah: **"Riwayat Semua Trip →"** dan **"Lihat Laporan Bulanan →"** (`resources/views/owner/dashboard.blade.php:469-478`).
 
-**"Tren Omset (30 Hari Terakhir)"** (h2, `resources/views/owner/dashboard.blade.php:483`) — grafik garis Chart.js dari total omset harian 30 hari terakhir (`app/Http/Controllers/OwnerDashboardController.php:177-195`, blade baris 497-576).
+**"Tren Omset (30 Hari Terakhir)"** (h2, `resources/views/owner/dashboard.blade.php:483`) — grafik Chart.js dari total omset harian 30 hari terakhir (`app/Http/Controllers/OwnerDashboardController.php:177-195`, blade baris 497-583). **Diubah 23 Okt 2026 (TUGAS 3):** line → **bar chart** supaya terbaca di HP & laptop — tinggi responsif (`h-[260px] sm:h-[320px]`, bukan 320px tetap), label sumbu-X tanpa rotasi + `autoSkip` (maks 6 label di HP, 10 di laptop), sumbu-Y disingkat (`"15rb"`, `"1,2jt"` via `formatRpSingkat()`), tooltip tetap tampilkan tanggal lengkap + Rp penuh (`formatRpLengkap()`), legend kecil ditampilkan di atas (sebelumnya disembunyikan), state kosong **"Belum ada omset 30 hari terakhir."** kalau 30 hari nihil (bukan grafik rata nol yang membingungkan). Angka `$chartData`/query `SUM(amount_paid)` nya sendiri **tidak berubah** — murni tampilan.
 
 Terakhir, tombol **"Buka Panel Manajemen Data"** menutup halaman, mengarah ke resource Kios di panel Filament (`resources/views/owner/dashboard.blade.php:489-494`).
 
@@ -784,6 +784,13 @@ Section **Tarif & Komisi** (visible hanya jika `role = 'owner'`):
 - **`komisi_kios_baru_per_mika` TIDAK ada di form ini** — dihapus 23 Okt 2026 (lihat **C8**, **D4**). Kolom DB sengaja tidak didrop.
 - **`hpp_per_mika` TIDAK ada di form ini** — komentar: `hpp_per_mika DIHAPUS dari form ini — HPP sekarang per-varian produk (ProductVariant::cost_per_pack), bukan satu angka global per owner. Kolom tabel readonly super-admin (di bawah) DIBIARKAN — informasional, audit data lama, bukan jalur kalkulasi aktif.` (`UserResource.php:185–210`)
 
+Section **"Fee Aplikasi"** (visible hanya jika `role = 'owner'`) — **ditambahkan 23 Okt 2026 (TUGAS 4)**:
+- `app_fee_per_pack` — **"Fee Aplikasi per Kemasan (Rp)"**, numerik, nullable, min 0. Fee yang owner partner BAYAR ke pemilik aplikasi per mika/kemasan (semua produk sama) yang diantar operatornya; `null` = Rp 0 (default — owner lama/Ismi sendiri tetap Rp 0, tak perlu backfill).
+- **HANYA super admin yang bisa melihat & menyimpan field ini** — `->visible(fn () => auth()->user()?->isSuperAdmin() ?? false)` DAN `->dehydrated(fn () => auth()->user()?->isSuperAdmin() ?? false)`. Owner yang membuka resource ini untuk mengedit dirinya sendiri atau operatornya **tidak pernah melihat field ini sama sekali** (Section-nya sendiri hanya visible untuk `role==='owner'`, dan owner yang login via UI normal tak pernah bisa mengedit baris `role='owner'` lewat resource ini — lihat `getEloquentQuery()` di bawah).
+- 🔴 **Koreksi penting (jangan diasumsikan "owner tak pernah lewat resource ini"):** owner **justru bisa** membuka `UserResource` ini — bukan cuma super admin (`AdminPanelProvider` authMiddleware: `'owner,super_admin'`) — untuk mengelola **operatornya sendiri** (`getEloquentQuery()` men-scope owner ke `role='operator' AND owner_id=dirinya`, paralel dengan `OperatorResource` di panel owner, lihat **B8.1**). Karena itu `->visible()`/`->dehydrated()` isSuperAdmin() di field ini adalah **pengaman utama** (bukan sekadar defense-in-depth di jalur yang sudah tak terjangkau) — satu-satunya penolak payload `role='owner'` yang ditempa manual (mis. `set('data.role','owner')` lewat Livewire). Dibuktikan oleh `tests/Feature/Admin/AppFeeUserResourceFieldTest.php` (termasuk skenario payload tempaan ini).
+- Dipakai `App\Support\AppFeeCalculator` (lihat **B8.5**) dan dibekukan ke `trips.app_fee_per_pack_snapshot` saat `StartTrip` — tarif berubah TIDAK mengubah trip yang sudah berjalan (pola identik `komisi_per_mika_snapshot`, **C7**). Backfill tarif lama lewat command `trips:backfill-app-fee-snapshot --owner=N --rate=300`.
+- Fee aplikasi **TIDAK PERNAH muncul** di dashboard owner, Riwayat Trip, Laporan Bulanan, export PDF/Excel, atau layar operator — dibuktikan `tests/Feature/Admin/AppFeeDoesNotLeakTest.php` (`assertDontSee`/`assertStringNotContainsString` di semua halaman & export tersebut).
+
 **Kolom Tabel** (super admin melihat semua; owner hanya lihat operatornya):
 - `owned_active_kiosks_count` — `Kios`; hanya terisi untuk baris owner (jumlah kios aktif miliknya), `—` untuk operator/super admin. Dibaca dari `withCount('ownedKiosks')` yang sudah dimuat `getEloquentQuery()` — nol query tambahan per baris. Ditambahkan 21 Okt 2026. (`UserResource.php:271–275`)
 - `operators_count` — `Operator`; sama seperti di atas, jumlah operator milik owner tersebut. (`UserResource.php:277–281`)
@@ -823,6 +830,30 @@ Widget tabel berjudul **“Leaderboard Owner Hari Ini”**, satu baris per owner
 **Catatan performa (dirombak 21 Okt 2026):** versi sebelumnya menembak 7 query terpisah PER BARIS owner (N×7, makin lambat makin banyak owner). Sekarang 2 query owner-level + `TripAggregator::for()` SATU KALI untuk semua owner sekaligus → total konstan ~9 query **berapa pun banyak owner** (diverifikasi oleh `OwnerPerformanceTableQueryCountTest`, 9 query baik untuk 1 owner maupun 5 owner).
 
 Angka omset/komisi/untung bersih dibaca dari `TripAggregator` — rumus **identik** dengan accessor `Trip` (termasuk `komisi_per_mika_snapshot` per-trip, lihat **C7**), bukan tarif owner LIVE. Trip sentinel migrasi (**C14**) dikecualikan dari semua angka ini (lihat **C7**, **D8**).
+
+---
+
+#### B8.4 Dashboard Super Admin — Widget "Tren Omset 30 Hari — Top 3 Owner"
+
+Navigasi: Dashboard panel Admin (hanya super admin, `AdminPanelProvider`)
+Sumber: `app/Filament/Widgets/OwnerOmsetChart.php` + view kustom `resources/views/filament/widgets/omset-bar-chart.blade.php`
+
+Grafik `ChartWidget` Filament, judul **"Tren Omset 30 Hari — Top 3 Owner"**, kolom lebar penuh, hanya tampil untuk super admin (`canView()`). Satu bar per hari (30 hari terakhir), **stacked** per 3 owner dengan omset terbesar, warna solid beda per owner.
+
+**Diubah 23 Okt 2026 (TUGAS 3):** line → bar chart (via `getType()` + view kustom, bukan `getMaxHeight()` bawaan Filament, supaya tinggi responsif & state kosong bisa dikontrol). Label sumbu-X tanggal singkat (`"23 Okt"`) tanpa rotasi + `autoSkip` (maks 6 di HP, 10 di laptop); sumbu-Y disingkat (`"rb"`/`"jt"`); tooltip judul tanggal LENGKAP (`"23 Oktober 2026"`, dibaca dari properti `fullDates` yang ditempel ke objek `data` Chart.js) + Rp penuh per owner + baris **footer "Total: Rp …"** (sum semua owner hari itu); legend kecil di atas. State kosong (semua owner semua hari = 0): **"Belum ada omset 30 hari terakhir."** dibaca lewat `isEmpty()` (dari `getCachedData()`, tanpa query tambahan) — bukan grafik batang rata nol. Query `SUM(amount_paid)` di `getData()` **tidak berubah** dari versi line chart sebelumnya — murni tampilan (`OwnerOmsetChartTest.php`, `DashboardTest.php`).
+
+---
+
+#### B8.5 Dashboard Super Admin — Widget "Fee Aplikasi"
+
+Navigasi: Dashboard panel Admin (hanya super admin, `AdminPanelProvider`)
+Sumber: `app/Filament/Widgets/AppFeeWidget.php`, kalkulasi dari `App\Support\AppFeeCalculator` (lihat **B8.2**, **D-TUGAS4**)
+
+**Baru 23 Okt 2026 (TUGAS 4).** Widget tabel judul **"Fee Aplikasi"**, satu baris per owner, hanya tampil untuk super admin (`canView()` → `isSuperAdmin()`), `wire:poll.30s` (polling real-time). Kolom per owner: **Tarif** (tarif `app_fee_per_pack` owner SAAT INI — referensi, bukan snapshot), **Mika Kena Fee** (hari ini / bulan ini / total), **Fee Rp** (hari ini / bulan ini / total) — plus baris **TOTAL** di bawah menjumlahkan semua owner. Owner dengan tarif Rp 0 tetap tampil (menampilkan `Rp 0`, tidak disembunyikan).
+
+**Aturan hitung "mika kena fee"** (`AppFeeCalculator`, lihat ringkasan lengkap di **NEXT_SESSION.md**): SUM `deliveries.qty_delivered` KECUALI (1) `bs_redistribution` (Dodol Sisa), (2) trip sentinel migrasi, (3) trip terarsip (soft delete), (4) titipan **konsinyasi PERTAMA** tiap kios (titipan ke-2 dst DIHITUNG; `cash_sale`/Titip Cash/Jual Cash Cepat selalu dihitung semua, tidak kena aturan "pertama" karena bukan `consignment`). Fee Rp = mika kena fee × `trips.app_fee_per_pack_snapshot` (dibekukan saat trip dimulai, bukan tarif owner live — tarif berubah di tengah jalan tidak mengubah trip yang sudah berjalan).
+
+Batch query (tanpa N+1): 1 query daftar owner + 2 query agregat batch lintas semua owner sekaligus → total konstan ~3 query berapa pun banyak owner (diverifikasi `AppFeeCalculatorTest`, `AppFeeWidgetTest`). **Tidak pernah muncul** di dashboard owner, Riwayat Trip, Laporan Bulanan, export PDF/Excel, atau layar operator (`AppFeeDoesNotLeakTest`).
 
 ---
 
