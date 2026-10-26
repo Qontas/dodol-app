@@ -8,8 +8,7 @@
          ini untuk deteksi snapshot wire:navigate lintas-tenant yang basi. --}}
     <meta name="auth-uid" content="{{ auth()->id() }}">
     <title>@yield('title', 'Owner') &mdash; {{ auth()->user()?->getBusinessNameValue() ?? 'Cemilan Qontas' }}</title>
-    <link rel="preconnect" href="https://fonts.bunny.net">
-    <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
+    {{-- Figtree di-host sendiri lewat resources/css/app.css (@fontsource), bukan fonts.bunny.net --}}
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @include('partials.pwa-head')
     @include('partials.pwa-token-refresh')
