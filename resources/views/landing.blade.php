@@ -5,33 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Cemilan Qontas — Sistem Distribusi Dodol</title>
     <meta name="description" content="Platform manajemen distribusi dodol modern: kelola kios, trip, tagihan titipan, dan laporan dalam satu sistem.">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
-                    keyframes: {
-                        'gradient-pan': {
-                            '0%, 100%': { backgroundPosition: '0% 50%' },
-                            '50%': { backgroundPosition: '100% 50%' },
-                        },
-                        'float': {
-                            '0%, 100%': { transform: 'translateY(0)' },
-                            '50%': { transform: 'translateY(-12px)' },
-                        },
-                    },
-                    animation: {
-                        'gradient-pan': 'gradient-pan 12s ease infinite',
-                        'float': 'float 6s ease-in-out infinite',
-                    },
-                },
-            },
-        }
-    </script>
+    {{-- Tailwind Play CDN (JIT compiler runtime) + Google Fonts diganti build
+         Vite sendiri — lihat resources/css/landing.css. Keyframes/animation
+         gradient-pan & float dipindah ke tailwind.config.js. --}}
+    @vite(['resources/css/landing.css'])
     <style>
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
         .reveal { opacity: 0; transform: translateY(32px); transition: opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1); }
