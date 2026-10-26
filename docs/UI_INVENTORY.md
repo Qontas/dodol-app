@@ -334,7 +334,7 @@ GPS diberi timeout 15 detik dan otomatis mencoba sekali lagi dengan akurasi rend
 | `Manajemen Supplier` | `filament.owner.resources.suppliers.index` |
 | `Manajemen Anggota` | `filament.owner.resources.operators.index` |
 | `Stok Masuk` | `filament.owner.resources.procurement-batches.index` |
-| `Laporan & Analitik` | `owner.reports.monthly` |
+| `Laporan & Analitik` | `owner.reports.periode` (**diubah 26 Okt 2026** — lihat B4.5; "Laporan Bulanan" lama tetap ada, link diakses dari dalam halaman Laporan Periode) |
 | `Settings` | `owner.settings` |
 
 Perhatikan: lima dari sembilan item (Manajemen Kios, Manajemen Area, Manajemen Supplier, Manajemen Anggota, Stok Masuk) menembak LANGSUNG ke halaman index resource Filament — ini konfirmasi konkret bahwa "masuk ke panel Filament" bagi owner artinya "diarahkan ke satu resource tertentu dari sidebar Blade", bukan membuka panel Filament sebagai aplikasi tersendiri.
@@ -415,13 +415,17 @@ Isi baris (`resources/views/owner/trips/index.blade.php:70-136`): tanggal trip (
 
 Grid **"Mika Dibawa"**, **"Mika Diantar"** (+biji), **"Mika Sisa"**, **"Mika Terjual"** (+biji) (`resources/views/owner/trips/show.blade.php:68-87`). Grid **"Omset"**, **"Modal Dodol (HPP)"**, **"Untung Kotor"**, **"Mika Komisi (Drop)"** (+biji) (`resources/views/owner/trips/show.blade.php:90-108`). Grid amber **"Komisi {operator}"** / **"Untung Bersih Owner"** (`resources/views/owner/trips/show.blade.php:110-119`).
 
-Tabel **"Kunjungan Kios ({N})"** kolom: **Kios**, **Aksi**, **Waktu**, **Mika Titip**, **BS (biji)**, **Uang** (`resources/views/owner/trips/show.blade.php:122-156`). Label aksi kunjungan dari `TripExportController::visitActionLabel()` (`app/Http/Controllers/Owner/TripExportController.php:65-75`): `drop_and_settle`→**Tagih + Titip Baru**, `drop_only`→**Titip Baru**, `settle_only`→**Tagih Saja**, `check_only`→**Cek Saja**, `cash_sale`→**Jual Cash**.
+**Diubah 26 Okt 2026 (BRIEF item 4 — investigasi "Mika Sisa negatif", tampilan saja, rumus TIDAK diubah):** kartu **"Mika Sisa"** jadi merah (`text-red-600`) + catatan kecil **"⚠ Cek stok — kemungkinan mika BS ikut terhitung"** kalau nilainya negatif (`resources/views/owner/trips/show.blade.php:79-85`). Akar masalah: `mika_sisa = mika_dibawa − mika_drop` (`TripHistoryController::show()` baris 152, identik `TripExportController::buildTripData()`) memakai `deliveries()->sum('qty_delivered')` MENTAH (semua `delivery_type`), TIDAK mengecualikan `bs_redistribution` (Dodol Sisa daur-ulang antar kios) — beda dari basis komisi `Trip::getTotalDropReal()` yang sudah benar mengecualikannya. Mika BS yang diletakkan ulang bukan stok bawaan motor, tapi ikut mengurangi "sisa" seolah-olah dari stok motor, jadi bisa jatuh negatif padahal stok fisik operator sebenarnya cukup. Dua faktor lain yang dikonfirmasi TIDAK ada di kode (kontribusi tambahan ke angka negatif): (1) tidak ada fitur "Tambah Mika Dibawa" di tengah trip — `qty_carried_total` hanya diisi sekali saat `StartTrip`, tak pernah diubah setelahnya; (2) tidak ada guard yang menolak titip/jual melebihi `qty_carried_total` di `ActiveTrip`. Rencana fix (BELUM diimplementasikan — di luar lingkup brief ini): hitung `mika_sisa` dari basis yang SAMA dengan `getTotalDropReal()` (kecualikan `bs_redistribution`), ditambah pertimbangan fitur "Tambah Mika Dibawa"/guard overdraw di sesi berikutnya.
+
+Tabel **"Kunjungan Kios ({N})"** — **diperluas 26 Okt 2026 (BRIEF item 2, keluhan owner "detail kunjungan tidak lengkap")**, dari 6 kolom jadi 10 kolom: **Kios**, **Aksi**, **Waktu**, **Mika Titip**, **Biji Terjual**, **BS (biji)**, **Tagihan (Rp)**, **Uang Diterima (Rp)**, **Piutang (Rp)**, **Catatan/Janji Bayar**, + baris **TOTAL** di footer (`resources/views/owner/trips/show.blade.php`, `$visitRows` dari `App\Support\VisitRowBuilder::forTrip()` — builder baru SATU SUMBER dipakai juga PDF/Excel trip & sheet "Data Kunjungan" Laporan Periode, lihat B4.5). "Piutang" per baris pakai formula IDENTIK widget "Belum Bayar" dashboard (status `pending` → `amount_due − amount_paid`), diterapkan per-baris. Label aksi kunjungan dari `VisitRowBuilder::actionLabel()`: `drop_and_settle`→**Tagih + Titip Baru**, `drop_only`→**Titip Baru**, `settle_only`→**Tagih Saja**, `check_only`→**Cek Saja**, `cash_sale`→**Jual Cash**.
 
 **Arsipkan/Pulihkan** (`app/Http/Controllers/Owner/TripDeleteController.php`): `destroy()` memanggil `$trip->delete()` — ini SOFT DELETE (trait `SoftDeletes` pada model `Trip`), hanya mengisi `deleted_at`, data terkait (`kiosk_visits`, `deliveries`, `settlements`, `delivery_origins`, `commissions`) TIDAK ikut terhapus karena tidak ada DB DELETE/FK cascade (komentar kode, `app/Http/Controllers/Owner/TripDeleteController.php:19-27`). `restore()` mengosongkan `deleted_at` (`app/Http/Controllers/Owner/TripDeleteController.php:35-45`). Hard delete permanen hanya lewat command Artisan `trip:force-delete`, tidak tersedia di UI. Otorisasi kedua aksi: `abort_unless($trip->owner_id === auth()->id() || auth()->user()->isSuperAdmin(), 403)` (`app/Http/Controllers/Owner/TripDeleteController.php:14-17,37-40`).
 
 **Export** (`app/Http/Controllers/Owner/TripExportController.php`): otorisasi sama (`authorizeTrip()`, baris 15-21). PDF via `Pdf::loadView('exports.trip-report-pdf', ...)` (baris 77-84). Excel via `TripReportExport` (`app/Exports/TripReportExport.php`) dengan 2 sheet:
-- Sheet **"Ringkasan"**, headings `['Keterangan', 'Nilai']` (`app/Exports/TripReportExport.php:39-42`), berisi baris: Tanggal Trip, Operator, Cluster, Mika Dibawa, Mika Di-drop, Biji Di-drop, Mika Sisa, Omset, HPP, Untung Kotor, Mika Komisi (Drop), Biji Komisi (Drop), "Komisi {operator}", Untung Bersih Owner (`app/Exports/TripReportExport.php:49-64`).
-- Sheet **"Detail Kunjungan"**, headings `['Kios', 'Aksi', 'Waktu']` (`app/Exports/TripReportExport.php:80-83`).
+- Sheet **"Ringkasan"**, headings `['Keterangan', 'Nilai']` (`app/Exports/TripReportExport.php:39-42`), berisi baris: Tanggal Trip, Operator, Cluster, Mika Dibawa, Mika Di-drop, Biji Di-drop, Mika Sisa (+catatan merah kalau negatif, lihat atas), Omset, HPP, Untung Kotor, Mika Komisi (Drop), Biji Komisi (Drop), "Komisi {operator}", Untung Bersih Owner (`app/Exports/TripReportExport.php:49-64`).
+- Sheet **"Detail Kunjungan"** — **diperluas 26 Okt 2026 (BRIEF item 2)** dari 3 kolom (`Kios`/`Aksi`/`Waktu`, tanpa angka) jadi 10 kolom: `['Kios', 'Aksi', 'Waktu', 'Mika Titip', 'Biji Terjual', 'BS (biji)', 'Tagihan (Rp)', 'Uang Diterima (Rp)', 'Piutang (Rp)', 'Catatan/Janji Bayar']` + baris TOTAL (`app/Exports/TripReportExport.php`), dari `VisitRowBuilder` yang sama dengan web & PDF. Kedua sheet pakai `WithStrictNullComparison` — tanpa ini, Maatwebsite\Excel membandingkan nilai dengan `==null` (loose) untuk deteksi sel kosong, jadi literal `0` (mis. BS 0 biji) ikut jadi sel KOSONG bukan angka 0 asli.
+
+**Diubah 26 Okt 2026 (BRIEF item 1 — keluhan owner iPhone: klik "Export PDF" membuka tab baru, bukan terunduh):** kedua tombol export (di sini dan di B4/B4.5) sekarang berpakai `data-force-download` — JS global baru `resources/js/force-download.js` (di-import dari `app.js`) meng-`fetch()` link-nya, membaca nama file dari header `Content-Disposition`, lalu memicu unduhan via `<a download>` blob sungguhan (bukan navigasi biasa yang sering dibuka inline oleh browser mobile). Nama file manusiawi (bukan `trip-report-{date}.pdf` lama) dari `App\Support\ExportFilename` — contoh: `Laporan-Trip-2026-10-26-Tazudin-Syahputra.pdf`. Respons PDF (`Pdf::download()`) & Excel (`Excel::download()`) keduanya sudah `Content-Disposition: attachment` dari sono.
 
 ---
 
@@ -429,7 +433,7 @@ Tabel **"Kunjungan Kios ({N})"** kolom: **Kios**, **Aksi**, **Waktu**, **Mika Ti
 
 Route `owner.reports.monthly` + export (`routes/web.php:102-107`) → `MonthlyReportController` (`app/Http/Controllers/Owner/MonthlyReportController.php`). Method statis `buildMonthlyData($month, $ownerId)` (baris 24-161) dipakai BERSAMA oleh halaman web, export PDF, dan export Excel — supaya angka tidak pernah beda antar format.
 
-Halaman web (`resources/views/owner/reports/monthly.blade.php`): judul **"Laporan Bulanan"**, subjudul nama bulan-tahun terformat (mis. "Oktober 2026") (`resources/views/owner/reports/monthly.blade.php:7-11`). Form pemilih bulan: label **"Pilih Bulan"**, input `type="month"`, tombol **"Tampilkan"** (`resources/views/owner/reports/monthly.blade.php:14-23`). Tombol export: **"Export PDF"**, **"Export Excel"** (`resources/views/owner/reports/monthly.blade.php:26-35`).
+Halaman web (`resources/views/owner/reports/monthly.blade.php`): judul **"Laporan Bulanan"**, subjudul nama bulan-tahun terformat (mis. "Oktober 2026") (`resources/views/owner/reports/monthly.blade.php:7-11`). Form pemilih bulan: label **"Pilih Bulan"**, input `type="month"`, tombol **"Tampilkan"** (`resources/views/owner/reports/monthly.blade.php:14-23`). Tombol export: **"Export PDF"**, **"Export Excel"** (`resources/views/owner/reports/monthly.blade.php:26-35`) — **26 Okt 2026**: keduanya kini `data-force-download` (lihat catatan unduh paksa di B3) dengan nama file manusiawi dari `ExportFilename::monthlyPdf()`/`monthlyExcel()` (mis. `Laporan-October-2026-Cemilan-Qontas.pdf`). Halaman ini **tetap ada tak berubah** (per brief) — link baru **"← Laporan Periode"** ditambahkan di atas tombol export, mengarah ke B4.5 (halaman baru, bukan pengganti).
 
 4 kartu ringkasan atas (`resources/views/owner/reports/monthly.blade.php:38-55`):
 - **"Kios Di-settle"** — jumlah kios unik yang ada transaksi settlement bulan ini (`analisisKios.total_kios_settled`, `app/Http/Controllers/Owner/MonthlyReportController.php:84-92,152`).
@@ -451,6 +455,29 @@ Catatan: tabel **"Analisis Frekuensi Kios"** (dari `analisisKios.frekuensi`) TID
 **Export Excel** (`app/Exports/MonthlyReportExport.php`), 2 sheet:
 - Sheet **"Rekap Trip"**, headings `['Tanggal', 'Operator', 'Kios Dikunjungi', 'Mika Drop', 'Biji Drop', 'Omset', 'Komisi', 'Untung Bersih']` + baris TOTAL (`app/Exports/MonthlyReportExport.php:38-60`).
 - Sheet **"Analisis Kios"**, headings `['Nama Kios', 'Cluster', 'Jumlah Kunjungan', 'Jumlah Settle']` (`app/Exports/MonthlyReportExport.php:75-89`).
+
+---
+
+### B4.5. Laporan Periode — BARU (26 Okt 2026, BRIEF item 3)
+
+Halaman baru di sidebar **"Laporan & Analitik"** (route `owner.reports.periode`, `app/Http/Controllers/Owner/PeriodReportController.php` → `resources/views/owner/reports/periode.blade.php`), menggantikan target link sidebar (Laporan Bulanan lama **TETAP ADA**, lihat B4, diakses dari link **"Laporan Bulanan (lama) →"** di halaman ini).
+
+**Prinsip "satu sumber"**: TIDAK ADA rumus uang baru di halaman/export ini. Semua angka finansial dari `App\Support\TripAggregator::for()` (batch, sama persis dipakai `MonthlyReportController`/dashboard), semua baris kunjungan mentah dari `App\Support\VisitRowBuilder` (sama dipakai detail trip & export trip, lihat B3). Dibuktikan test `PeriodReportTest::test_bulan_ini_totals_match_laporan_bulanan_lama()` — "Bulan Ini" (quick-range) WAJIB angka omset/komisi/untung bersih/mika diantar identik dengan Laporan Bulanan lama bulan yang sama.
+
+**Filter** (`PeriodReportController::resolveRange()`): quick-pick **"Hari ini"** / **"Minggu ini"** (Senin–Minggu) / **"Bulan ini"**, atau rentang custom (`from`/`to`). Filter opsional **"Operator"** (dropdown operator milik owner). Semua via GET (bisa di-bookmark/share link).
+
+**8 kartu ringkasan**: Omset, HPP, Untung Kotor, Komisi, Untung Bersih, Mika Diantar, Kios Dikunjungi, Piutang Baru. "Piutang Baru" = `SUM` kolom `piutang` seluruh baris kunjungan periode ini (formula IDENTIK widget "Belum Bayar" dashboard, status `pending` → `amount_due − amount_paid`, dijumlah bukan diagregat ulang). "Kios Dikunjungi" sengaja pakai `active_visits` dari `TripAggregator` (bukan `visits->count()` mentah seperti tabel "Rekap Per Trip" Laporan Bulanan) — divergensi yang disengaja & aman karena ini metrik hitungan, bukan uang; tidak melanggar aturan "angka uang tidak berubah".
+
+**Tabel "Per Trip"**: Tanggal, Operator, Kios Dikunjungi, Mika Diantar, Omset, HPP, Untung Kotor, Komisi, Untung Bersih + baris TOTAL. **Tabel "Per Operator"**: dikelompokkan dari baris per-trip di atas (nama operator).
+
+Sentinel trip migrasi (`Trip::isMigrationSentinel()`) dan trip terarsip (soft-deleted) **dikecualikan** dari seluruh angka — sama seperti Laporan Bulanan. Isolasi tenant standar (`owner_id` di-scope, operator ditolak 403). String **"fee aplikasi"** tidak pernah muncul di halaman ini (dites eksplisit). Layout responsif, teruji pada lebar 390px (HP).
+
+**Export PDF** (`resources/views/exports/periode-report-pdf.blade.php`): kartu ringkasan + tabel Per Trip (+TOTAL) + tabel Per Operator, siap dibaca di HP. **Export Excel** (`app/Exports/PeriodReportExport.php`), **PERSIS 3 sheet** (dites eksplisit jumlah & nama sheet):
+- Sheet **"Ringkasan"** — `['Keterangan', 'Nilai']`, 10 baris (Periode, Usaha, lalu 8 kartu ringkasan di atas).
+- Sheet **"Per Trip"** — `['Tanggal', 'Operator', 'Kios Dikunjungi', 'Mika Diantar', 'Omset', 'HPP', 'Untung Kotor', 'Komisi', 'Untung Bersih']` + baris TOTAL.
+- Sheet **"Data Kunjungan"** — RAW, 1 baris per kunjungan (bukan per trip), TANPA baris TOTAL (siap filter/pivot di Excel), kolom PERSIS: `['Tanggal', 'Jam', 'Operator', 'Area', 'Kios', 'Aksi', 'Mika Titip', 'Biji Terjual', 'BS', 'Tagihan', 'Uang Diterima', 'Piutang', 'Janji Bayar', 'Catatan', 'Trip#']`, dari `VisitRowBuilder` (sama B3). Tidak ada cell merge, 1 baris header. Ketiga sheet pakai `WithStrictNullComparison` supaya kolom numerik bernilai 0 tetap angka asli (bukan sel kosong) — lihat catatan di B3.
+
+Nama file unduhan (keduanya `data-force-download`, lihat B3): `Laporan-Periode-{label}-{nama usaha}.pdf`/`.xlsx`.
 
 ---
 

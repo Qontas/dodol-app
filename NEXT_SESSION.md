@@ -1,6 +1,76 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 26 Oktober 2026*
 
+## 🟢 BRIEF 26 OKT 2026: UNDUH PAKSA + DETAIL KUNJUNGAN LENGKAP + LAPORAN PERIODE + INVESTIGASI MIKA SISA NEGATIF — SELESAI, boleh push (tidak ada migrasi)
+
+5 item, tidak ada akses prod, tidak ada migrasi. Angka uang **TIDAK berubah** — semua
+figure export/halaman baru dari sumber yang SAMA PERSIS dengan halaman web lama
+(`App\Support\TripAggregator::for()` / accessor `Trip` / `MonthlyReportController::buildMonthlyData()`),
+tidak ada rumus uang baru ditulis.
+
+**Item 1 — UNDUH, BUKAN TAMPIL.** Keluhan owner (iPhone): klik "Export PDF" di halaman
+laporan membuka tab browser, bukan terunduh. Fix: JS global baru
+`resources/js/force-download.js` (di-import `app.js`) — klik link ber-atribut
+`[data-force-download]` di-`fetch()`, nama file dibaca dari header `Content-Disposition`,
+lalu dipicu unduh sungguhan via blob `<a download>` (bukan navigasi biasa yang sering
+dibuka inline oleh browser mobile). Nama file manusiawi baru dari `App\Support\ExportFilename`
+(mis. `Laporan-Trip-2026-10-26-Tazudin-Syahputra.pdf`, menggantikan nama teknis
+`trip-report-{date}.pdf`). Dipasang di SEMUA tombol export (trip, Laporan Bulanan, Laporan
+Periode baru).
+
+**Item 2 — DETAIL KUNJUNGAN LENGKAP.** Tabel "Kunjungan Kios" (web, PDF, sheet "Detail
+Kunjungan" Excel trip) diperluas dari 3-6 kolom tanpa angka lengkap jadi 10 kolom: Kios,
+Aksi, Waktu, Mika Titip, Biji Terjual, BS (biji), Tagihan (Rp), Uang Diterima (Rp), Piutang
+(Rp), Catatan/Janji Bayar + baris TOTAL. Builder baru `App\Support\VisitRowBuilder`
+menggantikan dua builder terpisah yang berpotensi divergen — SATU sumber dipakai web, PDF,
+Excel trip, DAN sheet "Data Kunjungan" Laporan Periode. Dibuktikan test: total kolom "Uang
+Diterima" = Omset trip (satu sumber, bukan dua rumus).
+
+**Item 3 — LAPORAN PERIODE (halaman baru).** Sidebar "Laporan & Analitik" sekarang mengarah
+ke `owner.reports.periode` — quick range Hari ini/Minggu ini/Bulan ini/custom, filter
+operator opsional, 8 kartu ringkasan (Omset, HPP, Untung Kotor, Komisi, Untung Bersih, Mika
+Diantar, Kios Dikunjungi, Piutang Baru), tabel Per Trip + Per Operator. Export PDF (siap
+HP) + Excel PERSIS 3 sheet: "Ringkasan", "Per Trip", "Data Kunjungan" (raw, 1 baris/kunjungan,
+kolom persis sesuai brief, tanpa merge cell). **Laporan Bulanan lama TETAP ADA tak berubah**
+(link "← Laporan Bulanan (lama)" dari halaman baru). "Bulan Ini" dibuktikan angka IDENTIK
+Laporan Bulanan lama bulan yang sama (test). Sentinel & trip arsip dikecualikan, isolasi
+tenant teruji, "fee aplikasi" tidak pernah muncul, responsif 390px.
+
+**Catatan teknis Excel (ketemu saat nulis test):** Maatwebsite\Excel default membandingkan
+nilai array export dengan `==null` (longgar) untuk deteksi sel kosong — jadi literal `0`
+(mis. BS 0 biji, Mika Titip 0 di visit "Tagih Saja") & string `""` ikut dianggap null → jadi
+SEL KOSONG, bukan angka 0 asli. Semua sheet export trip & Laporan Periode sekarang
+implements `WithStrictNullComparison` supaya kolom numerik selalu angka asli (syarat brief
+item 3, juga berlaku utuk sheet "Detail Kunjungan" trip yang lama).
+
+**Item 4 — INVESTIGASI "Mika Sisa negatif"** (trip "KualiStories" 26 Okt: dibawa 90, dititip
+107, sisa -17) — **tampilan saja, rumus TIDAK diubah** sesuai instruksi brief. Akar masalah:
+`mika_sisa = mika_dibawa − mika_drop` (`TripExportController::buildTripData()` &
+`TripHistoryController::show()`) memakai `deliveries()->sum('qty_delivered')` MENTAH (semua
+`delivery_type`), **tidak mengecualikan `bs_redistribution`** (Dodol Sisa daur ulang antar
+kios) — beda dari basis komisi `Trip::getTotalDropReal()` yang sudah benar mengecualikannya.
+Mika BS yang diletakkan ulang bukan stok bawaan motor, tapi ikut mengurangi "sisa" seolah
+dari stok motor → bisa jatuh negatif padahal stok fisik operator cukup. Dikonfirmasi juga:
+**tidak ada** fitur "Tambah Mika Dibawa" di tengah trip (`qty_carried_total` hanya diisi
+sekali saat `StartTrip`, tak pernah diubah lagi) dan **tidak ada** guard yang menolak
+titip/jual melebihi `qty_carried_total` di `ActiveTrip`. **Fix yang diimplementasikan
+sekarang**: teks merah + catatan peringatan di web (`owner/trips/show.blade.php`), PDF
+(`trip-report-pdf.blade.php`), dan Excel (`TripReportExport.php`) kalau Mika Sisa < 0, TANPA
+mengubah rumus. **Proposal fix rumus** (belum diimplementasikan, untuk sesi berikutnya):
+hitung `mika_sisa` dari basis yang sama dengan `getTotalDropReal()` (kecualikan
+`bs_redistribution`), + pertimbangkan fitur "Tambah Mika Dibawa"/guard overdraw.
+
+**Dokumen**: `docs/UI_INVENTORY.md` B1 (nav sidebar), B3 (tabel kunjungan 10 kolom, catatan
+Mika Sisa, `WithStrictNullComparison`), B4 (link ke Laporan Periode), **B4.5 baru** (seluruh
+halaman Laporan Periode) diperbarui.
+
+**639 test PASS** (naik dari baseline 625, +14 test baru: 4 di `ReportExportTest` item 1/2,
+10 di `PeriodReportTest` item 3). Full suite dijalankan ulang setelah semua perubahan, zero
+regresi. 4 commit atomik (infra bersama → trip export/detail+investigasi → Laporan Periode →
+dokumentasi). **Boleh push** — tidak ada migrasi.
+
+---
+
 ## 🟢 BRIEF 26 OKT 2026: FEE APLIKASI — SEMUA MIKA YANG KELUAR KENA FEE (HAPUS PENGECUALIAN TITIPAN PERTAMA) — SELESAI, boleh push (tidak ada migrasi)
 
 Keputusan bisnis: titipan konsinyasi **PERTAMA** di kedai baru sekarang **IKUT kena fee**
@@ -49,7 +119,8 @@ saja, catatan kenapa Dodol Sisa tetap dikecualikan, catatan kesamaan dengan basi
 
 **625 test PASS** (naik dari baseline 624, +1 test baru permanen). Full suite dijalankan
 ulang setelah perubahan, zero regresi. Commit atomik (kode + test + docs dalam satu commit).
-**BELUM di-push** — tidak ada migrasi, jadi aman push kapan saja setelah direview.
+**SUDAH di-push** — commit `dce6886` (fix(fee): semua mika keluar kena fee aplikasi, hapus
+pengecualian titipan pertama).
 
 ---
 
