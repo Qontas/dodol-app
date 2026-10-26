@@ -47,11 +47,7 @@
         @endphp
         @foreach ($items as $item)
             @if ($item['route'])
-                {{-- wire:navigate: konsisten dgn link lain di app (trip.active, kiosks.create
-                     dari active-trip, dst) — sebelumnya nav bawah ini full page reload, jadi
-                     bug "peta kosong setelah wire:navigate" (brief 26 Okt 2026) tak pernah
-                     tereproduksi lewat path Beranda -> Kios Baru ini. --}}
-                <a href="{{ route($item['route']) }}" wire:navigate
+                <a href="{{ route($item['route']) }}"
                    class="min-h-[48px] flex items-center justify-center px-1 leading-tight {{ $item['active'] ? 'text-amber-600 font-semibold' : 'text-slate-600' }}">
                     {{ $item['label'] }}
                 </a>
