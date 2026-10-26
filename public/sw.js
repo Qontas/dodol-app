@@ -1,7 +1,8 @@
 /**
  * Service Worker — Cemilan Qontas (dodol-app)
  *
- * Strategi (v5 — aman-by-default + validasi HTTP-cache eksplisit):
+ * Strategi (v6 — tambah batas waktu navigasi, lihat poin baru di bawah;
+ * v5 — aman-by-default + validasi HTTP-cache eksplisit):
  *  - App shell statis (ikon, manifest, offline page) di-precache saat install.
  *  - Aset Vite ber-hash (/build/assets/*) di-cache RUNTIME (cache-on-fetch),
  *    JANGAN di-hardcode karena namanya berganti tiap build.
@@ -35,11 +36,20 @@
  *    bikin akun B melihat dashboard akun A. Navigasi = NETWORK-ONLY.
  *  - Saat offline, navigasi hanya jatuh ke offline.html generik (pesan "offline"),
  *    BUKAN menyajikan ulang dashboard lama.
+ *  - v6: navigasi juga dibatasi NAVIGATION_TIMEOUT_MS (8 detik). Kalau network
+ *    tak pernah balas sama sekali (bukan error cepat — mis. resource pihak
+ *    ketiga di <head> yang di-hang/diblokir jaringan user, lihat brief "APLIKASI
+ *    TIDAK BOLEH TERTAHAN OLEH SERVER LUAR"), SW tidak ikut menunggu tanpa batas
+ *    — jatuh ke offline.html setelah 8 detik. Fix utamanya ada di sisi aset
+ *    (self-host font/CSS, lihat resources/css/*.css), ini jaring pengaman kedua.
  *  - POST & request non-GET (Livewire update, form) TIDAK pernah disentuh SW.
  *  - Request Livewire (/livewire/*) di-BYPASS total agar tidak menambah latency.
  */
 
-const CACHE_NAME = 'dodol-v5';
+const CACHE_NAME = 'dodol-v6';
+
+// Batas waktu navigasi (brief: "network-first dengan batas waktu, mis. 8 detik").
+const NAVIGATION_TIMEOUT_MS = 8000;
 
 // App shell statis & non-hash. Aman di-precache karena URL-nya tetap & tidak per-user.
 const APP_SHELL = [
@@ -207,16 +217,28 @@ async function networkFirst(request) {
 }
 
 /**
- * Network-only untuk navigasi halaman.
- * - SELALU ambil dari network (tidak pernah baca/tulis cache halaman).
- * - Kalau benar-benar offline, tampilkan offline.html generik sebagai pesan,
- *   BUKAN dashboard lama. Tidak ada kebocoran data antar-user.
+ * Navigasi halaman: network-first dengan BATAS WAKTU (NAVIGATION_TIMEOUT_MS),
+ * BUKAN network-only tanpa batas (v5 lama).
+ * - Tidak pernah baca/tulis cache halaman (tetap sama dengan v5) — halaman
+ *   ter-autentikasi/CSRF TIDAK BOLEH dicache (multi-tenant: bocor antar-user).
+ * - Kalau network gagal cepat (DNS/connection error) ATAU tak pernah balas
+ *   sampai NAVIGATION_TIMEOUT_MS lewat (mis. resource render-blocking pihak
+ *   ketiga yang di-hang di jaringan user), jatuh ke offline.html generik —
+ *   BUKAN menunggu tanpa batas, BUKAN dashboard lama.
  */
 async function networkOnlyPage(request) {
+    // AbortController: begitu timeout menang, hentikan request yang masih
+    // menggantung — jangan terus menyedot bandwidth/baterai di jaringan lemah
+    // (justru jaringan lemah inilah skenario yang mau kita lindungi).
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), NAVIGATION_TIMEOUT_MS);
     try {
-        return await fetch(request);
+        const response = await fetch(request, { signal: controller.signal });
+        return response;
     } catch (err) {
         const offline = await caches.match('/offline.html');
         return offline || Response.error();
+    } finally {
+        clearTimeout(timer);
     }
 }
