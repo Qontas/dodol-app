@@ -7,6 +7,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\FontProviders\LocalFontProvider;
 use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -19,6 +20,7 @@ use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Vite;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
@@ -33,6 +35,11 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Amber,
             ])
+            // Default Filament load font Inter dari fonts.bunny.net (CDN pihak
+            // ketiga, render-blocking). Self-host via @fontsource/inter (Vite),
+            // bobot 400/500/600/700 sama persis dengan default Bunny supaya
+            // tampilan tak berubah. Lihat resources/css/filament-fonts.css.
+            ->font('Inter', url: Vite::asset('resources/css/filament-fonts.css'), provider: LocalFontProvider::class)
             // Anti-flash (FOUC) saat load pertama / cold cache di produksi.
             // Gejala: layout Filament sempat "berantakan/menumpuk" sebelum CSS
             // eksternal ter-apply, lalu normal. Solusi: sembunyikan body sampai
