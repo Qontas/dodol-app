@@ -1,48 +1,70 @@
 <div class="max-w-md mx-auto pb-36" x-data="{
     loading: false,
-    // Disamakan dgn form Kios Baru operator (fix 26324bd): timeout tegas + percobaan
-    // kedua enableHighAccuracy:false (fix jaringan, lebih cepat/andal indoor) sebelum
-    // menyerah, dan pesan per error.code (bukan error.message mentah browser yg kadang
-    // bahasa Inggris/tak jelas bagi operator lapangan). Tombol selalu pulih (loading
-    // di-reset) baik sukses maupun gagal — tak pernah nyangkut di 'Mencari…'.
-    sortByDistance(isRetry) {
+    // >100m: peringatan non-blocking ('urutan jarak mungkin tidak tepat') — TIDAK
+    // menghentikan sortByDistance, operator tetap dapat urutan (meski mungkin kasar).
+    gpsWarning: '',
+    gpsTracker: null,
+    // RIWAYAT BUG (26 Okt 2026): fix 23 Okt (retry enableHighAccuracy:false) TIDAK PERNAH
+    // lolos uji lapangan — fallback akurasi rendah itu JUSTRU sumber lokasi meleset
+    // ratusan meter diam-diam dipakai utk urutan jarak. Kebijakan baru: HANYA
+    // enableHighAccuracy:true+maximumAge:0 (TANPA fallback), watchPosition maks 20
+    // detik lewat window.trackAccurateGps (SATU sumber kebenaran sama dgn peta). Beda
+    // dgn peta: di sini TIDAK ada band 'tolak' — jarak tetap diurutkan brp pun akurasinya
+    // (data lama/ancer-ancer lebih baik dari tak ada urutan sama sekali), >100m hanya
+    // dapat peringatan non-blocking, bukan diblokir.
+    sortByDistance() {
         if (!navigator.geolocation) {
             alert('Geolocation tidak didukung oleh browser Anda.');
             return;
         }
+        if (this.gpsTracker) { this.gpsTracker.stop(); this.gpsTracker = null; }
         this.loading = true;
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                $wire.sortByDistance(position.coords.latitude, position.coords.longitude)
-                    .then(() => { this.loading = false; });
-            },
-            (error) => {
-                if (!isRetry && error && error.code !== error.PERMISSION_DENIED) {
-                    this.sortByDistance(true);
+        this.gpsWarning = '';
+
+        this.gpsTracker = window.trackAccurateGps({
+            onDone: (best) => {
+                this.gpsTracker = null;
+                if (!best) {
+                    this.loading = false;
+                    alert('Gagal mendapatkan lokasi. Sinyal GPS tidak didapat dalam 20 detik. Coba lagi di tempat terbuka.');
                     return;
                 }
-                this.loading = false;
-
-                let pesan = 'Gagal mendapatkan lokasi. Coba lagi.';
-                if (error) {
-                    if (error.code === error.PERMISSION_DENIED) {
-                        pesan = 'Izin lokasi ditolak. Buka ikon gembok di address bar > Izin > Lokasi > Izinkan, lalu coba lagi.';
-                    } else if (error.code === error.POSITION_UNAVAILABLE) {
-                        pesan = 'Sinyal GPS tidak didapat. Coba lagi di tempat terbuka.';
-                    } else if (error.code === error.TIMEOUT) {
-                        pesan = 'Waktu habis mencari lokasi. Coba lagi.';
-                    }
+                if (window.classifyGpsAccuracy(best.accuracy) !== 'good') {
+                    this.gpsWarning = `⚠️ Akurasi lokasi ±${Math.round(best.accuracy)} m — urutan jarak mungkin tidak tepat.`;
                 }
-                alert(pesan);
+                // BUG (ditemukan sesi ini, bukti: pageerror Cannot read properties of
+                // undefined (reading then) tepat saat klik Urutkan Jarak): bare $wire di
+                // sini BUKAN $wire yg sama dgn di ekspresi x-on/x-text langsung — ini
+                // closure bersarang (onDone di dalam method sortByDistance()), jadi harus
+                // this.$wire (konsisten dgn this.$wire.saveKioskPhoto() di bawah). Bare
+                // $wire balik undefined, lalu .then() meledak, this.loading tak pernah
+                // di-reset, tombol macet selamanya di Mencari.
+                this.$wire.sortByDistance(best.lat, best.lng).then(() => { this.loading = false; });
             },
-            {
-                enableHighAccuracy: !isRetry,
-                timeout: 15000,
-                maximumAge: 0
-            }
-        );
+            onError: (err) => {
+                this.loading = false;
+                this.gpsTracker = null;
+                if (err.code === 'PERMISSION_DENIED') {
+                    alert('Izin lokasi ditolak. Buka ikon gembok di address bar > Izin > Lokasi > Izinkan, lalu coba lagi.');
+                }
+            },
+        });
     }
 }">
+    {{-- Kebijakan GPS akurat (26 Okt 2026, lihat public/js/gps-accuracy.js) — SATU sumber
+         kebenaran, dipakai juga oleh peta operator & peta owner. Plain <script src> (bukan
+         @assets): file ini tak punya @script lain, Livewire tak pernah mengeksekusi ulang tag
+         <script src> yang isinya sama saat morph re-render, dan fungsi di gps-accuracy.js
+         idempotent (aman kalau toh terdefinisi ulang) — sama pola dgn kioskPhotoUpload() di
+         bawah.
+         BUG (ditemukan sesi ini): tag ini SEBELUMNYA ditaruh SEBELUM <div> root (sibling,
+         bukan child) -> Livewire salah anggap <script> ini sbg elemen akar komponen & pasang
+         wire:id di sana, bukan di <div> ini. Akibatnya closest('[wire:id]') dari MANAPUN di
+         dalam <div> ini gagal menemukan komponen -> $wire.apapun() balik fungsi no-op (bukan
+         Promise) -> .then() meledak -> Urutkan Jarak macet selamanya di "Mencari...". Harus
+         jadi CHILD pertama <div> root, SATU elemen akar saja utk Livewire. --}}
+    <script src="{{ asset('js/gps-accuracy.js') }}"></script>
+
     {{-- Banner offline: operator harus tahu koneksi putus, bukan spinner selamanya --}}
     <div wire:offline class="fixed top-0 inset-x-0 z-[60] bg-red-600 text-white text-center text-sm font-semibold py-2.5 shadow-md">
         Koneksi internet terputus. Periksa sinyal, lalu coba lagi.
@@ -159,6 +181,11 @@
                 <span x-text="loading ? 'Mencari…' : '{{ $sortedByDistance ? 'Terdekat Dulu' : 'Urutkan Jarak' }}'">Urutkan Jarak</span>
             </button>
         </div>
+
+        {{-- Akurasi >100m: peringatan non-blocking, urutan tetap ditampilkan (lihat
+             x-data sortByDistance() di atas — JANGAN diam-diam pakai lokasi kasar tanpa
+             memberitahu operator). --}}
+        <p x-show="gpsWarning" x-cloak x-text="gpsWarning" class="-mt-1 mb-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2"></p>
 
         {{-- Cari kios: daftar dimuat {{ $displayLimit }} kartu per batch demi ringan di
              HP. Sisa kios dijangkau lewat tombol "Muat lebih banyak" di bawah daftar
