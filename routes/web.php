@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\KioskPhotoController;
 use App\Http\Controllers\Owner\MonthlyReportController;
+use App\Http\Controllers\Owner\PeriodReportController;
 use App\Http\Controllers\Owner\TripDeleteController;
 use App\Http\Controllers\Owner\TripExportController;
 use App\Http\Controllers\Owner\TripHistoryController;
@@ -105,6 +106,16 @@ Route::middleware(['auth', 'verified', 'no-store', 'role:owner,super_admin'])
             ->name('reports.monthly.pdf');
         Route::get('/reports/monthly/export/excel', [MonthlyReportController::class, 'excel'])
             ->name('reports.monthly.excel');
+
+        // Laporan Periode — BRIEF 26 Okt 2026 item 3 (rentang bebas: hari ini/minggu
+        // ini/bulan ini/custom + filter operator). Laporan Bulanan di atas TETAP ada,
+        // tidak diganti.
+        Route::get('/reports/periode', [PeriodReportController::class, 'index'])
+            ->name('reports.periode');
+        Route::get('/reports/periode/export/pdf', [PeriodReportController::class, 'pdf'])
+            ->name('reports.periode.pdf');
+        Route::get('/reports/periode/export/excel', [PeriodReportController::class, 'excel'])
+            ->name('reports.periode.excel');
     });
 
 Route::middleware(['auth', 'verified', 'no-store', 'role:operator'])

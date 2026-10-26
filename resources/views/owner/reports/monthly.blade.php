@@ -23,12 +23,16 @@
             </form>
         </div>
 
-        <div class="flex flex-wrap gap-2">
-            <a href="{{ route('owner.reports.monthly.pdf', ['month' => $month]) }}"
+        <div class="flex flex-wrap items-center gap-2">
+            <a href="{{ route('owner.reports.periode') }}"
+               class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                &larr; Laporan Periode
+            </a>
+            <a href="{{ route('owner.reports.monthly.pdf', ['month' => $month]) }}" data-force-download
                class="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700">
                 Export PDF
             </a>
-            <a href="{{ route('owner.reports.monthly.excel', ['month' => $month]) }}"
+            <a href="{{ route('owner.reports.monthly.excel', ['month' => $month]) }}" data-force-download
                class="rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700">
                 Export Excel
             </a>

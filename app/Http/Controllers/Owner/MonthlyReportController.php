@@ -8,6 +8,7 @@ use App\Models\Kiosk;
 use App\Models\KioskVisit;
 use App\Models\Settlement;
 use App\Models\Trip;
+use App\Support\ExportFilename;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -184,16 +185,17 @@ class MonthlyReportController extends Controller
 
         $pdf = Pdf::loadView('exports.monthly-report-pdf', $data);
 
-        return $pdf->download("laporan-bulanan-{$month}.pdf");
+        return $pdf->download(ExportFilename::monthlyPdf($month, $data['businessName']));
     }
 
     public function excel(Request $request): BinaryFileResponse
     {
         $month = $request->get('month', now()->format('Y-m'));
+        $data = self::buildMonthlyData($month, (int) auth()->id());
 
         return Excel::download(
             new MonthlyReportExport($month, (int) auth()->id()),
-            "laporan-bulanan-{$month}.xlsx"
+            ExportFilename::monthlyExcel($month, $data['businessName'])
         );
     }
 }

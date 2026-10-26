@@ -44,7 +44,7 @@
                     ['label' => 'Manajemen Supplier', 'route' => 'filament.owner.resources.suppliers.index', 'active' => request()->routeIs('filament.owner.resources.suppliers.*')],
                     ['label' => 'Manajemen Anggota', 'route' => 'filament.owner.resources.operators.index', 'active' => request()->routeIs('filament.owner.resources.operators.*')],
                     ['label' => 'Stok Masuk', 'route' => 'filament.owner.resources.procurement-batches.index', 'active' => request()->routeIs('filament.owner.resources.procurement-batches.*')],
-                    ['label' => 'Laporan & Analitik', 'route' => 'owner.reports.monthly', 'active' => request()->routeIs('owner.reports.*')],
+                    ['label' => 'Laporan & Analitik', 'route' => 'owner.reports.periode', 'active' => request()->routeIs('owner.reports.*')],
                     ['label' => 'Settings', 'route' => 'owner.settings', 'active' => request()->routeIs('owner.settings')],
                 ];
             @endphp
