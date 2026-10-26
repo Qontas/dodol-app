@@ -14,9 +14,10 @@ chip HP asli.
 
 **Penyebab pasti peta kosong (REPRODUKSI dulu, sesuai brief):** peta Leaflet (operator & owner)
 hanya diinisialisasi sekali saat load penuh — tidak ada re-init/`invalidateSize()` setelah
-navigasi SPA (`livewire:navigated`, dipakai `wire:navigate` di bottom-nav operator) atau setelah
-kontainer benar-benar tampil, jadi Leaflet menghitung ukuran kontainer 0×0 dan merender peta
-kosong/abu-abu. **Fix:** peta diinisialisasi baik di load penuh MAUPUN `livewire:navigated`,
+navigasi SPA (`livewire:navigated`, dipakai link `wire:navigate` lain yang sudah ada di app —
+mis. `trip.active`, `kiosks.create` dari active-trip) atau setelah kontainer benar-benar
+tampil, jadi Leaflet menghitung ukuran kontainer 0×0 dan merender peta kosong/abu-abu. **Fix:**
+peta diinisialisasi baik di load penuh MAUPUN `livewire:navigated`,
 idempotent (aman dipanggil ulang, tak dobel-init), `invalidateSize()` dipanggil setelah tampil.
 Berlaku utk peta operator Kios Baru (`create-kiosk.blade.php`) & peta owner
 (`leaflet-map-picker.blade.php`/`.js`). Tile gagal tetap menampilkan **"⚠️ Gambar peta gagal
@@ -70,14 +71,27 @@ jadi child PERTAMA di dalam `<div>` root. Dikunci oleh
    `process.exit(0)` eksplisit setelah hasil dikumpulkan — bikin tiap pemanggilan `node` dari
    PHPUnit nunggu 20 detik penuh per test method.
 
+**↩️ REVISI (hari yang sama, setelah push pertama): bottom-nav `wire:navigate` DI-REVERT.**
+Commit `34cdce5` (menambah `wire:navigate` ke link bottom-nav operator) di-revert via
+`git revert` (`6835538`) — di luar scope brief ini (brief minta fix peta & GPS, bukan
+mengubah mekanisme navigasi bottom-nav). Bottom-nav kembali ke full page reload seperti
+semula; dikonfirmasi `git diff` `resources/views/layouts/operator.blade.php` terhadap baseline
+sebelum brief ini (`9d8d495`) kosong — file itu sekarang identik dgn sebelum brief. Perbaikan
+peta & kebijakan GPS lainnya (create-kiosk, leaflet-map-picker, active-trip, gps-accuracy.js)
+**TIDAK terpengaruh** — tetap ada dan tetap teruji (link lain yg sudah `wire:navigate` sejak
+sebelumnya, seperti `trip.active`/`kiosks.create` dari active-trip, tetap cukup utk menguji fix
+peta via navigasi SPA). Full suite re-run setelah revert: **624 passed (2650 assertions)**,
+tidak ada test yang mengunci atribut `wire:navigate` di bottom-nav sehingga tidak ada
+penyesuaian test yang diperlukan.
+
 **File yang berubah:** `public/js/gps-accuracy.js` (baru, kebijakan GPS tunggal),
 `public/js/leaflet-map-picker.js`, `resources/views/filament/forms/leaflet-map-picker.blade.php`,
-`resources/views/layouts/operator.blade.php` (bottom-nav `wire:navigate`),
 `resources/views/livewire/operator/active-trip.blade.php` (GPS policy rewrite +
 fix wire:id root bug), `resources/views/livewire/operator/create-kiosk.blade.php`,
 `tests/Unit/LivewireViewSingleRootTest.php` (baru), `tests/Unit/GpsAccuracyPolicyTest.php`
 (baru), `tests/Unit/support/gps-accuracy-policy-check.cjs` (baru), `docs/UI_INVENTORY.md`
-(A4, A9).
+(A4, A9). (`resources/views/layouts/operator.blade.php` SEMPAT berubah, lalu di-revert — lihat
+poin REVISI di atas.)
 
 **Bukti browser:** 15/15 skenario Playwright PASS (geolocation emulasi 8m/60m/250m/2500m/timeout
 × create-kiosk load-penuh, create-kiosk wire:navigate, Urutkan Jarak), screenshot 390px per
