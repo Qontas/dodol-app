@@ -3,6 +3,9 @@
     Tabel manual (bukan Filament\Tables\Table) karena kuncinya KOMPOSIT
     (tanggal, owner) + butuh baris TOTAL — lihat docblock kelas
     AppFeeDailyWidget. wire:poll.30s SAMA seperti AppFeeWidget (TUGAS 1d).
+
+    BRIEF 26 Okt 2026: kolom "Mika Diantar" dihapus (digabung ke "Mika Kena
+    Fee" — sejak aturan "titipan pertama" dihapus, keduanya selalu identik).
 --}}
 <x-filament-widgets::widget wire:poll.30s>
     <x-filament::section :heading="$this->getHeading()">
@@ -32,7 +35,6 @@
                     <tr>
                         <th class="px-3 py-2 text-left whitespace-nowrap">Tanggal</th>
                         <th class="px-3 py-2 text-left">Owner</th>
-                        <th class="px-3 py-2 text-right whitespace-nowrap">Mika Diantar</th>
                         <th class="px-3 py-2 text-right whitespace-nowrap">Mika Kena Fee</th>
                         <th class="px-3 py-2 text-right whitespace-nowrap">Fee (Rp)</th>
                     </tr>
@@ -42,13 +44,12 @@
                         <tr wire:key="fee-harian-{{ $row['date'] }}-{{ $row['owner_id'] }}">
                             <td class="px-3 py-2 whitespace-nowrap">{{ $row['date_label'] }}</td>
                             <td class="px-3 py-2">{{ $row['owner_name'] }}</td>
-                            <td class="px-3 py-2 text-right">{{ number_format($row['mika_diantar'], 0, ',', '.') }}</td>
                             <td class="px-3 py-2 text-right">{{ number_format($row['mika_kena_fee'], 0, ',', '.') }}</td>
                             <td class="px-3 py-2 text-right font-medium text-gray-950 dark:text-white">Rp {{ number_format($row['fee'], 0, ',', '.') }}</td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="5" class="px-3 py-6 text-center text-gray-400 dark:text-gray-500">
+                            <td colspan="4" class="px-3 py-6 text-center text-gray-400 dark:text-gray-500">
                                 Tidak ada aktivitas di bulan ini.
                             </td>
                         </tr>
@@ -57,7 +58,6 @@
                 <tfoot class="bg-gray-50 dark:bg-white/5 font-bold text-gray-950 dark:text-white">
                     <tr>
                         <td class="px-3 py-2" colspan="2">TOTAL</td>
-                        <td class="px-3 py-2 text-right">{{ number_format($total['mika_diantar'], 0, ',', '.') }}</td>
                         <td class="px-3 py-2 text-right">{{ number_format($total['mika_kena_fee'], 0, ',', '.') }}</td>
                         <td class="px-3 py-2 text-right">Rp {{ number_format($total['fee'], 0, ',', '.') }}</td>
                     </tr>

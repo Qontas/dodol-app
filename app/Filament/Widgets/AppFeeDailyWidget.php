@@ -23,6 +23,11 @@ use Filament\Widgets\Widget;
  * ditulis ulang di sini. SATU query batch (lihat method itu) + SATU query
  * daftar owner (untuk dropdown filter + default "bertarif > 0") = query
  * KONSTAN berapa pun banyak owner/tanggal — lihat AppFeeDailyWidgetTest.
+ *
+ * BRIEF 26 Okt 2026: kolom "Mika Diantar" (terpisah dari "Mika Kena Fee")
+ * DIHAPUS — sejak aturan "titipan pertama tidak dihitung" dihapus, kedua
+ * metrik itu SELALU sama, jadi tak ada lagi gunanya ditampilkan dua kolom
+ * identik (lihat docblock AppFeeCalculator::summaryByOwnerAndDate()).
  */
 class AppFeeDailyWidget extends Widget
 {
@@ -107,7 +112,6 @@ class AppFeeDailyWidget extends Widget
             ->values();
 
         $total = [
-            'mika_diantar' => (int) $rows->sum('mika_diantar'),
             'mika_kena_fee' => (int) $rows->sum('mika_kena_fee'),
             'fee' => (float) $rows->sum('fee'),
         ];

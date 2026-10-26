@@ -1,6 +1,58 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 26 Oktober 2026*
 
+## 🟢 BRIEF 26 OKT 2026: FEE APLIKASI — SEMUA MIKA YANG KELUAR KENA FEE (HAPUS PENGECUALIAN TITIPAN PERTAMA) — SELESAI, boleh push (tidak ada migrasi)
+
+Keputusan bisnis: titipan konsinyasi **PERTAMA** di kedai baru sekarang **IKUT kena fee**
+aplikasi. Berlaku **sejak awal data** (tidak ada tanggal batas) — fee dihitung LIVE dari
+`deliveries` (bukan snapshot bulanan), jadi cukup ubah aturan di `AppFeeCalculator`; tidak
+perlu backfill/migrasi apapun. Tidak ada akses prod di sesi ini. Angka uang lain
+(omset/HPP/komisi/untung) **TIDAK berubah**.
+
+**`App\Support\AppFeeCalculator`** — pengecualian ke-4 lama ("titipan konsinyasi PERTAMA
+tiap kios tidak dihitung", subquery `MIN(d.id) GROUP BY kiosk_id`) **DIHAPUS SELURUHNYA**
+dari `summaryForOwners()` dan `summaryByOwnerAndDate()`. Aturan "mika kena fee" sekarang
+HANYA 3 pengecualian: (1) `bs_redistribution` (Dodol Sisa) — TETAP dikecualikan karena itu
+daur ulang BS antar kios yang sudah pernah terhitung di trip asalnya, bukan stok baru yang
+dibawa operator, jadi menghitungnya lagi berarti dobel hitung; (2) trip sentinel migrasi;
+(3) trip terarsip (soft delete). `consignment` dan `cash_sale` sekarang diperlakukan sama
+persis, termasuk titipan pertama kios baru.
+
+**Konsekuensi langsung**: "mika kena fee" sekarang **IDENTIK** dengan basis komisi Rian
+(`Trip::mika_komisi` / `getTotalDropReal()`, lihat `KomisiDropBasisTest`) — keduanya sama
+SUM `qty_delivered` KECUALI `bs_redistribution`/sentinel/arsip. Dibuktikan test baru
+`AppFeeCalculatorTest::test_mika_kena_fee_sama_dengan_basis_komisi_rian_per_trip()` (satu
+trip, titipan pertama kios baru + cash + BS, membandingkan `summaryForOwners()['mika_total']`
+langsung dengan `$trip->mika_komisi`). Efek samping bermanfaat: subquery `MIN(id)` batch
+yang dihapus membuat `summaryForOwners()` turun dari 2 query batch jadi 1 (total ~2 query
+konstan, dari ~3).
+
+**Widget admin**: kolom "Mika Diantar" dan "Mika Kena Fee" di widget "Rincian Fee Aplikasi
+Harian" (`AppFeeDailyWidget` + `app-fee-daily.blade.php`) sekarang SELALU identik (keduanya
+pakai 3 pengecualian yang sama) — digabung jadi **satu kolom "Mika Kena Fee"**, `mika_diantar`
+dihapus dari return `AppFeeCalculator::summaryByOwnerAndDate()`. Widget "Fee Aplikasi"
+(`AppFeeWidget`) sudah cuma punya satu kolom mika sejak awal, tidak berubah. Total per bulan
+kedua widget tetap sama (dibuktikan `AppFeeCalculatorTest::test_summary_by_owner_and_date_total_matches_summary_for_owners`,
+tidak disentuh).
+
+**Test diperbarui** (`AppFeeCalculatorTest`): skenario 4g — titipan pertama Pak Amin 3 mika
+yang dulu dikunci `TIDAK dihitung (0)` sekarang `DIHITUNG`; total mika kena fee Owner A naik
+dari 11→**14**, fee dari Rp3.300→**Rp4.200** (14×Rp300). Skenario sebar-2-tanggal diperbarui
+senada (tanggal 1 naik 8→11 mika kena fee, total bulan 11→14, Rp3.300→Rp4.200) + assertion
+`mika_diantar` dihapus (field sudah tak ada). Satu test baru ditambahkan (lihat paragraf
+"Konsekuensi langsung" di atas) membuktikan aturan baru sama dengan basis komisi. Tidak ada
+test yang mengunci pengecualian "titipan pertama" lama yang tersisa.
+
+**Dokumen**: `docs/UI_INVENTORY.md` **B8.5** (aturan hitung "Fee Aplikasi" — 3 pengecualian
+saja, catatan kenapa Dodol Sisa tetap dikecualikan, catatan kesamaan dengan basis komisi) dan
+**B8.6** (kolom "Mika Diantar" dihapus, digabung ke "Mika Kena Fee") diperbarui.
+
+**625 test PASS** (naik dari baseline 624, +1 test baru permanen). Full suite dijalankan
+ulang setelah perubahan, zero regresi. Commit atomik (kode + test + docs dalam satu commit).
+**BELUM di-push** — tidak ada migrasi, jadi aman push kapan saja setelah direview.
+
+---
+
 ## 🟢 BRIEF 26 OKT 2026: APLIKASI TERTAHAN SERVER LUAR (KELUHAN BUKA 1–2 MENIT) — SELESAI (mekanisme utama), 1 temuan terbuka di luar lingkup, boleh push (tidak ada migrasi)
 
 Keluhan: 1 HP (Oppo Reno 8 5G) butuh 1–2 menit untuk tampil; server sendiri merespons

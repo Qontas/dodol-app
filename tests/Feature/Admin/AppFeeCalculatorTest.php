@@ -15,19 +15,26 @@ use Tests\TestCase;
 /**
  * TUGAS 4c (BRIEF 23 Okt 2026) — skenario wajib brief poin 4g, dalam SATU trip demi
  * satu per owner (dan beberapa trip tambahan untuk kasus arsip/sentinel/tarif-berubah),
- * membuktikan SETIAP pengecualian AppFeeCalculator persis sesuai aturan 4c:
+ * membuktikan SETIAP pengecualian AppFeeCalculator persis sesuai aturan 4c.
+ *
+ * 🔴 DIPERBARUI BRIEF 26 Okt 2026: keputusan bisnis menghapus pengecualian "titipan
+ * konsinyasi PERTAMA tidak dihitung" — SEMUA mika yang keluar (consignment maupun
+ * cash_sale, termasuk titipan pertama kios baru) sekarang kena fee, KECUALI
+ * bs_redistribution/sentinel/arsip (tidak berubah). Angka skenario di bawah
+ * disesuaikan (lihat komentar "SEKARANG dihitung").
  *
  *   Owner A (tarif Rp 300):
  *     - Kios lama "Bu Sri" (sudah ada delivery di trip SENTINEL = saldo awal) →
- *       "tagih + titip ulang" 4 mika di trip nyata → DIHITUNG (bukan "pertama").
- *     - Kios baru "Pak Amin" → titipan PERTAMA 3 mika di trip 1 → TIDAK dihitung (0);
- *       titipan KE-2 3 mika di trip 2 → DIHITUNG.
- *     - Titip Cash 2 mika → DIHITUNG semua (bukan consignment, tak kena aturan "pertama").
+ *       "tagih + titip ulang" 4 mika di trip nyata → DIHITUNG.
+ *     - Kios baru "Pak Amin" → titipan PERTAMA 3 mika di trip 1 → SEKARANG DIHITUNG
+ *       (dulu 0, sejak 26 Okt 2026 pengecualian "pertama" dihapus); titipan KE-2
+ *       3 mika di trip 2 → DIHITUNG (tidak berubah, titipan ke-2 selalu dihitung).
+ *     - Titip Cash 2 mika → DIHITUNG semua (bukan consignment).
  *     - Jual Cash Cepat (walk-in) 2 mika → DIHITUNG semua.
  *     - Dodol Sisa (bs_redistribution) 1 mika → TIDAK dihitung.
  *     - Trip SENTINEL (opening balance Bu Sri, 10 mika) → TIDAK dihitung sama sekali.
  *     - Trip DIARSIP (7 mika, consignment, bukan "pertama" kiosnya) → TIDAK dihitung.
- *     Total mika kena fee = 4+0+3+2+2 = 11, fee = 11 × Rp300 = Rp3.300.
+ *     Total mika kena fee = 4+3+3+2+2 = 14, fee = 14 × Rp300 = Rp4.200.
  *
  *   Owner B (tarif NULL/Rp0): mika kena fee tetap terhitung tapi fee Rp = Rp0.
  *
@@ -90,7 +97,8 @@ class AppFeeCalculatorTest extends TestCase
         ]);
 
         // Pak Amin: titipan KONSINYASI PERTAMA kios ini (tak ada riwayat sentinel)
-        // 3 mika → TIDAK DIHITUNG.
+        // 3 mika → SEKARANG DIHITUNG (BRIEF 26 Okt 2026: pengecualian "titipan
+        // pertama" dihapus).
         Delivery::factory()->create([
             'kiosk_id' => $pakAmin->id, 'trip_id' => $trip1->id,
             'product_variant_id' => $this->variant->id,
@@ -154,12 +162,64 @@ class AppFeeCalculatorTest extends TestCase
         $row = $summary[$ownerA->id];
 
         $this->assertSame(300.0, $row['rate']);
-        $this->assertSame(11, $row['mika_today'], 'mika hari ini: 4 (BuSri) + 0 (Amin#1) + 3 (Amin#2) + 2 (cash) + 2 (cash) = 11.');
-        $this->assertSame(11, $row['mika_month']);
-        $this->assertSame(11, $row['mika_total']);
-        $this->assertEqualsWithDelta(3300.0, $row['fee_today'], 0.001, '11 mika × Rp300 = Rp3.300.');
-        $this->assertEqualsWithDelta(3300.0, $row['fee_month'], 0.001);
-        $this->assertEqualsWithDelta(3300.0, $row['fee_total'], 0.001);
+        $this->assertSame(14, $row['mika_today'], 'mika hari ini: 4 (BuSri) + 3 (Amin#1, SEKARANG dihitung sejak 26 Okt 2026) + 3 (Amin#2) + 2 (cash) + 2 (cash) = 14.');
+        $this->assertSame(14, $row['mika_month']);
+        $this->assertSame(14, $row['mika_total']);
+        $this->assertEqualsWithDelta(4200.0, $row['fee_today'], 0.001, '14 mika × Rp300 = Rp4.200.');
+        $this->assertEqualsWithDelta(4200.0, $row['fee_month'], 0.001);
+        $this->assertEqualsWithDelta(4200.0, $row['fee_total'], 0.001);
+    }
+
+    /**
+     * BRIEF 26 Okt 2026, poin 1 — "mika kena fee" HARUS identik dengan basis
+     * komisi Rian (Trip::mika_komisi / getTotalDropReal(), lihat
+     * KomisiDropBasisTest) sekarang pengecualian "titipan pertama" dihapus.
+     * Satu trip, beberapa delivery_type (termasuk titipan PERTAMA kios baru
+     * — dulu dikecualikan dari fee, sekarang DIHITUNG — dan BS yang TETAP
+     * dikecualikan di kedua jalur) membuktikan kesamaan itu secara eksplisit.
+     */
+    public function test_mika_kena_fee_sama_dengan_basis_komisi_rian_per_trip(): void
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true, 'app_fee_per_pack' => 300]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true, 'owner_id' => $owner->id]);
+        $cluster = Cluster::create(['name' => 'Cluster Sama Komisi', 'owner_id' => $owner->id]);
+        $kioskBaru = Kiosk::factory()->create(['cluster_id' => $cluster->id]);
+        $kioskLain = Kiosk::factory()->create(['cluster_id' => $cluster->id]);
+
+        $trip = Trip::create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'trip_date' => today(), 'trip_number_of_day' => 1,
+            'started_at' => now(), 'ended_at' => now(),
+            'app_fee_per_pack_snapshot' => 300,
+        ]);
+
+        // Titipan KONSINYASI PERTAMA kios baru — dulu dikecualikan dari fee,
+        // SEKARANG dihitung (BRIEF 26 Okt 2026).
+        Delivery::factory()->create([
+            'kiosk_id' => $kioskBaru->id, 'trip_id' => $trip->id,
+            'product_variant_id' => $this->variant->id,
+            'delivery_type' => 'consignment', 'qty_delivered' => 5,
+        ]);
+        Delivery::factory()->create([
+            'kiosk_id' => $kioskLain->id, 'trip_id' => $trip->id,
+            'product_variant_id' => $this->variant->id,
+            'delivery_type' => 'cash_sale', 'qty_delivered' => 3,
+        ]);
+        // Dodol Sisa (bs_redistribution) — TETAP dikecualikan di KEDUA jalur
+        // (fee aplikasi & komisi Rian), biar kesamaan ini tidak kebetulan.
+        Delivery::factory()->create([
+            'kiosk_id' => $kioskLain->id, 'trip_id' => $trip->id,
+            'product_variant_id' => $this->variant->id,
+            'delivery_type' => 'bs_redistribution', 'qty_delivered' => 2,
+        ]);
+
+        $summary = AppFeeCalculator::summaryForOwners();
+        $mikaKenaFee = $summary[$owner->id]['mika_total'];
+
+        $mikaKomisi = (int) $trip->fresh()->mika_komisi;
+
+        $this->assertSame(8, $mikaKenaFee, '5 (titipan pertama, SEKARANG dihitung) + 3 (cash) = 8; BS 2 tetap dikecualikan.');
+        $this->assertSame($mikaKomisi, $mikaKenaFee, 'Mika kena fee WAJIB identik basis komisi Rian sejak pengecualian "titipan pertama" dihapus.');
     }
 
     public function test_owner_with_zero_rate_shows_rp0_fee_regardless_of_volume(): void
@@ -338,22 +398,21 @@ class AppFeeCalculatorTest extends TestCase
 
         $row1 = $byDate[$date1->toDateString()];
         $this->assertSame($ownerA->id, $row1['owner_id']);
-        $this->assertSame(11, $row1['mika_diantar'], 'Mika diantar tgl 1: 4(BuSri)+3(Amin#1, TETAP dihitung di sini)+2(cash)+2(cash)=11 (BS & arsip tak ikut).');
-        $this->assertSame(8, $row1['mika_kena_fee'], 'Mika kena fee tgl 1: 4(BuSri, bukan pertama)+0(Amin#1, PERTAMA)+2(cash)+2(cash)=8.');
-        $this->assertEqualsWithDelta(2400.0, $row1['fee'], 0.001, '8 mika × Rp300 = Rp2.400.');
+        $this->assertSame(11, $row1['mika_kena_fee'], 'Mika kena fee tgl 1: 4(BuSri)+3(Amin#1, SEKARANG dihitung sejak 26 Okt 2026)+2(cash)+2(cash)=11 (BS & arsip tak ikut).');
+        $this->assertEqualsWithDelta(3300.0, $row1['fee'], 0.001, '11 mika × Rp300 = Rp3.300.');
 
         $row2 = $byDate[$date2->toDateString()];
         $this->assertSame($ownerA->id, $row2['owner_id']);
-        $this->assertSame(3, $row2['mika_diantar'], 'Mika diantar tgl 2: Amin#2 3 mika.');
-        $this->assertSame(3, $row2['mika_kena_fee'], 'Mika kena fee tgl 2: Amin#2 BUKAN pertama lagi → dihitung penuh.');
+        $this->assertSame(3, $row2['mika_kena_fee'], 'Mika kena fee tgl 2: Amin#2 3 mika.');
         $this->assertEqualsWithDelta(900.0, $row2['fee'], 0.001, '3 mika × Rp300 = Rp900.');
 
         // Total bulan ini (jumlah 2 tanggal) — IDENTIK dgn skenario 4g non-sebar
-        // (11 mika kena fee, Rp3.300) karena aktivitasnya sama, cuma tanggalnya beda.
+        // (14 mika kena fee, Rp4.200 sejak 26 Okt 2026) karena aktivitasnya sama,
+        // cuma tanggalnya beda.
         $totalMikaKenaFee = array_sum(array_column($rows, 'mika_kena_fee'));
         $totalFee = array_sum(array_column($rows, 'fee'));
-        $this->assertSame(11, $totalMikaKenaFee);
-        $this->assertEqualsWithDelta(3300.0, $totalFee, 0.001);
+        $this->assertSame(14, $totalMikaKenaFee);
+        $this->assertEqualsWithDelta(4200.0, $totalFee, 0.001);
     }
 
     /**
@@ -393,7 +452,7 @@ class AppFeeCalculatorTest extends TestCase
         $this->seedOwnerWithCashSale();
         $count = $this->countCalculatorQueries();
 
-        $this->assertLessThanOrEqual(3, $count, "1 owner: {$count} query — AppFeeCalculator: 1 query owners + 2 query batch = 3 query konstan.");
+        $this->assertLessThanOrEqual(3, $count, "1 owner: {$count} query — AppFeeCalculator: 1 query owners + 1 query batch (sejak subquery \"titipan pertama\" dihapus 26 Okt 2026) = 2 query konstan.");
     }
 
     public function test_query_count_for_five_owners_stays_in_same_order_of_magnitude(): void
@@ -403,7 +462,7 @@ class AppFeeCalculatorTest extends TestCase
         }
         $count = $this->countCalculatorQueries();
 
-        $this->assertLessThanOrEqual(3, $count, "5 owner: {$count} query — indikasi N+1 per-owner kembali (harus tetap 3, IDENTIK dgn 1 owner).");
+        $this->assertLessThanOrEqual(3, $count, "5 owner: {$count} query — indikasi N+1 per-owner kembali (harus tetap konstan, IDENTIK dgn 1 owner).");
     }
 
     private function seedOwnerWithCashSale(): User

@@ -65,7 +65,7 @@ class AppFeeDailyWidgetTest extends TestCase
         Livewire::actingAs($superAdmin)->test(AppFeeDailyWidget::class)
             ->assertOk()
             ->assertSee($owner->name)
-            ->assertSee('5') // mika diantar & mika kena fee (cash_sale, tak kena aturan "pertama")
+            ->assertSee('5') // mika kena fee (cash_sale, satu kolom sejak kolom "Mika Diantar" digabung 26 Okt 2026)
             ->assertSee('Rp 1.500') // 5 mika × Rp300, SAMA seperti fee_month AppFeeWidget
             ->assertSee('TOTAL');
     }
