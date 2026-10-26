@@ -1,5 +1,93 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 24 Oktober 2026*
+*Sesi terakhir: 26 Oktober 2026*
+
+## 🔴 BRIEF 26 OKT 2026: PETA KOSONG + GPS AKURAT (OPERATOR) — SELESAI, **PERLU UJI LAPANGAN**, boleh push (tidak ada migrasi)
+
+Keluhan lapangan 26 Okt: halaman operator "Kios Baru" peta KOSONG total, dan lokasi GPS masih
+meleset (fix 23 Okt tidak pernah lolos uji lapangan). **624 test PASS** (naik dari baseline 614,
++10 test baru permanen). Tidak ada akses prod, tidak ada migrasi. Dibuktikan lewat browser
+sungguhan (Playwright, geolocation emulasi, 390px) — screenshot di
+`.claude/skills/verify-browser/scratch/shots-gps/` (gitignored, lampirkan manual kalau perlu
+dikirim). **⚠️ BELUM diuji di HP sungguhan / jaringan lapangan asli — WAJIB uji lapangan sebelum
+dianggap benar-benar selesai**, Playwright cuma mengemulasi `navigator.geolocation`, bukan GPS
+chip HP asli.
+
+**Penyebab pasti peta kosong (REPRODUKSI dulu, sesuai brief):** peta Leaflet (operator & owner)
+hanya diinisialisasi sekali saat load penuh — tidak ada re-init/`invalidateSize()` setelah
+navigasi SPA (`livewire:navigated`, dipakai `wire:navigate` di bottom-nav operator) atau setelah
+kontainer benar-benar tampil, jadi Leaflet menghitung ukuran kontainer 0×0 dan merender peta
+kosong/abu-abu. **Fix:** peta diinisialisasi baik di load penuh MAUPUN `livewire:navigated`,
+idempotent (aman dipanggil ulang, tak dobel-init), `invalidateSize()` dipanggil setelah tampil.
+Berlaku utk peta operator Kios Baru (`create-kiosk.blade.php`) & peta owner
+(`leaflet-map-picker.blade.php`/`.js`). Tile gagal tetap menampilkan **"⚠️ Gambar peta gagal
+dimuat"**.
+
+**Kebijakan GPS akurat baru (`public/js/gps-accuracy.js`, SATU sumber kebenaran dipakai 3 tempat
+— operator Kios Baru, "Urutkan Jarak" trip aktif, peta owner):** HANYA
+`enableHighAccuracy:true, maximumAge:0`, fallback akurasi rendah (`enableHighAccuracy:false`,
+fix 21/23 Okt) **DIHAPUS TOTAL** — fallback itu sendiri yang bikin lokasi meleset ratusan meter
+diam-diam dianggap cukup baik. `watchPosition` maksimal 20 detik, simpan bacaan akurasi
+terkecil, berhenti otomatis ≤15 m. Band: **≤30 m** otomatis + **"Akurasi ±X meter"**; **31–100 m**
+pin dipasang tapi wajib konfirmasi; **>100 m** pin TIDAK dipasang + pesan spesifik; **>1000 m**
+tambah petunjuk izin "Perkiraan" Android. "Urutkan Jarak" beda kebijakan dari peta: akurasi
+>100 m TETAP mengurutkan (bukan diam-diam pakai lokasi kasar tanpa bilang), tapi dengan peringatan
+non-blocking **"Akurasi lokasi ±X m — urutan jarak mungkin tidak tepat."**
+
+**🐛 Bug KEDUA, ditemukan & diperbaiki sesi ini (bukan bagian keluhan awal, lebih parah dari GPS):**
+saat menulis ulang `sortByDistance()` di `active-trip.blade.php` untuk kebijakan GPS baru, tag
+`<script src="gps-accuracy.js">` sempat ditaruh sbg SIBLING sebelum `<div>` root komponen
+(bukan child). **Livewire v3 memasang `wire:id` ke elemen PERTAMA di output view** — jadi
+`wire:id` nempel ke `<script>` itu, bukan ke `<div>` yang berisi semua logic Alpine. Akibatnya
+`Alpine.findClosest(el, i => i.__livewire)` (dipanggil lewat `closest('[wire:id]')`, cuma bisa
+naik ke ANCESTOR, tak bisa ke sibling sebelumnya) gagal menemukan komponen dari manapun di
+dalam `<div>` → setiap `$wire.*()` balik fungsi no-op `() => {}` (bukan Promise, lihat
+`Alpine.magic("wire", ...)` di `vendor/livewire/livewire/dist/livewire.esm.js`) → `.then()`
+meledak → tombol "Urutkan Jarak" macet selamanya di "Mencari...". **Fix:** `<script>` dipindah
+jadi child PERTAMA di dalam `<div>` root. Dikunci oleh
+`tests/Unit/LivewireViewSingleRootTest.php` (baca source `.blade.php` MENTAH, bukan lewat
+`Livewire::test()->html()` — lihat catatan di bawah kenapa itu tak bisa dipakai).
+
+**Temuan rekayasa penting (utk sesi berikutnya):**
+1. **`Livewire::test(Component::class)->html()` TIDAK BISA mendeteksi bug kelas "salah elemen
+   dapat `wire:id`".** Harness test Livewire selalu membungkus output dalam
+   `<div wire:snapshot="...">` buatannya sendiri, terlepas dari struktur root view
+   sesungguhnya — dibuktikan: test yang sama PASS identik baik di versi buggy maupun versi
+   fixed. Satu-satunya cara mengunci bug ini lewat PHPUnit adalah baca source `.blade.php`
+   mentah (`tests/Unit/LivewireViewSingleRootTest.php`), bukan render lewat Livewire test
+   harness.
+2. **Jebakan komentar Blade `{{-- ... --}}` di dalam atribut HTML berkutip ganda** (mis.
+   `x-data="{...}"`): kalau komentarnya memuat karakter `"` literal, parser HTML browser
+   menutup paksa nilai atribut tepat di situ (SEBELUM Alpine/JS sempat jalan) — korupsi diam-diam,
+   gejalanya `Alpine Expression Error: Unexpected token ')'` dgn ekspresi yang kepotong pas di
+   tanda kutip tsb. Hindari `"` literal (atau pakai `//` gaya JS) kalau komentar ada di dalam
+   atribut HTML berkutip ganda.
+3. Tidak ada Jest/Vitest di proyek ini — `tests/Unit/GpsAccuracyPolicyTest.php` mengunci
+   KEBIJAKAN GPS dgn cara menjalankan `public/js/gps-accuracy.js` SUNGGUHAN lewat Node
+   (`vm.runInContext`, lihat `tests/Unit/support/gps-accuracy-policy-check.cjs`) — bukan cuma
+   cek pola teks source, supaya threshold band/opsi geolocation yang diam-diam berubah tetap
+   ketangkep. **Gotcha:** skenario yang sengaja TIDAK menuntaskan tracker (test error
+   sesaat) meninggalkan timer `maxWaitMs` default 20 detik menggantung kalau tak di-
+   `process.exit(0)` eksplisit setelah hasil dikumpulkan — bikin tiap pemanggilan `node` dari
+   PHPUnit nunggu 20 detik penuh per test method.
+
+**File yang berubah:** `public/js/gps-accuracy.js` (baru, kebijakan GPS tunggal),
+`public/js/leaflet-map-picker.js`, `resources/views/filament/forms/leaflet-map-picker.blade.php`,
+`resources/views/layouts/operator.blade.php` (bottom-nav `wire:navigate`),
+`resources/views/livewire/operator/active-trip.blade.php` (GPS policy rewrite +
+fix wire:id root bug), `resources/views/livewire/operator/create-kiosk.blade.php`,
+`tests/Unit/LivewireViewSingleRootTest.php` (baru), `tests/Unit/GpsAccuracyPolicyTest.php`
+(baru), `tests/Unit/support/gps-accuracy-policy-check.cjs` (baru), `docs/UI_INVENTORY.md`
+(A4, A9).
+
+**Bukti browser:** 15/15 skenario Playwright PASS (geolocation emulasi 8m/60m/250m/2500m/timeout
+× create-kiosk load-penuh, create-kiosk wire:navigate, Urutkan Jarak), screenshot 390px per
+skenario di `.claude/skills/verify-browser/scratch/shots-gps/` — termasuk skenario sort 8m yang
+SEBELUMNYA macet di "Mencari..." (bug kedua di atas), sekarang selesai <1 detik.
+
+**⚠️ TODO WAJIB sebelum anggap selesai sungguhan: UJI LAPANGAN di HP Android sungguhan
+(owner pakai Poco F7 — lihat memory), jaringan asli, GPS chip asli — bukan emulasi browser.**
+
+---
 
 ## 🔴 BRIEF 24 OKT 2026: SATU SUMBER KEBENARAN KOMISI — SELESAI, boleh push (tidak ada migrasi)
 Investigasi sebelumnya (24 Okt 2026) menemukan beberapa tampilan komisi memakai tarif LIVE
