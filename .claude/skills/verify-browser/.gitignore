@@ -2,6 +2,7 @@ node_modules/
 shots/
 serve.log
 mysqld.log
+scratch/
 # Script diagnosa/verifikasi sementara (driver.cjs = skill resmi, JANGAN di-ignore)
 diag-*.cjs
 verify-*.cjs
