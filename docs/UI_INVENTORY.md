@@ -1199,3 +1199,149 @@ Akun sistem dibuat otomatis oleh `OpeningBalance` (untuk migrasi saldo awal kios
 ~~Namun `OperatorResource` (`app/Filament/Resources/OperatorResource.php`, sisi owner — **B8.1**) **tidak** menampilkan field ini sama sekali...~~
 
 **Diperbaiki**: `OperatorResource` sekarang punya Section **"Komisi Khusus"** sendiri dengan field `komisi_per_mika_khusus` (lihat **B8.1** untuk teks verbatim) — owner bisa mengatur tarif khusus operatornya tanpa minta bantuan super admin. Rumus tarif default dibagi dengan `UserResource` lewat trait `App\Filament\Concerns\HasKomisiKhususOperatorField` (tidak dobel rumus). Kolom tabel "Komisi /Mika" di `ManageOperators` diubah jadi per-baris (tarif efektif + suffix khusus/ikut default), dengan `->with('owner')` menjaga tidak N+1. Komentar usang di `UserResource.php` juga diperbaiki agar menyebut kedua entry point yang sekarang benar-benar ada. Keamanan: owner A tidak bisa memount aksi edit pada operator milik owner B (scoped `getEloquentQuery()`); operator (bukan owner) ditolak 403 di `/owner-panel/operators`. Lihat commit `4ca8554`, 6 test baru (`tests/Feature/Owner/OperatorResourceTest.php`).
+
+---
+
+## E. AUDIT RENDER-BLOCKING DOMAIN LUAR — ✅ SELESAI (26 Oktober 2026)
+
+**Brief**: keluhan 1 HP (Oppo Reno 8 5G) butuh 1–2 menit untuk tampil padahal server
+sendiri merespons dalam milidetik (audit 23 Okt) — diduga resource domain luar yang
+render-blocking lambat/diblokir di jaringan user, browser menunggu sampai timeout.
+
+### E1. Inventaris domain luar (sebelum fix)
+
+Semua halaman non-Filament memakai layout bersama, jadi link font terpasang via
+layout, bukan per-view: `resources/views/layouts/{app,brand,guest,operator,owner}.blade.php`
+dan `resources/views/welcome.blade.php` (dead code, tak pernah dirender — lihat **D**
+untuk pola serupa, tidak dihitung sebagai halaman nyata).
+
+| Domain luar | Jenis | Dipasang di `<head>` tanpa async/defer? | Halaman terdampak |
+|---|---|---|---|
+| `fonts.bunny.net` | `<link preconnect>` + `<link rel="stylesheet">` (font Figtree) | **Ya — render-blocking** | Login, Landing, Operator (Beranda/Mulai Trip/Trip Aktif/Kios Baru/Profil — semua via `layouts.operator`), Owner (Dashboard/Riwayat/Laporan/Profil — semua via `layouts.owner`) |
+| `fonts.bunny.net` (default Filament, `BunnyFontProvider`, font Inter) | `<link rel="stylesheet">` di-inject Filament sendiri | **Ya — render-blocking** | Admin panel (`/admin`), Owner panel `Manajemen Kios` (`/owner-panel/kiosks`) |
+| `fonts.googleapis.com` + `fonts.gstatic.com` | `<link preconnect>` + `<link rel="stylesheet">` (Google Fonts, Plus Jakarta Sans) | **Ya — render-blocking** | Landing (`resources/views/landing.blade.php`) saja |
+| `cdn.tailwindcss.com` | `<script src>` tanpa defer, JIT compiler runtime | **Ya — render-blocking** (parser-blocking, bukan cuma network) | Landing saja |
+| `ui-avatars.com` (`Filament\AvatarProviders\UiAvatarsProvider`, default) | `<img src>` avatar user di topbar panel | Tidak — `<img>`, dimuat async, bukan di `<head>` | Admin panel, Owner panel (semua halaman Filament) |
+| `tile.openstreetmap.org` | `L.tileLayer(...)` (Leaflet), dimuat lewat JS setelah halaman interaktif | Tidak — bukan di `<head>`, lazy via JS map widget | Operator → Kios Baru (`create-kiosk.blade.php:434`) |
+| `www.google.com/maps` | `<a href>` link biasa (buka tab baru saat diklik user) | Tidak — bukan resource yang dimuat, cuma tautan | Operator → Trip Aktif (`active-trip.blade.php:888`) |
+
+Kesimpulan inventaris: **4 sumber render-blocking nyata** (bunny.net font layout,
+bunny.net Filament default, Google Fonts, Tailwind CDN) menyebar di hampir semua
+halaman berbayar (login s/d admin). 3 request lain ke domain luar (avatar, tile peta,
+link maps) **bukan** render-blocking — tidak disentuh, sesuai lingkup brief.
+
+### E2. Bukti sebelum fix (Playwright 390px, Slow 4G, domain luar di-hang)
+
+Tool: `.claude/skills/verify-browser/measure-render-block.cjs` (baru, permanen —
+Playwright via `playwright-core` + Chrome sistem, CDP `Network.emulateNetworkConditions`
+untuk throttle Slow 4G, `context.route()` yang sengaja TIDAK PERNAH menjawab untuk tiap
+domain di kolom "Domain luar" E1, mengukur First Contentful Paint + elemen kunci bisa
+dipakai). Hasil (`measure-before.json`, cap pengukuran 10 detik):
+
+| Halaman | Domain di-hang | Waktu tampil (sebelum) |
+|---|---|---|
+| Login (kontrol — HARUS tak terpengaruh) | bunny.net, googleapis, gstatic, cdn.tailwindcss.com | 6.4s (wajar di Slow 4G, tak ada hang di layout ini — lihat catatan di bawah) |
+| Landing (`/`) | bunny.net, googleapis, gstatic, cdn.tailwindcss.com | **TERTAHAN >10s (tidak pernah tampil)** |
+| Operator Beranda | bunny.net | **TERTAHAN >10s** |
+| Owner Dashboard | bunny.net | **TERTAHAN >10s** |
+| Owner Manajemen Kios (Filament) | bunny.net | **TERTAHAN >10s** |
+| Admin panel (Filament) | bunny.net | **TERTAHAN >10s** |
+
+Catatan Login: layout `auth.blade.php` yang dipakai `/login` sendiri sudah nol
+referensi domain luar sejak awal (kontrol murni) — 6.4s itu murni Slow-4G, BUKAN
+hang. Ini membuktikan `context.route()` hang-nya benar bekerja (tidak mempengaruhi
+halaman yang memang tak minta domain itu) dan sekaligus mereproduksi tepat keluhan
+brief: "tertahan lama" di 5 dari 6 halaman uji, persis di halaman yang memuat font
+render-blocking dari domain luar.
+
+### E3. Fix (self-host semua font/CSS/JS, tidak ada lagi domain luar render-blocking)
+
+- **Font Figtree** (layout non-Filament): dipindah ke npm `@fontsource/figtree@5.3.0`
+  (versi terkunci), diimpor di `resources/css/app.css` (`font-display: swap` baku
+  dari paket, tidak perlu CSS manual), dibangun lewat Vite. Link `fonts.bunny.net`
+  dihapus dari ke-6 layout (`app`, `brand`, `guest`, `operator`, `owner`,
+  `welcome` — yang terakhir dead code, dirapikan demi konsistensi saja).
+- **Font Inter default Filament**: panel Admin & Owner sekarang pakai
+  `->font('Inter', url: Vite::asset('resources/css/filament-fonts.css'), provider: LocalFontProvider::class)`
+  — `resources/css/filament-fonts.css` entry Vite baru, `@fontsource/inter@5.3.0`
+  bobot 400/500/600/700 (sama seperti default Bunny). Lihat
+  `app/Providers/Filament/{Admin,Owner}PanelProvider.php`.
+- **Font Plus Jakarta Sans + Tailwind CDN** (Landing saja): `cdn.tailwindcss.com`
+  diganti build Vite sungguhan (`resources/css/landing.css`, `@tailwind
+  base/components/utilities` + `@fontsource/plus-jakarta-sans@5.3.0` bobot
+  400/500/600/700/800). Config `keyframes`/`animation` kustom (`gradient-pan`,
+  `float`) yang sebelumnya di-inject runtime via `<script>tailwind.config=...`
+  dipindah ke `tailwind.config.js` statis supaya JIT build-time tetap
+  menghasilkan utility class yang sama.
+- Hasil: **nol** request render-blocking ke domain luar tersisa di halaman manapun
+  (diverifikasi via `curl` langsung ke HTML yang dirender — tidak ada lagi
+  `fonts.bunny.net`/`fonts.googleapis.com`/`cdn.tailwindcss.com` di output).
+  `ui-avatars.com` (avatar, non-blocking) dan `tile.openstreetmap.org` (peta,
+  lazy-JS) **sengaja tidak disentuh** — di luar lingkup brief (bukan render-blocking).
+
+### E4. Bukti setelah fix (ulangi E2, domain luar tetap di-hang)
+
+Hasil (`measure-after.json`, throttle & hang sama persis dengan E2):
+
+| Halaman | Waktu tampil (sebelum) | Waktu tampil (sesudah) | Target `<3s`? |
+|---|---|---|---|
+| Login (kontrol) | 6.4s | 6.5s (tak berubah, sesuai ekspektasi) | — (kontrol) |
+| Landing (`/`) | >10s (TERTAHAN) | **3.8s** | ✅ |
+| Operator Beranda | >10s (TERTAHAN) | **6.3s** | ❌ lihat catatan |
+| Owner Dashboard | >10s (TERTAHAN) | **8.4s** | ❌ lihat catatan |
+| Owner Manajemen Kios (Filament) | >10s (TERTAHAN) | >10s (10.1s) | ❌ lihat catatan |
+| Admin panel (Filament) | >10s (TERTAHAN) | >10s (10.0s) | ❌ lihat catatan |
+
+**Catatan penting — jujur, bukan klaim penuh "< 3 detik"**: mekanisme utama yang
+diminta brief (hang domain luar bikin halaman TERTAHAN TANPA BATAS) **tuntas
+hilang di semua halaman** — tidak ada lagi satupun yang tertahan tak terbatas;
+semua sekarang tampil dalam waktu terbatas & terukur. Namun 4 dari 5 halaman masih
+di atas target `<3s` di Slow 4G. Diselidiki via isolasi (`hangHosts: []`, nol
+domain di-hang sama sekali) — hasilnya **identik** (Operator 6.3s, Owner Dashboard
+8.2s, Owner Kios >15s, Admin >15s), membuktikan sisa waktu ini **murni bobot
+bundle same-origin di Slow 4G** (Operator/Owner Dashboard: aset app umum; Owner
+Kios & Admin: bundle komponen Filament — `markdown-editor.js` 509KB,
+`file-upload.js` 353KB, `chart.js` 263KB, `rich-editor.js` 196KB, dst, lihat
+`public/js/filament/*` & `public/css/filament/*`), **BUKAN** sisa hang domain
+luar. Ini **bukan regresi** dan **di luar lingkup brief** (brief secara spesifik
+soal domain luar yang di-hang, bukan optimasi bundle-size same-origin) — dicatat
+di sini sebagai temuan terbuka, bukan disembunyikan sebagai "selesai".
+
+### E5. Temuan terbuka (lanjutan, di luar lingkup brief ini)
+
+**E5.1 — Bundle Filament berat di Slow 4G.** Lihat E4: `/admin` dan
+`/owner-panel/kiosks` (dan panel Filament lain yang memuat komponen serupa) masih
+>10s di Slow 4G murni karena ukuran JS/CSS same-origin, independen dari isu
+domain luar brief ini. Rekomendasi lanjutan (belum dikerjakan): code-splitting
+per-komponen Filament (hanya load `rich-editor.js`/`chart.js` di halaman yang
+benar-benar memakainya) atau lazy-load komponen berat.
+
+### E6. Service Worker (`public/sw.js`) — strategi baru v6
+
+Dilaporkan sesuai poin 4 brief:
+
+- **Aset statis ber-versi/hash** (`/build/*` Vite, app shell, gambar/font by
+  extension, foto kios ber-`?v=`): **tidak berubah** dari v5 — cache-first
+  (aman karena nama file unik per versi).
+- **Navigasi (halaman HTML)**: v5 lama = network-only TANPA BATAS WAKTU (kalau
+  network tak pernah balas, SW ikut menunggu tak terbatas — ini bagian dari akar
+  masalah brief untuk load pertama kali setelah SW aktif). **v6 baru**:
+  network-first dengan `AbortController` + batas `NAVIGATION_TIMEOUT_MS = 8000`
+  — kalau fetch tak pernah selesai dalam 8 detik (atau gagal cepat), jatuh ke
+  `/offline.html` (sudah ada, tak diubah), **bukan** menunggu tanpa batas.
+  Halaman itu sendiri tetap **tidak pernah** dibaca/ditulis ke cache (aman
+  multi-tenant — tak berubah dari v5, mencegah akun A melihat cache dashboard
+  akun B).
+- **Pembersihan versi lama**: `CACHE_NAME` dinaikkan `dodol-v5` → `dodol-v6`.
+  Handler `activate` (sudah ada sejak v5, tak diubah) menghapus SEMUA cache
+  dengan nama ≠ `CACHE_NAME` saat ini, dan `skipWaiting()`/`clients.claim()`
+  (sudah ada sejak awal) memastikan SW baru langsung aktif tanpa perlu tutup
+  semua tab dulu.
+- **Caveat jujur (tak bisa difix oleh SW)**: service worker baru bisa
+  intercept request SETELAH ia terpasang & aktif — load pertama kali (SW belum
+  ada) tidak pernah lewat SW sama sekali. Jadi fix SW ini adalah **jaring
+  pengaman kedua** untuk visit berikutnya; fix utama untuk load pertama kali
+  tetap self-hosting di **E3**.
+
+Lihat `public/sw.js:1-47` (doc comment lengkap) dan `public/sw.js:219-244`
+(`networkOnlyPage`).

@@ -1,6 +1,57 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 26 Oktober 2026*
 
+## 🟢 BRIEF 26 OKT 2026: APLIKASI TERTAHAN SERVER LUAR (KELUHAN BUKA 1–2 MENIT) — SELESAI (mekanisme utama), 1 temuan terbuka di luar lingkup, boleh push (tidak ada migrasi)
+
+Keluhan: 1 HP (Oppo Reno 8 5G) butuh 1–2 menit untuk tampil; server sendiri merespons
+dalam milidetik (audit 23 Okt). Dugaan brief: resource domain luar render-blocking
+(font `fonts.bunny.net`, dll) lambat/diblokir di jaringan user → browser menunggu
+sampai timeout. Detail lengkap, tabel domain luar, dan angka before/after penuh ada
+di **`docs/UI_INVENTORY.md` bagian E** — ringkasan di bawah.
+
+**Akar masalah dikonfirmasi & direproduksi** (Playwright 390px, Slow 4G, domain luar
+di-hang pakai `context.route()` yang sengaja tak pernah dijawab — tool baru permanen
+`.claude/skills/verify-browser/measure-render-block.cjs`): sebelum fix, Landing/Operator
+Beranda/Owner Dashboard/Owner Manajemen Kios/Admin panel semua **TERTAHAN >10 detik tak
+terbatas**, persis sesuai keluhan — sementara halaman kontrol (`/login`, layout tanpa
+referensi domain luar) hanya 6.4s (Slow-4G wajar, bukan hang). 4 sumber render-blocking
+nyata ditemukan: `fonts.bunny.net` (link font di 6 layout Blade + default Filament),
+`fonts.googleapis.com`/`fonts.gstatic.com` (Landing saja), `cdn.tailwindcss.com` (Landing
+saja, `<script>` tanpa defer). (2 request domain luar lain — `ui-avatars.com` avatar,
+`tile.openstreetmap.org` peta Leaflet — bukan render-blocking, sengaja tak disentuh.)
+
+**Fix**: semua font/CSS/JS yang perlu untuk tampil kini **di-host sendiri** lewat npm
+`@fontsource/{figtree,inter,plus-jakarta-sans}@5.3.0` (versi terkunci) + Vite, termasuk
+font default Filament (`->font('Inter', provider: LocalFontProvider::class)` di kedua
+panel provider) dan build Tailwind sungguhan untuk Landing (ganti Play CDN). `font-display:
+swap` baku dari paket npm. Diverifikasi via `curl` HTML yang dirender: nol referensi
+`bunny.net`/`googleapis.com`/`cdn.tailwindcss.com` tersisa di manapun.
+
+**Bukti setelah fix** (hang domain luar sama persis, ulangi pengukuran): Landing
+>10s→**3.8s**, Operator Beranda >10s→**6.3s**, Owner Dashboard >10s→**8.4s**, Owner
+Manajemen Kios & Admin panel >10s→**~10.1s/10.0s**. **Tak ada lagi satupun halaman yang
+tertahan tak terbatas** — mekanisme inti yang diminta brief tuntas. **Temuan terbuka,
+jujur dilaporkan, DI LUAR LINGKUP brief ini**: Owner Manajemen Kios & Admin masih di atas
+target `<3s`, tapi dibuktikan lewat isolasi (nol domain di-hang) angkanya **identik** —
+murni bobot bundle JS/CSS Filament same-origin di Slow 4G (`markdown-editor.js` 509KB,
+`file-upload.js` 353KB, dst.), bukan sisa hang domain luar, bukan regresi. Rekomendasi
+lanjutan: code-splitting/lazy-load komponen Filament berat — belum dikerjakan, sesi lain.
+
+**Service Worker (`public/sw.js`) v5→v6**: navigasi HTML sekarang network-first dengan
+`AbortController` + batas waktu 8 detik (`NAVIGATION_TIMEOUT_MS`), jatuh ke
+`/offline.html` kalau network tak pernah balas — sebelumnya (v5) menunggu tanpa batas.
+Halaman tetap TIDAK PERNAH dicache (aman multi-tenant, tak berubah). `CACHE_NAME`
+`dodol-v5`→`dodol-v6` supaya cache lama otomatis dibersihkan saat versi baru aktif
+(`activate` handler + `skipWaiting`/`clients.claim`, sudah ada sejak awal, tak diubah).
+Caveat: SW baru bisa intercept setelah ia aktif — load PERTAMA KALI tak pernah lewat SW,
+jadi ini jaring pengaman kedua; fix utama tetap self-hosting di atas.
+
+**624 test PASS (2650 assertion), zero regresi.** Lihat `docs/UI_INVENTORY.md` bagian E
+untuk tabel domain luar lengkap per halaman, inventaris sitasi file:baris, dan rincian
+E1–E6.
+
+---
+
 ## 🔴 BRIEF 26 OKT 2026: PETA KOSONG + GPS AKURAT (OPERATOR) — SELESAI, **PERLU UJI LAPANGAN**, boleh push (tidak ada migrasi)
 
 Keluhan lapangan 26 Okt: halaman operator "Kios Baru" peta KOSONG total, dan lokasi GPS masih
