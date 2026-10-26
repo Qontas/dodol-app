@@ -1,0 +1,10 @@
+/* Font Filament (Inter) di-host sendiri — GANTI default BunnyFontProvider yang
+   memuat https://fonts.bunny.net/css?family=inter:400,500,600,700&display=swap.
+   Bobot sama persis dengan default Filament supaya tampilan panel tak berubah.
+   font-display: swap sudah baku di paket @fontsource (lihat node_modules/@fontsource/inter/*.css).
+   Entry Vite terpisah (bukan ikut app.css) karena dipakai lewat Vite::asset()
+   di AdminPanelProvider/OwnerPanelProvider (panel Filament tak ikut load app.css). */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';

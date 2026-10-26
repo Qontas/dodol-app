@@ -1,3 +1,13 @@
+/* Figtree di-host sendiri (npm @fontsource, versi terkunci) — GANTI link
+   <link href="https://fonts.bunny.net/..."> di semua layout. font-display:
+   swap sudah baku di paket ini (lihat node_modules/@fontsource/figtree/*.css),
+   jadi teks tidak pernah menunggu font sebelum tampil (FOUT, bukan FOIT).
+   Bobot 400/500/600 dipilih supaya sama persis dengan request bunny.net lama
+   (figtree:400,500,600). */
+@import '@fontsource/figtree/400.css';
+@import '@fontsource/figtree/500.css';
+@import '@fontsource/figtree/600.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

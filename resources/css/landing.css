@@ -1,0 +1,18 @@
+/* Plus Jakarta Sans di-host sendiri (npm @fontsource, versi terkunci) — GANTI
+   link <link href="https://fonts.googleapis.com/..."> + preconnect ke
+   fonts.googleapis.com/fonts.gstatic.com. font-display: swap sudah baku di
+   paket ini. Bobot sama dengan request Google Fonts lama (400;500;600;700;800). */
+@import '@fontsource/plus-jakarta-sans/400.css';
+@import '@fontsource/plus-jakarta-sans/500.css';
+@import '@fontsource/plus-jakarta-sans/600.css';
+@import '@fontsource/plus-jakarta-sans/700.css';
+@import '@fontsource/plus-jakarta-sans/800.css';
+
+/* Build Tailwind terpisah khusus landing.blade.php — GANTI <script
+   src="https://cdn.tailwindcss.com"> (JIT compiler runtime, render-blocking &
+   berat) dengan CSS terkompilasi lewat Vite, konsisten dengan app.css.
+   Entry Vite sendiri (bukan ikut app.css) karena landing.blade.php TIDAK
+   memuat app.css — halaman ini punya font/tema sendiri (Plus Jakarta Sans). */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
