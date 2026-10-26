@@ -126,4 +126,72 @@ class ReportExportTest extends TestCase
         $operator = User::factory()->create(['role' => 'operator', 'is_active' => true]);
         $this->actingAs($operator)->get(route('owner.reports.monthly'))->assertForbidden();
     }
+
+    /**
+     * BRIEF 26 Okt 2026 item 1 — "UNDUH, BUKAN TAMPIL": semua export WAJIB
+     * Content-Disposition: attachment + nama file manusiawi, bukan nama teknis
+     * `trip-report-{date}.pdf` yang lama.
+     */
+    public function test_trip_export_filenames_are_human_readable_attachments(): void
+    {
+        [$owner, $trip] = $this->ownerWithTrip();
+
+        $pdf = $this->actingAs($owner)->get(route('owner.trips.export.pdf', $trip));
+        $pdf->assertOk();
+        $disposition = $pdf->headers->get('content-disposition');
+        $this->assertStringContainsString('attachment', $disposition);
+        $this->assertStringContainsString('Laporan-Trip-'.$trip->trip_date->format('Y-m-d'), $disposition);
+        $this->assertStringContainsString('.pdf', $disposition);
+
+        $xls = $this->actingAs($owner)->get(route('owner.trips.export.excel', $trip));
+        $xls->assertOk();
+        $xlsDisposition = $xls->headers->get('content-disposition');
+        $this->assertStringContainsString('attachment', $xlsDisposition);
+        $this->assertStringContainsString('Laporan-Trip-'.$trip->trip_date->format('Y-m-d'), $xlsDisposition);
+        $this->assertStringContainsString('.xlsx', $xlsDisposition);
+    }
+
+    public function test_monthly_export_filenames_are_human_readable_attachments(): void
+    {
+        [$owner, $trip] = $this->ownerWithTrip();
+        $month = $trip->trip_date->format('Y-m');
+
+        $pdf = $this->actingAs($owner)->get(route('owner.reports.monthly.pdf', ['month' => $month]));
+        $pdf->assertOk();
+        $disposition = $pdf->headers->get('content-disposition');
+        $this->assertStringContainsString('attachment', $disposition);
+        $this->assertStringContainsString('Laporan-', $disposition);
+        $this->assertStringContainsString('Cemilan-Qontas', $disposition);
+    }
+
+    /**
+     * BRIEF 26 Okt 2026 item 2 — "DETAIL KUNJUNGAN LENGKAP": total kolom "Uang
+     * Diterima" di daftar kunjungan (web, PDF, Excel) WAJIB sama dengan Omset trip
+     * (keduanya basis amount_paid settlement — satu sumber, bukan dua rumus).
+     */
+    public function test_total_uang_diterima_equals_trip_omset(): void
+    {
+        [$owner, $trip] = $this->ownerWithTrip();
+
+        $response = $this->actingAs($owner)->get(route('owner.trips.show', $trip));
+        $response->assertOk();
+
+        $visitRows = $response->viewData('visitRows');
+        $totalUangDiterima = $visitRows->sum('uang_diterima');
+
+        $this->assertSame((int) round($trip->omset_val), $totalUangDiterima);
+        $this->assertGreaterThan(0, $totalUangDiterima);
+    }
+
+    public function test_trip_detail_page_shows_all_required_visit_columns(): void
+    {
+        [$owner, $trip] = $this->ownerWithTrip();
+
+        $response = $this->actingAs($owner)->get(route('owner.trips.show', $trip));
+
+        $response->assertOk();
+        foreach (['Mika Titip', 'Biji Terjual', 'BS (biji)', 'Tagihan', 'Uang Diterima', 'Piutang', 'Catatan/Janji Bayar'] as $col) {
+            $response->assertSee($col);
+        }
+    }
 }

@@ -16,6 +16,8 @@
         td.num { text-align: right; }
         .section-title { font-size: 13px; font-weight: bold; margin: 16px 0 4px; color: #0f172a; }
         .highlight { background: #fffbeb; font-weight: bold; }
+        .negative { color: #dc2626; }
+        tr.total-row td { background: #fffbeb; font-weight: bold; }
         .footer { margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 10px; color: #94a3b8; text-align: center; }
     </style>
 </head>
@@ -41,9 +43,17 @@
                 {{ number_format($summary['mika_drop'], 0, ',', '.') }}
                 <br><span class="muted" style="font-size:9px;">({{ number_format($summary['biji_drop'], 0, ',', '.') }} biji)</span>
             </td>
-            <td class="num">{{ number_format($summary['mika_sisa'], 0, ',', '.') }}</td>
+            <td class="num {{ $summary['mika_sisa'] < 0 ? 'negative' : '' }}">
+                {{ number_format($summary['mika_sisa'], 0, ',', '.') }}
+            </td>
         </tr>
     </table>
+    @if ($summary['mika_sisa'] < 0)
+        <p class="negative" style="font-size:10px; margin:2px 0 0;">
+            ⚠ Mika Sisa negatif — kemungkinan ada mika BS (Dodol Sisa) yang ikut terhitung
+            keluar dari stok motor. Cek ulang stok fisik, bukan error perhitungan uang.
+        </p>
+    @endif
 
     <div class="section-title">Ringkasan Finansial</div>
     <table class="data">
@@ -64,16 +74,44 @@
 
     <div class="section-title">Detail Kunjungan ({{ count($visits) }} kios)</div>
     <table class="data">
-        <tr><th>Kios</th><th>Aksi</th><th>Waktu</th></tr>
+        <tr>
+            <th>Kios</th><th>Aksi</th><th>Waktu</th>
+            <th style="text-align:right;">Mika Titip</th>
+            <th style="text-align:right;">Biji Terjual</th>
+            <th style="text-align:right;">BS (biji)</th>
+            <th style="text-align:right;">Tagihan (Rp)</th>
+            <th style="text-align:right;">Uang Diterima (Rp)</th>
+            <th style="text-align:right;">Piutang (Rp)</th>
+            <th>Catatan/Janji Bayar</th>
+        </tr>
         @forelse ($visits as $v)
             <tr>
                 <td>{{ $v['kiosk'] }}</td>
                 <td>{{ $v['action'] }}</td>
                 <td>{{ $v['time'] }}</td>
+                <td class="num">{{ $v['mika_titip'] ? number_format($v['mika_titip'], 0, ',', '.') : '—' }}</td>
+                <td class="num">{{ $v['biji_terjual'] ? number_format($v['biji_terjual'], 0, ',', '.') : '—' }}</td>
+                <td class="num">{{ $v['bs_biji'] ? number_format($v['bs_biji'], 0, ',', '.') : '—' }}</td>
+                <td class="num">{{ $v['tagihan'] ? number_format($v['tagihan'], 0, ',', '.') : '—' }}</td>
+                <td class="num">{{ $v['uang_diterima'] ? number_format($v['uang_diterima'], 0, ',', '.') : '—' }}</td>
+                <td class="num">{{ $v['piutang'] ? number_format($v['piutang'], 0, ',', '.') : '—' }}</td>
+                <td>{{ $v['catatan_gabungan'] ?: '—' }}</td>
             </tr>
         @empty
-            <tr><td colspan="3" class="muted">Tidak ada kunjungan tercatat.</td></tr>
+            <tr><td colspan="10" class="muted">Tidak ada kunjungan tercatat.</td></tr>
         @endforelse
+        @if (count($visits) > 0)
+            <tr class="total-row">
+                <td colspan="3">TOTAL</td>
+                <td class="num">{{ number_format(array_sum(array_column($visits, 'mika_titip')), 0, ',', '.') }}</td>
+                <td class="num">{{ number_format(array_sum(array_column($visits, 'biji_terjual')), 0, ',', '.') }}</td>
+                <td class="num">{{ number_format(array_sum(array_column($visits, 'bs_biji')), 0, ',', '.') }}</td>
+                <td class="num">{{ number_format(array_sum(array_column($visits, 'tagihan')), 0, ',', '.') }}</td>
+                <td class="num">{{ number_format(array_sum(array_column($visits, 'uang_diterima')), 0, ',', '.') }}</td>
+                <td class="num">{{ number_format(array_sum(array_column($visits, 'piutang')), 0, ',', '.') }}</td>
+                <td></td>
+            </tr>
+        @endif
     </table>
 
     <div class="footer">

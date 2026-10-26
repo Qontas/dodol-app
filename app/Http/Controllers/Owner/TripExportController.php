@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Owner;
 use App\Exports\TripReportExport;
 use App\Http\Controllers\Controller;
 use App\Models\Trip;
+use App\Support\ExportFilename;
+use App\Support\VisitRowBuilder;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -25,7 +27,10 @@ class TripExportController extends Controller
      */
     public static function buildTripData(Trip $trip): array
     {
-        $trip->loadMissing(['owner', 'operator', 'startingCluster', 'visits.kiosk']);
+        $trip->loadMissing(array_merge(
+            ['owner', 'operator', 'startingCluster'],
+            VisitRowBuilder::eagerLoad(),
+        ));
 
         $mikaDibawa = (int) ($trip->qty_carried_total ?? 0);
         // Hanya SATU trip per panggilan (bukan loop banyak trip) — aman pakai accessor
@@ -48,6 +53,19 @@ class TripExportController extends Controller
             'summary' => [
                 'mika_dibawa' => $mikaDibawa,
                 'mika_drop' => $mikaDrop,
+                // ⚠️ INVESTIGASI BRIEF 26 Okt 2026 item 4 (trip "KualiStories" 26 Okt:
+                // dibawa 90, dititip 107, sisa -17): rumus ini TIDAK mengecualikan
+                // delivery_type bs_redistribution (Dodol Sisa daur-ulang), padahal mika
+                // BS itu bukan stok bawaan motor — beda dari Trip::getTotalDropReal()
+                // (basis komisi) yang SUDAH benar mengecualikannya. Mika BS yang
+                // diletakkan ulang ikut mengurangi "sisa" seolah dari stok motor, jadi
+                // bisa jatuh negatif padahal stok fisik operator sebenarnya cukup/pas.
+                // BELUM diperbaiki di sini (brief: "jangan ubah logika dulu" — investigasi
+                // & proposal fix saja). Rencana fix: pisah basis bs_redistribution SAMA
+                // seperti getTotalDropReal(), + fitur "Tambah Mika Dibawa" di Active Trip
+                // untuk kasus operator benar-benar menambah stok di tengah trip (saat ini
+                // tidak ada jalur manapun untuk itu, dan tidak ada guard yang menolak
+                // titip/jual melebihi mika_dibawa).
                 'mika_sisa' => $mikaDibawa - $mikaDrop,
                 'biji_drop' => (int) $trip->biji_diantar,
             ],
@@ -61,24 +79,19 @@ class TripExportController extends Controller
                 'untung_bersih' => (int) $trip->untung_bersih_owner,
                 'biji_terjual' => (int) $trip->biji_terjual,
             ],
-            'visits' => $trip->visits->map(fn ($v) => [
-                'kiosk' => $v->kiosk?->name ?? '—',
-                'action' => self::visitActionLabel($v->visit_action),
-                'time' => $v->visited_at?->format('d M Y H:i') ?? '—',
-            ])->all(),
+            // BRIEF 26 Okt 2026 item 2 — dulu 3 kolom (Kios/Aksi/Waktu) saja, "tanpa
+            // angka" sesuai keluhan owner. Sekarang delegasi ke VisitRowBuilder (SATU
+            // builder, dipakai juga TripHistoryController::show() & sheet "Data
+            // Kunjungan" Laporan Periode) — baris lengkap termasuk Mika Titip, Biji
+            // Terjual, BS, Tagihan, Uang Diterima, Piutang, Catatan/Janji Bayar.
+            'visits' => VisitRowBuilder::forTrip($trip)->all(),
         ];
     }
 
+    /** @deprecated Pindah ke VisitRowBuilder::actionLabel() — alias dipertahankan agar konsumen lama tak pecah. */
     public static function visitActionLabel(?string $action): string
     {
-        return match ($action) {
-            'drop_and_settle' => 'Tagih + Titip Baru',
-            'drop_only' => 'Titip Baru',
-            'settle_only' => 'Tagih Saja',
-            'check_only' => 'Cek Saja',
-            'cash_sale' => 'Jual Cash',
-            default => $action ?? '—',
-        };
+        return VisitRowBuilder::actionLabel($action);
     }
 
     public function pdf(Trip $trip): Response
@@ -86,8 +99,9 @@ class TripExportController extends Controller
         $this->authorizeTrip($trip);
 
         $pdf = Pdf::loadView('exports.trip-report-pdf', self::buildTripData($trip));
+        $pdf->setPaper('a4', 'landscape');
 
-        return $pdf->download("trip-report-{$trip->trip_date->format('Y-m-d')}.pdf");
+        return $pdf->download(ExportFilename::tripPdf($trip->trip_date->format('Y-m-d'), $trip->operator?->name));
     }
 
     public function excel(Trip $trip): BinaryFileResponse
@@ -96,7 +110,7 @@ class TripExportController extends Controller
 
         return Excel::download(
             new TripReportExport($trip),
-            "trip-report-{$trip->trip_date->format('Y-m-d')}.xlsx"
+            ExportFilename::tripExcel($trip->trip_date->format('Y-m-d'), $trip->operator?->name)
         );
     }
 }

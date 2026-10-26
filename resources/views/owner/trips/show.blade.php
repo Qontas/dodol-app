@@ -42,9 +42,9 @@
                     @endif
                 </div>
                 <div class="flex flex-wrap items-center gap-1.5">
-                    <a href="{{ route('owner.trips.export.pdf', $trip) }}"
+                    <a href="{{ route('owner.trips.export.pdf', $trip) }}" data-force-download
                        class="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">Export PDF</a>
-                    <a href="{{ route('owner.trips.export.excel', $trip) }}"
+                    <a href="{{ route('owner.trips.export.excel', $trip) }}" data-force-download
                        class="rounded bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700">Export Excel</a>
                     @if ($trip->trashed())
                         <form method="POST" action="{{ route('owner.trips.restore', $trip) }}"
@@ -77,7 +77,12 @@
             </div>
             <div>
                 <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Sisa</p>
-                <p class="text-base font-bold text-slate-700">{{ number_format($summary['mika_sisa'], 0, ',', '.') }} mika</p>
+                <p class="text-base font-bold {{ $summary['mika_sisa'] < 0 ? 'text-red-600' : 'text-slate-700' }}">
+                    {{ number_format($summary['mika_sisa'], 0, ',', '.') }} mika
+                </p>
+                @if ($summary['mika_sisa'] < 0)
+                    <p class="text-[10px] text-red-600 mt-0.5">⚠ Cek stok — kemungkinan mika BS ikut terhitung</p>
+                @endif
             </div>
             <div>
                 <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Terjual</p>
@@ -131,8 +136,12 @@
                             <th class="px-4 py-3 text-left font-medium">Aksi</th>
                             <th class="px-4 py-3 text-left font-medium">Waktu</th>
                             <th class="px-4 py-3 text-right font-medium">Mika Titip</th>
+                            <th class="px-4 py-3 text-right font-medium">Biji Terjual</th>
                             <th class="px-4 py-3 text-right font-medium">BS (biji)</th>
-                            <th class="px-4 py-3 text-right font-medium">Uang</th>
+                            <th class="px-4 py-3 text-right font-medium">Tagihan</th>
+                            <th class="px-4 py-3 text-right font-medium">Uang Diterima</th>
+                            <th class="px-4 py-3 text-right font-medium">Piutang</th>
+                            <th class="px-4 py-3 text-left font-medium">Catatan/Janji Bayar</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
@@ -142,15 +151,33 @@
                                 <td class="px-4 py-3 text-slate-600">{{ $v['action'] }}</td>
                                 <td class="px-4 py-3 whitespace-nowrap text-slate-500">{{ $v['time'] }}</td>
                                 <td class="px-4 py-3 text-right text-slate-700">{{ $v['mika_titip'] ? number_format($v['mika_titip'], 0, ',', '.') : '—' }}</td>
+                                <td class="px-4 py-3 text-right text-slate-700">{{ $v['biji_terjual'] ? number_format($v['biji_terjual'], 0, ',', '.') : '—' }}</td>
                                 <td class="px-4 py-3 text-right text-red-600">{{ $v['bs_biji'] ? number_format($v['bs_biji'], 0, ',', '.') : '—' }}</td>
-                                <td class="px-4 py-3 text-right text-slate-900 font-medium">{{ $v['uang'] ? 'Rp ' . number_format($v['uang'], 0, ',', '.') : '—' }}</td>
+                                <td class="px-4 py-3 text-right text-slate-700">{{ $v['tagihan'] ? 'Rp ' . number_format($v['tagihan'], 0, ',', '.') : '—' }}</td>
+                                <td class="px-4 py-3 text-right text-slate-900 font-medium">{{ $v['uang_diterima'] ? 'Rp ' . number_format($v['uang_diterima'], 0, ',', '.') : '—' }}</td>
+                                <td class="px-4 py-3 text-right {{ $v['piutang'] > 0 ? 'text-amber-700 font-medium' : 'text-slate-400' }}">{{ $v['piutang'] ? 'Rp ' . number_format($v['piutang'], 0, ',', '.') : '—' }}</td>
+                                <td class="px-4 py-3 text-slate-600">{{ $v['catatan_gabungan'] ?: '—' }}</td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="px-4 py-8 text-center text-slate-500">Tidak ada kunjungan pada trip ini.</td>
+                                <td colspan="10" class="px-4 py-8 text-center text-slate-500">Tidak ada kunjungan pada trip ini.</td>
                             </tr>
                         @endforelse
                     </tbody>
+                    @if ($visitRows->count() > 0)
+                        <tfoot class="bg-amber-50 font-bold text-slate-900">
+                            <tr>
+                                <td class="px-4 py-3" colspan="3">TOTAL</td>
+                                <td class="px-4 py-3 text-right">{{ number_format($visitRows->sum('mika_titip'), 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right">{{ number_format($visitRows->sum('biji_terjual'), 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right">{{ number_format($visitRows->sum('bs_biji'), 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right">Rp {{ number_format($visitRows->sum('tagihan'), 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right">Rp {{ number_format($visitRows->sum('uang_diterima'), 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right">Rp {{ number_format($visitRows->sum('piutang'), 0, ',', '.') }}</td>
+                                <td class="px-4 py-3"></td>
+                            </tr>
+                        </tfoot>
+                    @endif
                 </table>
             </div>
         </div>

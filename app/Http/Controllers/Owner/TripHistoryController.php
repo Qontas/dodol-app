@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Owner;
 
 use App\Http\Controllers\Controller;
-use App\Models\KioskVisit;
 use App\Models\Trip;
 use App\Models\User;
 use App\Support\TripAggregator;
 use App\Support\TripAreas;
+use App\Support\VisitRowBuilder;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -131,31 +131,18 @@ class TripHistoryController extends Controller
         );
 
         // Eager-load untuk hindari N+1 saat merender daftar kunjungan (satu trip).
-        $trip->loadMissing([
-            'operator',
-            'startingCluster',
-            'visits' => fn ($q) => $q->active()->orderBy('visited_at'),
-            'visits.kiosk:id,name',
-            'visits.newDelivery:id,qty_delivered',
-            'visits.settledDelivery:id',
-            'visits.settledDelivery.settlement:id,delivery_id,qty_sold,qty_returned_expired,amount_due,amount_paid',
-        ]);
+        // BRIEF 26 Okt 2026 item 2 — list eager-load dipindah ke VisitRowBuilder::eagerLoad()
+        // (dipakai juga TripExportController::buildTripData()), 'operator'/'startingCluster'
+        // tetap ditambah di sini (kebutuhan halaman web, bukan baris kunjungan).
+        $trip->loadMissing(array_merge(
+            ['operator', 'startingCluster'],
+            VisitRowBuilder::eagerLoad(),
+        ));
 
         $mikaDibawa = (int) ($trip->qty_carried_total ?? 0);
         $mikaDrop = (int) $trip->deliveries()->sum('qty_delivered');
 
-        $visitRows = $trip->visits->map(function (KioskVisit $v) {
-            $settlement = $v->settledDelivery?->settlement;
-
-            return [
-                'kiosk' => $v->kiosk?->name ?? '—',
-                'action' => TripExportController::visitActionLabel($v->visit_action),
-                'time' => $v->visited_at?->format('d M Y H:i') ?? '—',
-                'mika_titip' => (int) ($v->newDelivery?->qty_delivered ?? 0),
-                'bs_biji' => (int) ($settlement?->qty_returned_expired ?? 0),
-                'uang' => (int) ($settlement?->amount_paid ?? 0),
-            ];
-        });
+        $visitRows = VisitRowBuilder::forTrip($trip);
 
         return view('owner.trips.show', [
             'trip' => $trip,
