@@ -3,6 +3,9 @@ shots/
 serve.log
 mysqld.log
 scratch/
+# Hasil ukur measure-render-block.cjs (angka per-run, mesin lokal) — bukti
+# before/after dilaporkan di NEXT_SESSION.md/UI_INVENTORY.md, bukan file ini.
+measure-*.json
 # Script diagnosa/verifikasi sementara (driver.cjs = skill resmi, JANGAN di-ignore)
 diag-*.cjs
 verify-*.cjs
