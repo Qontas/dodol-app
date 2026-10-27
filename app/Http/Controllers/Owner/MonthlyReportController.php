@@ -41,8 +41,14 @@ class MonthlyReportController extends Controller
 
         // Agregat finansial per trip DIBATCH (bukan accessor per-baris yang N+1 saat trip
         // banyak). Angka IDENTIK accessor Trip (omset_val/komisi_rian/untung_bersih_owner)
-        // — lihat TripAggregator. kios_dikunjungi & mika_drop tetap dari koleksi ter-eager
-        // (murah, sekaligus jaga semantik lama: visits->count() = SEMUA kunjungan).
+        // — lihat TripAggregator. mika_drop tetap dari koleksi ter-eager (murah).
+        //
+        // 🔴 DIPERBAIKI 27 Okt 2026 (BRIEF "KOLOM KIOS") — kios_dikunjungi dulu
+        // $t->visits->count() (SEMUA kunjungan, termasuk visit_action tanpa drop/settle,
+        // TAPI tak menghitung kios yang titip lewat jalur "Kios Baru"/OpeningBalance yang
+        // tak punya KioskVisit sama sekali) — beda definisi dari Riwayat Trip/Laporan
+        // Periode yang sudah pakai TripAggregator. Sekarang SATU SUMBER: $tripAgg[id]['kios']
+        // (lihat TripAggregator §8b), supaya "Kios" tak pernah beda-beda antar halaman.
         $owner = \App\Models\User::find($ownerId);
         $tripAgg = \App\Support\TripAggregator::for(
             $trips->pluck('id')->all(),
@@ -52,7 +58,7 @@ class MonthlyReportController extends Controller
         $rows = $trips->map(fn (Trip $t) => [
             'trip_date' => $t->trip_date->format('d M Y'),
             'operator' => $t->operator?->name ?? '—',
-            'kios_dikunjungi' => $t->visits->count(),
+            'kios_dikunjungi' => (int) ($tripAgg[$t->id]['kios'] ?? 0),
             'mika_drop' => (int) $t->deliveries->sum('qty_delivered'),
             // Tampilan tambahan "X mika (Y biji)" — dari koleksi `deliveries` yang SUDAH
             // eager-loaded di atas (accessor qty_biji_delivered murni komputasi, bukan

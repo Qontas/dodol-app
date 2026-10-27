@@ -107,7 +107,9 @@ class PeriodReportController extends Controller
                 'trip_id' => $t->id,
                 'trip_date' => $t->trip_date->format('d M Y'),
                 'operator' => $t->operator?->name ?? '—',
-                'kios_dikunjungi' => (int) ($a['active_visits'] ?? 0),
+                // BRIEF 27 Okt 2026 "KOLOM KIOS" — $a['kios'] (unik, SATU SUMBER dgn Riwayat
+                // Trip/Laporan Bulanan/dashboard), bukan lagi $a['active_visits'].
+                'kios_dikunjungi' => (int) ($a['kios'] ?? 0),
                 'mika_diantar' => (int) ($a['mika_diantar'] ?? 0),
                 'omset' => (int) ($a['omset'] ?? 0),
                 'hpp' => (int) ($a['hpp_estimasi'] ?? 0),
