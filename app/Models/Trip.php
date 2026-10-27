@@ -64,6 +64,16 @@ class Trip extends Model
     }
 
     /**
+     * BRIEF 27 Okt 2026 "PENGAMAN STOK DI MOTOR" — tambahan stok mika yang dicatat
+     * operator di tengah trip ("➕ Tambah Stok di Motor"). qty_carried_total TETAP
+     * stok awal; baris di sini ditambahkan di atasnya. Lihat getStokDiMotor().
+     */
+    public function stockAdditions(): HasMany
+    {
+        return $this->hasMany(TripStockAddition::class);
+    }
+
+    /**
      * Trip MIGRASI SENTINEL (saldo awal kedai lama) — dibuat OpeningBalance::
      * migrationTripFor() (trip_date 2000-01-01) ATAU command kios:saldo-awal /
      * SeedKioskSaldoAwal (trip_date = tanggal spreadsheet asli, BUKAN 2000-01-01,
@@ -105,6 +115,61 @@ class Trip extends Model
         return (int) $this->deliveries()
             ->where('delivery_type', '!=', 'bs_redistribution')
             ->sum('qty_delivered');
+    }
+
+    /**
+     * Total mika yang ditambahkan ke stok motor SETELAH trip mulai (riwayat
+     * "➕ Tambah Stok di Motor"). Lihat TripStockAddition / getStokDiMotor().
+     */
+    public function getQtyAddedTotalAttribute(): int
+    {
+        return (int) $this->stockAdditions()->sum('qty');
+    }
+
+    /**
+     * Stok EFEKTIF yang dibawa trip ini = stok awal (qty_carried_total, tidak
+     * pernah ditimpa) + semua tambahan stok di tengah trip.
+     */
+    public function getQtyCarriedEffectiveAttribute(): int
+    {
+        return (int) ($this->qty_carried_total ?? 0) + $this->qty_added_total;
+    }
+
+    /**
+     * SATU SUMBER KEBENARAN "stok di motor" — dipakai di SEMUA tempat (guard
+     * titip/jual/koreksi, tampilan Active Trip, Akhiri Trip, Live Trip owner,
+     * halaman detail trip, PDF & Excel). = stok dibawa efektif − total drop REAL
+     * (exclude bs_redistribution, lihat getTotalDropReal()) — Dodol Sisa (BS)
+     * berasal dari KIOS, bukan dari stok motor, jadi TIDAK mengurangi stok di
+     * motor saat diletakkan ulang.
+     *
+     * BRIEF 27 Okt 2026 — investigasi trip "KualiStories" (26 Okt: dibawa 90,
+     * dititip 107, komisi drop 107) membuktikan TIDAK ADA bs_redistribution di
+     * trip itu sama sekali, jadi -17 BUKAN disebabkan Dodol Sisa (koreksi atas
+     * hipotesis investigasi lama di TripExportController::buildTripData()).
+     * Akar masalahnya memang tidak ada guard & tidak ada jalur tambah stok —
+     * keduanya baru ditambahkan brief ini.
+     */
+    public function getStokDiMotor(): int
+    {
+        return $this->qty_carried_effective - $this->getTotalDropReal();
+    }
+
+    /**
+     * Tampilan "Mika Dibawa" — "90 + 20 tambahan = 110" kalau ada tambahan stok,
+     * atau cukup "90" kalau belum pernah ditambah. Dipakai Akhiri Trip, halaman
+     * detail trip owner, Live Trip owner, PDF & Excel trip.
+     */
+    public function getMikaDibawaDisplayAttribute(): string
+    {
+        $awal = (int) ($this->qty_carried_total ?? 0);
+        $tambahan = $this->qty_added_total;
+
+        if ($tambahan <= 0) {
+            return (string) $awal;
+        }
+
+        return "{$awal} + {$tambahan} tambahan = {$this->qty_carried_effective}";
     }
 
     /**

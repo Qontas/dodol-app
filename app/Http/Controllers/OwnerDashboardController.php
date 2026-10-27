@@ -264,6 +264,12 @@ class OwnerDashboardController extends Controller
                 'visits.newDelivery',
                 'visits.settledDelivery.settlement',
                 'deliveries',
+                // BRIEF 27 Okt 2026 "PENGAMAN STOK DI MOTOR" — dibutuhkan supaya
+                // LiveTripProgress bisa hitung stok di motor & "90 + 20 tambahan"
+                // dari koleksi yang sudah di-eager-load (lihat docblock di sana),
+                // bukan lewat Trip::getStokDiMotor()/mika_dibawa_display (query
+                // baru per trip, pecah anti-N+1 widget ini).
+                'stockAdditions',
             ])
             ->get();
 

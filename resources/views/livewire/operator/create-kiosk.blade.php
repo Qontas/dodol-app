@@ -148,6 +148,16 @@
                     <p class="text-xs text-slate-500 mt-1">Berapa mika yang kamu taruh sekarang dari stok trip. Ini jadi titipan berjalan + dihitung komisi. Kamu yang cek sisanya pas kunjungan berikutnya.</p>
                     @error('defaultQtyMika')
                         <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                        {{-- PENGAMAN STOK DI MOTOR (brief 27 Okt 2026) — error ini bisa berasal
+                             dari MotorStockGuard (stok di motor tak cukup). Kios baru GAGAL
+                             dibuat sepenuhnya (rollback) — arahkan operator ke Active Trip untuk
+                             "➕ Tambah Stok di Motor" dulu, lalu ulangi simpan kios ini. --}}
+                        @if($activeTripId)
+                            <a href="{{ route('operator.trip.active', $activeTripId) }}?tambahStok=1" wire:navigate
+                               class="inline-block mt-1.5 text-xs font-bold text-amber-700 underline">
+                                ➕ Tambah Stok di Motor dulu
+                            </a>
+                        @endif
                     @enderror
                 </div>
             </div>

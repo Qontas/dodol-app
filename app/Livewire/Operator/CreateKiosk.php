@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Operator;
 
+use App\Exceptions\InsufficientMotorStockException;
 use App\Models\Cluster;
 use App\Models\Kiosk;
 use App\Models\Trip;
@@ -9,6 +10,7 @@ use App\Support\ConsignmentDrop;
 use App\Support\GoogleMapsShortLinkResolver;
 use App\Support\KioskLocationParser;
 use App\Support\KioskPhoto;
+use App\Support\MotorStockGuard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -185,49 +187,66 @@ class CreateKiosk extends Component
         $titipanGagal = false;
         $owner = auth()->user()->owner;
 
-        $kiosk = DB::transaction(function () use ($titipToTrip, $isCashOnly, $activeTrip, $owner, &$titipanGagal) {
-            $kiosk = Kiosk::create([
-                'name' => $this->namaKios,
-                'owner_name' => $this->namaPemilik,
-                'phone' => $this->telepon ?: null,
-                'cluster_id' => $this->clusterId, // wajib & tervalidasi milik owner.
-                // Jatah HANYA di-set kalau dodol benar-benar ditaruh ke trip aktif.
-                // Booking / konsinyasi-tanpa-trip → NULL (belum ada titipan/jatah).
-                'default_qty_mika' => $titipToTrip ? $this->defaultQtyMika : null,
-                'is_cash_only' => $isCashOnly,
-                'latitude' => $this->latitude,
-                'longitude' => $this->longitude,
-                'is_active' => true,
-                // Default interval MILIK OWNER — jalur ini sebelumnya tak mengisi kolom
-                // ini sama sekali (jatuh ke default migrasi mentah 14/10/null), beda diam-
-                // diam dari jalur Filament owner (KioskResource). Disamakan di sini.
-                'target_visit_interval_days' => $owner?->getDefaultTargetVisitIntervalDaysValue() ?? 10,
-                'warning_visit_interval_days' => $owner?->getDefaultWarningVisitIntervalDaysValue() ?? 14,
-                'fast_mover_threshold_days' => $owner?->getDefaultFastMoverThresholdDaysValue() ?? 7,
-                // Kios dibuat operator di lapangan = titip pertama hari ini → kios baru.
-                'first_titip_date' => today(),
-                'store_note' => trim($this->storeNote) ?: null,
-                'notes' => 'Input lapangan oleh operator: '.auth()->user()->name.' (id='.auth()->id().')',
-            ]);
+        try {
+            $kiosk = DB::transaction(function () use ($titipToTrip, $isCashOnly, $activeTrip, $owner, &$titipanGagal) {
+                // PENGAMAN STOK DI MOTOR (brief 27 Okt 2026) — dicek SEBELUM kiosk dibuat
+                // supaya penolakan membatalkan SELURUH pembuatan kios (bukan kios
+                // tersimpan tapi titipan gagal diam-diam). HANYA saat benar-benar menaruh
+                // dodol (titipToTrip) — booking/cash-only tak menyentuh stok motor.
+                if ($titipToTrip && (int) $this->defaultQtyMika >= 1) {
+                    MotorStockGuard::assertAvailable($activeTrip, (int) $this->defaultQtyMika);
+                }
 
-            // URUTAN RUTE: operator tak mengisi urutan → otomatis TERAKHIR di cluster
-            // (bukan NULL yang jatuh ke bawah tanpa nomor & mengacaukan urutan rute).
-            Kiosk::appendToClusterOrder($kiosk);
+                $kiosk = Kiosk::create([
+                    'name' => $this->namaKios,
+                    'owner_name' => $this->namaPemilik,
+                    'phone' => $this->telepon ?: null,
+                    'cluster_id' => $this->clusterId, // wajib & tervalidasi milik owner.
+                    // Jatah HANYA di-set kalau dodol benar-benar ditaruh ke trip aktif.
+                    // Booking / konsinyasi-tanpa-trip → NULL (belum ada titipan/jatah).
+                    'default_qty_mika' => $titipToTrip ? $this->defaultQtyMika : null,
+                    'is_cash_only' => $isCashOnly,
+                    'latitude' => $this->latitude,
+                    'longitude' => $this->longitude,
+                    'is_active' => true,
+                    // Default interval MILIK OWNER — jalur ini sebelumnya tak mengisi kolom
+                    // ini sama sekali (jatuh ke default migrasi mentah 14/10/null), beda diam-
+                    // diam dari jalur Filament owner (KioskResource). Disamakan di sini.
+                    'target_visit_interval_days' => $owner?->getDefaultTargetVisitIntervalDaysValue() ?? 10,
+                    'warning_visit_interval_days' => $owner?->getDefaultWarningVisitIntervalDaysValue() ?? 14,
+                    'fast_mover_threshold_days' => $owner?->getDefaultFastMoverThresholdDaysValue() ?? 7,
+                    // Kios dibuat operator di lapangan = titip pertama hari ini → kios baru.
+                    'first_titip_date' => today(),
+                    'store_note' => trim($this->storeNote) ?: null,
+                    'notes' => 'Input lapangan oleh operator: '.auth()->user()->name.' (id='.auth()->id().')',
+                ]);
 
-            // 🔴 TITIPAN → TRIP AKTIF: dodol yang ditaruh operator dicatat sebagai delivery
-            // konsinyasi pada TRIP AKTIF (bukan trip migrasi sentinel). Karena nempel ke trip
-            // aktif, ia otomatis ikut getTotalDropReal() → STOK trip berkurang + KOMISI operator
-            // terhitung, TANPA jalur komisi terpisah. Reuse ConsignmentDrop (sama dgn OpeningBalance,
-            // beda trip). Kios langsung bisa "Tagih + Titip Ulang" kunjungan berikutnya.
-            if ($titipToTrip && (int) $this->defaultQtyMika >= 1) {
-                $delivery = ConsignmentDrop::record($kiosk, $activeTrip, (int) $this->defaultQtyMika);
-                // null = owner belum punya varian produk aktif → titipan tak tercatat, tapi
-                // kios tetap tersimpan (jangan gagalkan semuanya). Beri tahu operator.
-                $titipanGagal = $delivery === null;
-            }
+                // URUTAN RUTE: operator tak mengisi urutan → otomatis TERAKHIR di cluster
+                // (bukan NULL yang jatuh ke bawah tanpa nomor & mengacaukan urutan rute).
+                Kiosk::appendToClusterOrder($kiosk);
 
-            return $kiosk;
-        });
+                // 🔴 TITIPAN → TRIP AKTIF: dodol yang ditaruh operator dicatat sebagai delivery
+                // konsinyasi pada TRIP AKTIF (bukan trip migrasi sentinel). Karena nempel ke trip
+                // aktif, ia otomatis ikut getTotalDropReal() → STOK trip berkurang + KOMISI operator
+                // terhitung, TANPA jalur komisi terpisah. Reuse ConsignmentDrop (sama dgn OpeningBalance,
+                // beda trip). Kios langsung bisa "Tagih + Titip Ulang" kunjungan berikutnya.
+                if ($titipToTrip && (int) $this->defaultQtyMika >= 1) {
+                    $delivery = ConsignmentDrop::record($kiosk, $activeTrip, (int) $this->defaultQtyMika);
+                    // null = owner belum punya varian produk aktif → titipan tak tercatat, tapi
+                    // kios tetap tersimpan (jangan gagalkan semuanya). Beri tahu operator.
+                    $titipanGagal = $delivery === null;
+                }
+
+                return $kiosk;
+            });
+        } catch (InsufficientMotorStockException $e) {
+            // Seluruh pembuatan kios dibatalkan (DB::transaction rollback otomatis
+            // karena exception menembus closure-nya) — operator harus tambah stok
+            // dulu, lalu ulangi simpan kios ini dari awal.
+            $this->addError('defaultQtyMika', $e->operatorMessage());
+
+            return null;
+        }
 
         if ($titipanGagal) {
             session()->flash('titipan_gagal', 'Kios tersimpan, tapi titipan belum tercatat (belum ada varian produk aktif). Hubungi owner untuk cek Master Data → Produk.');

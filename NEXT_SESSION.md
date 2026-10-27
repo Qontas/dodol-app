@@ -1,5 +1,69 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 26 Oktober 2026*
+*Sesi terakhir: 27 Oktober 2026*
+
+## 🔴 BRIEF 27 OKT 2026: PENGAMAN STOK DI MOTOR (blokir titip melebihi stok + "Tambah Stok di Motor") — SELESAI, **BELUM boleh push — ADA MIGRASI, owner harus backup DB dulu**
+
+Lanjutan investigasi "Mika Sisa negatif" brief 26 Okt: trip "KualiStories" (26 Okt)
+dibawa 90, dititip 107, komisi drop 107 — **tidak ada** `bs_redistribution` di trip itu
+sama sekali, jadi -17 BUKAN disebabkan Dodol Sisa (koreksi atas hipotesis lama di
+`TripExportController::buildTripData()`). Akar masalah sebenarnya: (1) tidak ada guard
+yang menolak titip/jual melebihi stok di motor, (2) tidak ada jalur mencatat tambahan
+stok di tengah trip. Owner memutuskan: **BLOKIR** + tombol **"Tambah Stok di Motor"**.
+Tidak ada akses prod. Angka uang (omset/HPP/komisi/untung/fee) **TIDAK berubah** — dibuktikan
+`reports:verify-locked-numbers` (0 trip berubah). Trip lama yang sudah negatif **TIDAK**
+di-retro-fix.
+
+**Skema baru.** Migrasi `2026_10_27_000001_create_trip_stock_additions_table.php` — tabel
+`trip_stock_additions` (`trip_id`, `qty`, `added_by`, `created_at`). `trips.qty_carried_total`
+TETAP stok awal (tak pernah ditimpa). `Trip::getStokDiMotor()` jadi **satu sumber kebenaran**
+stok di motor = `qty_carried_effective` (awal + SUM tambahan) − `getTotalDropReal()` (semua
+drop KECUALI `bs_redistribution`, karena BS berasal dari kios bukan dari stok motor) — dipakai
+guard, tampilan Active Trip, Akhiri Trip, Live Trip owner, halaman detail trip, PDF & Excel.
+
+**Guard server (`App\Support\MotorStockGuard::assertAvailable()`)** — wajib jadi statement
+pertama di dalam `DB::transaction()` SEMUA jalur yang mengeluarkan mika dari motor (Tagih +
+Titip Ulang, Titip Cash, Mulai Titipan, Jual Cash Cepat, Kios Baru konsinyasi trip aktif,
+Koreksi yang menambah qty) — `lockForUpdate()` pada baris trip supaya race-safe (dua request
+simultan diserialkan, request kedua baca stok yang sudah ter-update). Melempar
+`App\Exceptions\InsufficientMotorStockException` kalau qty > stok. `bs_redistribution` TIDAK
+PERNAH lewat guard ini.
+
+**UI operator** (`ActiveTrip.php` + `active-trip.blade.php`) — baris "Stok di motor: N mika"
+di header + tombol "➕ Tambah Stok di Motor" (modal `tambahStokQty`, stepper +/-, teks
+konfirmasi "Tambah N mika ke stok motor?", submit → `confirmAddStock()`, pesan sukses persis
+"Stok ditambah N mika. Stok di motor sekarang X mika." via `session()->flash('visit_saved', ...)`
+— pola yang sama dipakai 9 aksi lain di komponen ini). Tiap modal yang bisa kena guard (Jual
+Cash Cepat, dll) menampilkan banner tolak persis "Stok di motor tinggal X mika, kamu mau
+menaruh Y mika." + link "➕ Tambah Stok di Motor dulu", tombol submit berubah jadi "Stok tidak
+cukup" (disabled) selama over-stock.
+
+**Laporan** — "Mika Dibawa" tampil "90 + 20 tambahan = 110" (`Trip::getMikaDibawaDisplayAttribute()`)
+kalau pernah ditambah, atau cukup "90" kalau belum, konsisten di modal operator, detail trip
+owner, Live Trip, PDF & Excel. `mika_sisa` di semua tempat sekarang pakai `getStokDiMotor()`.
+
+**Temuan di luar lingkup (TIDAK diperbaiki, bukan regresi brief ini):**
+- Pola `session()->flash('visit_saved', ...)` dipakai 10 kali di `ActiveTrip.php` (termasuk
+  pesan sukses "Tambah Stok" baru ini, mengikuti pola yang sudah ada) tapi **tidak punya
+  consumer Blade manapun** — di-grep ke seluruh codebase, nol match di luar `ActiveTrip.php`,
+  `layouts/operator.blade.php` juga tidak punya partial flash/toast. Dead pattern lama, bukan
+  hal baru dari brief ini — perlu tiket terpisah kalau mau ditampilkan sungguhan.
+- Local dev DB sempat punya celah data: satu-satunya `Product` milik owner_id=2 (Dodol Coklat
+  Susu) tak punya `ProductVariant` aktif (8 variant aktif yang ada semua milik product
+  `owner_id=NULL`) — memblokir SEMUA aksi jual/titip operator di lokal, tak terkait fitur ini.
+  Diperbaiki dengan INSERT tambahan satu `ProductVariant` (id=11) via tinker — bukan bagian
+  commit (data lokal, bukan migrasi/seeder).
+
+**Test.** `tests/Feature/Operator/MotorStockGuardTest.php` (14 test baru, race-safety +
+semua jalur guard + tambah stok). Full suite **653 passed, 2774 assertions** (naik dari
+baseline 639). Playwright 390px (`​.claude/skills/verify-browser/motor-stock-flow.cjs`):
+flow tolak (titip 60 > stok 50) → banner + tombol "Stok tidak cukup" → "Tambah Stok di Motor"
+(+20, stok jadi 70) → ulang titip 60 → LOLOS, simpan sukses. **PASS**, 9 screenshot di
+`.claude/skills/verify-browser/shots/01`–`09`. `reports:verify-locked-numbers 2` dicek:
+tidak ada trip yang mika_sisa/angka uangnya berubah.
+
+**⚠️ ADA MIGRASI — JANGAN PUSH sebelum owner backup DB produksi.** Setelah backup, push lalu
+`php artisan migrate --force` di prod (tabel baru, tidak mengubah tabel lama, aman dijalankan
+kapan saja setelah backup).
 
 ## 🟢 BRIEF 26 OKT 2026: UNDUH PAKSA + DETAIL KUNJUNGAN LENGKAP + LAPORAN PERIODE + INVESTIGASI MIKA SISA NEGATIF — SELESAI, boleh push (tidak ada migrasi)
 

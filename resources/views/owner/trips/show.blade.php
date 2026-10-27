@@ -68,7 +68,7 @@
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-white border border-slate-200 rounded-lg p-4 text-center">
             <div>
                 <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Dibawa</p>
-                <p class="text-base font-bold text-slate-900">{{ number_format($summary['mika_dibawa'], 0, ',', '.') }} mika</p>
+                <p class="text-base font-bold text-slate-900">{{ $summary['mika_dibawa_display'] }} mika</p>
             </div>
             <div>
                 <p class="text-[10px] uppercase text-slate-500 font-medium">Mika Diantar</p>
@@ -81,7 +81,9 @@
                     {{ number_format($summary['mika_sisa'], 0, ',', '.') }} mika
                 </p>
                 @if ($summary['mika_sisa'] < 0)
-                    <p class="text-[10px] text-red-600 mt-0.5">⚠ Cek stok — kemungkinan mika BS ikut terhitung</p>
+                    {{-- BRIEF 27 Okt 2026: trip LAMA (sebelum pengaman stok di motor ada)
+                         bisa tetap negatif — data historis, SENGAJA TIDAK diretro-fix. --}}
+                    <p class="text-[10px] text-red-600 mt-0.5">⚠ Data trip lama (sebelum ada pengaman stok) — titip melebihi stok dibawa.</p>
                 @endif
             </div>
             <div>
@@ -122,6 +124,36 @@
                 <p class="text-base font-bold text-emerald-700">Rp {{ number_format($trip->untung_bersih_owner, 0, ',', '.') }}</p>
             </div>
         </div>
+
+        {{-- Riwayat "➕ Tambah Stok di Motor" (brief 27 Okt 2026) — kosong kalau trip
+             ini tidak pernah pakai fitur tambah stok. --}}
+        @if($stockAdditions->isNotEmpty())
+            <div class="bg-white rounded-lg border border-amber-200 overflow-hidden">
+                <div class="px-4 py-3 border-b border-amber-100 bg-amber-50">
+                    <h2 class="text-sm font-bold text-amber-900 uppercase tracking-wider">➕ Riwayat Tambah Stok di Motor ({{ $stockAdditions->count() }})</h2>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+                            <tr>
+                                <th class="px-4 py-2 text-left">Waktu</th>
+                                <th class="px-4 py-2 text-right">Jumlah</th>
+                                <th class="px-4 py-2 text-left">Oleh</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @foreach($stockAdditions as $addition)
+                                <tr>
+                                    <td class="px-4 py-2 text-slate-600">{{ $addition->created_at->format('d M Y H:i') }}</td>
+                                    <td class="px-4 py-2 text-right font-semibold text-amber-700">+{{ number_format($addition->qty, 0, ',', '.') }} mika</td>
+                                    <td class="px-4 py-2 text-slate-600">{{ $addition->addedBy?->name ?? '—' }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        @endif
 
         {{-- Daftar kunjungan kios --}}
         <div class="bg-white rounded-lg border border-slate-200 overflow-hidden">

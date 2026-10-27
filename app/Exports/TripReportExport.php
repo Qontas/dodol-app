@@ -51,16 +51,30 @@ class TripSummarySheet implements FromArray, WithHeadings, WithStrictNullCompari
             ['Tanggal Trip', $this->data['trip']->trip_date->format('d M Y')],
             ['Operator', $this->data['operatorName']],
             ['Cluster', $this->data['clusterName']],
-            ['Mika Dibawa', $s['mika_dibawa']],
+            // BRIEF 27 Okt 2026 "PENGAMAN STOK DI MOTOR" — Mika Dibawa tampil
+            // "90 + 20 tambahan = 110" kalau trip pernah pakai ➕ Tambah Stok di Motor.
+            ['Mika Dibawa', $s['mika_dibawa_display']],
             ['Mika Di-drop', $s['mika_drop']],
             ['Biji Di-drop', $s['biji_drop']],
+            // mika_sisa SEKARANG dari Trip::getStokDiMotor() (exclude bs_redistribution).
             ['Mika Sisa', $s['mika_sisa']],
         ];
 
-        // BRIEF 26 Okt 2026 item 4 — tampilan saja (bukan perbaikan rumus): tandai kalau
-        // Mika Sisa negatif (lihat catatan investigasi di TripExportController::buildTripData()).
+        // Riwayat tambah stok di motor (kosong kalau belum pernah dipakai).
+        foreach ($s['stock_additions'] as $addition) {
+            $rows[] = [
+                '  ↳ Tambah Stok ('.$addition['created_at']->format('d M Y H:i').', oleh '.$addition['added_by'].')',
+                '+'.$addition['qty'],
+            ];
+        }
+
+        // ✅ DIPERBAIKI BRIEF 27 Okt 2026 — Mika Sisa negatif sekarang HANYA berarti
+        // data trip LAMA (sebelum pengaman stok di motor ada), bukan lagi "mika BS ikut
+        // terhitung" (hipotesis investigasi 26 Okt sudah dikoreksi — lihat
+        // TripExportController::buildTripData()). Trip baru TIDAK BISA lagi jadi negatif
+        // (server menolak titip/jual yang melebihi stok di motor).
         if ($s['mika_sisa'] < 0) {
-            $rows[] = ['⚠ Catatan Mika Sisa', 'Negatif — kemungkinan ada mika BS (Dodol Sisa) yang ikut terhitung keluar dari stok motor. Cek ulang stok fisik.'];
+            $rows[] = ['⚠ Catatan Mika Sisa', 'Negatif — data trip lama sebelum ada pengaman stok di motor (titip melebihi stok dibawa). Data historis, tidak diubah.'];
         }
 
         $rows = array_merge($rows, [

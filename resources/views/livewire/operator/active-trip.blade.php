@@ -96,6 +96,20 @@
                 <p class="text-[10px] text-slate-500 mt-1">{{ $trip->started_at->format('H:i') }}</p>
             </div>
         </div>
+
+        {{-- PENGAMAN STOK DI MOTOR (brief 27 Okt 2026) — SELALU terlihat, ter-update
+             tiap selesai simpan (bukan accessor di-cache, selalu baca ulang dari Trip::
+             getStokDiMotor() SATU sumber kebenaran). --}}
+        @php $stokDiMotorHeader = $trip->getStokDiMotor(); @endphp
+        <div class="mt-3 flex items-center justify-between gap-2 rounded-xl border {{ $stokDiMotorHeader < 0 ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50' }} px-3 py-2">
+            <span class="text-sm font-semibold {{ $stokDiMotorHeader < 0 ? 'text-red-700' : 'text-amber-800' }}">
+                Stok di motor: {{ $stokDiMotorHeader }} mika
+            </span>
+            <button type="button" wire:click="openAddStockModal"
+                    class="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700 active:scale-[0.98] transition whitespace-nowrap">
+                ➕ Tambah Stok di Motor
+            </button>
+        </div>
     </div>
 
     {{-- Daftar Kios Aktual --}}
@@ -424,16 +438,95 @@
                     </p>
                     <p class="text-[11px] text-amber-600 mt-1">{{ max(0, (int) $walkInMika) }} mika × {{ $pv->units_per_pack }} biji × Rp {{ number_format($pv->sale_price_per_pack / max(1, $pv->units_per_pack), 0, ',', '.') }}</p>
                 </div>
+
+                {{-- PENGAMAN STOK DI MOTOR (brief 27 Okt 2026) — cermin sisi klien dari
+                     MotorStockGuard yang menolak di server saveWalkInCash(). --}}
+                @php $walkInOverStock = (int) $walkInMika >= 1 && (int) $walkInMika > $trip->getStokDiMotor(); @endphp
+                @if($walkInOverStock)
+                    <div class="bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2 text-center">
+                        Stok di motor tinggal {{ $trip->getStokDiMotor() }} mika, kamu mau menaruh {{ (int) $walkInMika }} mika.
+                        <button type="button" wire:click="openAddStockModal" class="block w-full mt-1.5 font-bold text-amber-700 underline">
+                            ➕ Tambah Stok di Motor dulu
+                        </button>
+                    </div>
+                @endif
             </div>
 
             <div class="px-5 py-4 border-t border-slate-100 space-y-2.5">
                 <button type="button" wire:click="saveWalkInCash" wire:loading.attr="disabled" wire:target="saveWalkInCash"
-                        @disabled((int) $walkInMika < 1)
+                        @disabled((int) $walkInMika < 1 || $walkInOverStock)
                         class="w-full bg-amber-500 text-white font-bold py-3 rounded-xl shadow-sm active:bg-amber-600 disabled:opacity-50">
-                    <span wire:loading.remove wire:target="saveWalkInCash">Simpan Penjualan</span>
+                    <span wire:loading.remove wire:target="saveWalkInCash">{{ $walkInOverStock ? 'Stok tidak cukup' : 'Simpan Penjualan' }}</span>
                     <span wire:loading wire:target="saveWalkInCash">Menyimpan...</span>
                 </button>
                 <button type="button" wire:click="closeWalkInModal" class="w-full bg-slate-100 text-slate-700 font-bold py-3 rounded-xl border border-slate-200 active:bg-slate-200">
+                    Batal
+                </button>
+            </div>
+        </div>
+    </div>
+    @endif
+
+    {{-- MODAL TAMBAH STOK DI MOTOR (brief 27 Okt 2026) — operator benar-benar
+         membawa lagi stok di tengah trip. qty_carried_total TIDAK ditimpa; dicatat
+         sebagai riwayat TripStockAddition (lihat ActiveTrip::confirmAddStock()). --}}
+    @if($isAddStockModalOpen)
+    <div class="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+        <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" wire:click="closeAddStockModal"></div>
+
+        <div class="relative bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-lg text-slate-900">➕ Tambah Stok di Motor</h3>
+                    <p class="text-xs text-slate-500">Catat stok tambahan yang benar-benar kamu bawa lagi.</p>
+                </div>
+                <button type="button" wire:click="closeAddStockModal" class="p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-slate-200">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="px-5 py-5 space-y-4">
+                @error('general')
+                    <div class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{{ $message }}</div>
+                @enderror
+
+                <p class="text-sm text-slate-600">Stok di motor sekarang: <span class="font-bold text-slate-900">{{ $trip->getStokDiMotor() }} mika</span></p>
+
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1.5">Jumlah Mika Ditambah</label>
+                    <div class="flex items-center justify-center gap-3">
+                        <button type="button" x-on:click="$wire.tambahStokQty = Math.max(0, ($wire.tambahStokQty || 0) - 1)"
+                                class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">-</button>
+                        <input type="number" onfocus="this.select()" min="1" max="500" wire:model.live="tambahStokQty"
+                               class="w-24 text-center text-2xl font-bold rounded-lg border-slate-300 focus:border-amber-500 focus:ring-amber-500">
+                        <button type="button" x-on:click="$wire.tambahStokQty = ($wire.tambahStokQty || 0) + 1"
+                                class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
+                    </div>
+                    @error('tambahStokQty')
+                        <p class="text-sm text-red-600 mt-1.5 text-center">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                {{-- Teks konfirmasi EXACT sesuai brief — operator harus membaca ulang
+                     angkanya sebelum menekan tombol. --}}
+                @if((int) $tambahStokQty >= 1)
+                <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+                    <p class="text-sm font-semibold text-amber-800">Tambah {{ (int) $tambahStokQty }} mika ke stok motor?</p>
+                    <p class="text-[11px] text-amber-600 mt-1">Stok di motor jadi {{ $trip->getStokDiMotor() + (int) $tambahStokQty }} mika.</p>
+                </div>
+                @endif
+            </div>
+
+            <div class="px-5 py-4 border-t border-slate-100 space-y-2.5">
+                <button type="button" wire:click="confirmAddStock" wire:loading.attr="disabled" wire:target="confirmAddStock"
+                        @disabled((int) $tambahStokQty < 1)
+                        class="w-full bg-amber-600 text-white font-bold py-3 rounded-xl shadow-sm active:bg-amber-700 disabled:opacity-50">
+                    <span wire:loading.remove wire:target="confirmAddStock">Tambah Stok</span>
+                    <span wire:loading wire:target="confirmAddStock">Menyimpan...</span>
+                </button>
+                <button type="button" wire:click="closeAddStockModal" class="w-full bg-slate-100 text-slate-700 font-bold py-3 rounded-xl border border-slate-200 active:bg-slate-200">
                     Batal
                 </button>
             </div>
@@ -461,6 +554,15 @@
 
             <div class="px-5 py-5 space-y-4">
                 @error('correction')
+                    <div class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{{ $message }}</div>
+                @enderror
+
+                {{-- BRIEF 27 Okt 2026 "PENGAMAN STOK DI MOTOR" — koreksi yang menaikkan
+                     mika melebihi stok di motor ditolak oleh MotorStockGuard, yang
+                     menaruh pesannya di bag 'general' (sama seperti SEMUA titik guard
+                     lain), bukan 'correction'. Tanpa blok ini pesan tertulis tapi TAK
+                     PERNAH TAMPIL di modal koreksi. --}}
+                @error('general')
                     <div class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{{ $message }}</div>
                 @enderror
 
@@ -544,7 +646,7 @@
                     <div class="border-t border-slate-200 my-2"></div>
                     <div class="flex justify-between">
                         <span class="text-slate-600">Mika Dibawa</span>
-                        <span class="font-bold text-slate-900">{{ $tripSummary['qty_carried'] }} mika</span>
+                        <span class="font-bold text-slate-900">{{ $tripSummary['mika_dibawa_display'] ?? $tripSummary['qty_carried'] }} mika</span>
                     </div>
                     <div class="flex justify-between">
                         <span class="text-slate-600">Total Titip</span>
@@ -1377,24 +1479,43 @@
                 // AKSI 2: BS (biji) tak boleh melebihi biji yang ditaruh (dropBaru ×
                 // isi-per-mika VARIAN AKTIF, bukan konstanta 15 global).
                 $bsOverCash = $chosenAction === 'titip_cash' && (int) $qtyBsCash > (int) $dropBaru * $this->previewVariant()->units_per_pack;
-                $saveDisabled = $needDrop || $needJatahMulai || $blokirFooter || $bsOverCash;
+                // PENGAMAN STOK DI MOTOR (brief 27 Okt 2026) — validasi SISI KLIEN, cermin
+                // dari MotorStockGuard yang sebenarnya menolak di server (saveVisit()).
+                // $dropBaru dipakai SEMUA 3 aksi yang keluarkan mika dari motor (tagih_titip
+                // & mulai_titipan via $isDrop; titip_cash via $cashMika = $drop) — lihat
+                // ActiveTrip::persistVisitFromState(). Dodol Sisa ($qtyBsMika) TIDAK pernah
+                // dicek di sini (tidak mengurangi stok motor, lihat Trip::getStokDiMotor()).
+                $insufficientStock = in_array($chosenAction, ['tagih_titip', 'titip_cash', 'mulai_titipan'], true)
+                    && (int) $dropBaru >= 1
+                    && (int) $dropBaru > $trip->getStokDiMotor();
+                $saveDisabled = $needDrop || $needJatahMulai || $blokirFooter || $bsOverCash || $insufficientStock;
                 $saveLabel = $blokirFooter
                     ? 'Betulkan titip = jatah dulu'
                     : ($bsOverCash
                         ? 'Betulkan BS dulu'
-                        : (($chosenAction === 'tagih_titip' && (int) $dropBaru < 1)
-                            ? 'Isi jumlah titipan dulu'
-                            : ($needDrop
-                                ? ($chosenAction === 'titip_cash' ? 'Isi jumlah cash dulu' : 'Isi jumlah mika dulu')
-                                : ($needJatahMulai
-                                    ? 'Isi jatah seterusnya dulu'
-                                    : 'Simpan Kunjungan'))));
+                        : ($insufficientStock
+                            ? 'Stok tidak cukup'
+                            : (($chosenAction === 'tagih_titip' && (int) $dropBaru < 1)
+                                ? 'Isi jumlah titipan dulu'
+                                : ($needDrop
+                                    ? ($chosenAction === 'titip_cash' ? 'Isi jumlah cash dulu' : 'Isi jumlah mika dulu')
+                                    : ($needJatahMulai
+                                        ? 'Isi jatah seterusnya dulu'
+                                        : 'Simpan Kunjungan')))));
             @endphp
             <div class="sticky bottom-0 bg-white border-t border-slate-100 p-4 z-10">
                 @if($chosenAction === 'tagih_titip' && (int) $dropBaru < 1)
                     <p class="text-xs text-slate-500 mb-2 text-center">
                         Kalau cuma ambil bayaran tanpa titip baru, pakai <span class="font-semibold text-red-700">⛔ Hentikan Kedai</span>.
                     </p>
+                @endif
+                @if($insufficientStock)
+                    <div class="bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2 mb-2 text-center">
+                        Stok di motor tinggal {{ $trip->getStokDiMotor() }} mika, kamu mau menaruh {{ (int) $dropBaru }} mika.
+                        <button type="button" wire:click="openAddStockModal" class="block w-full mt-1.5 font-bold text-amber-700 underline">
+                            ➕ Tambah Stok di Motor dulu
+                        </button>
+                    </div>
                 @endif
                 <button type="button" wire:click="saveVisit" wire:loading.attr="disabled" wire:target="saveVisit"
                     @disabled($saveDisabled)

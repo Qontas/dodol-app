@@ -10,7 +10,10 @@ use App\Models\Delivery;
 use App\Models\Settlement;
 use App\Models\KioskVisit;
 use App\Models\ProductVariant;
+use App\Models\TripStockAddition;
+use App\Exceptions\InsufficientMotorStockException;
 use App\Support\KioskPhoto;
+use App\Support\MotorStockGuard;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
@@ -192,6 +195,13 @@ class ActiveTrip extends Component
     public bool $isWalkInModalOpen = false;
     public int $walkInMika = 0;
 
+    // --- PENGAMAN STOK DI MOTOR (brief 27 Okt 2026): "➕ Tambah Stok di Motor" ---
+    // Modal konfirmasi 2-langkah (angka + teks konfirmasi) — operator menambah stok
+    // yang BENAR-BENAR dibawa lagi di tengah trip. qty_carried_total TIDAK pernah
+    // ditimpa; tambahan dicatat sebagai baris TripStockAddition (lihat confirmAddStock()).
+    public bool $isAddStockModalOpen = false;
+    public int $tambahStokQty = 0;
+
     // --- STATE KOREKSI ANGKA VISIT (UI Tahap 3; logic reversal di correctVisit) ---
     public bool $isCorrectionModalOpen = false;
     public ?int $correctionVisitId = null;
@@ -207,6 +217,7 @@ class ActiveTrip extends Component
         'total_mika_drop' => 0,
         'total_uang_diterima' => 0,
         'qty_carried' => 0,
+        'mika_tambahan' => 0,
         'total_mika_sisa' => 0,
     ];
 
@@ -237,6 +248,13 @@ class ActiveTrip extends Component
         $this->starting_cluster_id = $this->trip->starting_cluster_id;
         $this->viewClusterId = $this->trip->starting_cluster_id; // mulai dari area awal
         $this->loadKiosks();
+
+        // Tombol "➕ Tambah Stok di Motor" pada pesan blokir Kios Baru (CreateKiosk,
+        // komponen Livewire TERPISAH — tak bisa buka modal lintas-komponen langsung)
+        // membawa operator kemari via ?tambahStok=1, lalu modal dibuka otomatis.
+        if (request()->boolean('tambahStok')) {
+            $this->openAddStockModal();
+        }
     }
 
     /**
@@ -1738,8 +1756,12 @@ class ActiveTrip extends Component
             (int) $this->uangDiterima,
         );
 
-        // correctVisit menambahkan error ke bag 'correction' bila gagal → biarkan modal terbuka.
-        if ($this->getErrorBag()->has('correction')) {
+        // correctVisit menambahkan error ke bag 'correction' bila gagal validasi sendiri,
+        // TAPI MotorStockGuard (brief 27 Okt 2026 "PENGAMAN STOK DI MOTOR") menaruh
+        // pesannya di bag 'general' — sama seperti SEMUA titik guard lain di komponen
+        // ini. Tanpa cek 'general' juga, modal akan AUTO-CLOSE saat koreksi ditolak
+        // guard, menyembunyikan pesan penolakannya dari operator.
+        if ($this->getErrorBag()->has('correction') || $this->getErrorBag()->has('general')) {
             return;
         }
 
@@ -1947,6 +1969,11 @@ class ActiveTrip extends Component
 
             try {
                 DB::transaction(function () use ($drop, $variant, $correctionOfVisitId) {
+                    // PENGAMAN STOK DI MOTOR (brief 27 Okt 2026) — check-and-lock di
+                    // DALAM transaction yang sama (lockForUpdate baris trip), mencegah
+                    // 2 simpan simultan sama-sama lolos melebihi stok.
+                    MotorStockGuard::assertAvailable($this->trip, $drop);
+
                     $delivery = Delivery::create([
                         'kiosk_id' => $this->selectedKiosk->id,
                         'trip_id' => $this->trip->id,
@@ -1989,6 +2016,9 @@ class ActiveTrip extends Component
 
                     $delivery->update(['kiosk_visit_id' => $visit->id]);
                 });
+            } catch (InsufficientMotorStockException $e) {
+                $this->addError('general', $e->operatorMessage());
+                return null;
             } catch (\Throwable $e) {
                 $this->addError('general', 'Gagal menyimpan. Coba lagi.');
                 return null;
@@ -2044,6 +2074,9 @@ class ActiveTrip extends Component
 
             try {
                 DB::transaction(function () use ($cashMika, $bsBiji, $bijiBayar, $amountDue, $variant, $correctionOfVisitId, $bookingJadiCash) {
+                    // PENGAMAN STOK DI MOTOR — lihat catatan pada cabang cash-only di atas.
+                    MotorStockGuard::assertAvailable($this->trip, $cashMika);
+
                     $delivery = Delivery::create([
                         'kiosk_id' => $this->selectedKiosk->id,
                         'trip_id' => $this->trip->id,
@@ -2088,6 +2121,9 @@ class ActiveTrip extends Component
 
                     $delivery->update(['kiosk_visit_id' => $visit->id]);
                 });
+            } catch (InsufficientMotorStockException $e) {
+                $this->addError('general', $e->operatorMessage());
+                return null;
             } catch (\Throwable $e) {
                 $this->addError('general', 'Gagal menyimpan. Coba lagi.');
                 return null;
@@ -2254,6 +2290,12 @@ class ActiveTrip extends Component
 
                 // 2. Drop titipan baru (new_procurement, tanpa link batch — operasional bebas)
                 if ($isDrop) {
+                    // PENGAMAN STOK DI MOTOR — HANYA menjaga $drop (konsinyasi baru keluar
+                    // dari stok motor). SENGAJA TIDAK menjaga $bsMika di bawah: Dodol Sisa
+                    // (bs_redistribution) berasal dari kios lain, bukan dari stok motor
+                    // (lihat Trip::getStokDiMotor()) — tak pernah diblokir guard ini.
+                    MotorStockGuard::assertAvailable($this->trip, $drop);
+
                     // Titipan hari ini = konsinyasi MURNI sejumlah $drop. Kelebihan/ekstra
                     // dibayar tunai bukan lagi di sini — itu AKSI 2 "Titip Cash" terpisah.
                     $newDelivery = Delivery::create([
@@ -2327,6 +2369,9 @@ class ActiveTrip extends Component
                     Delivery::whereIn('id', $createdDeliveryIds)->update(['kiosk_visit_id' => $visit->id]);
                 }
             });
+        } catch (InsufficientMotorStockException $e) {
+            $this->addError('general', $e->operatorMessage());
+            return null;
         } catch (\Throwable $e) {
             // DB::transaction() auto-rollback; jangan rollback manual
             $this->addError('general', 'Gagal menyimpan. Coba lagi.');
@@ -2405,6 +2450,9 @@ class ActiveTrip extends Component
 
         try {
             DB::transaction(function () use ($mika, $variant, $sentinel) {
+                // PENGAMAN STOK DI MOTOR — lihat catatan di cabang cash-only persistVisitFromState().
+                MotorStockGuard::assertAvailable($this->trip, $mika);
+
                 $delivery = Delivery::create([
                     'kiosk_id' => $sentinel->id,
                     'trip_id' => $this->trip->id,
@@ -2446,6 +2494,9 @@ class ActiveTrip extends Component
 
                 $delivery->update(['kiosk_visit_id' => $visit->id]);
             });
+        } catch (InsufficientMotorStockException $e) {
+            $this->addError('general', $e->operatorMessage());
+            return;
         } catch (\Throwable $e) {
             $this->addError('general', 'Gagal menyimpan. Coba lagi.');
             return;
@@ -2456,11 +2507,88 @@ class ActiveTrip extends Component
         session()->flash('visit_saved', 'Penjualan cash berhasil dicatat.');
     }
 
+    // --- PENGAMAN STOK DI MOTOR: "➕ Tambah Stok di Motor" ---
+    public function openAddStockModal(): void
+    {
+        // Bisa dipicu dari DALAM modal lain (tombol "Stok tidak cukup" di footer
+        // Simpan Kunjungan / modal Jual Cash Cepat) — tutup dulu supaya overlay
+        // tidak menumpuk.
+        $this->isWalkInModalOpen = false;
+        $this->isCorrectionModalOpen = false;
+
+        $this->tambahStokQty = 0;
+        $this->resetErrorBag(['tambahStokQty', 'general']);
+        $this->isAddStockModalOpen = true;
+    }
+
+    public function closeAddStockModal(): void
+    {
+        $this->isAddStockModalOpen = false;
+        $this->tambahStokQty = 0;
+    }
+
+    /**
+     * Catat tambahan stok mika yang BENAR-BENAR dibawa lagi ke motor di tengah trip.
+     * trips.qty_carried_total TETAP (stok awal) — baris TripStockAddition ditambahkan
+     * di atasnya (lihat Trip::getStokDiMotor()). lockForUpdate di dalam transaction
+     * yang sama dengan guard pengeluaran stok (MotorStockGuard) — baris trip yang
+     * dikunci itu SAMA, jadi tambah-stok & titip/jual simultan tetap serial & konsisten.
+     */
+    public function confirmAddStock(): void
+    {
+        $this->validate([
+            'tambahStokQty' => 'required|integer|min:1|max:500',
+        ], [
+            'tambahStokQty.required' => 'Isi jumlah mika dulu.',
+            'tambahStokQty.min' => 'Minimal 1 mika.',
+            'tambahStokQty.max' => 'Maksimal 500 mika sekali tambah.',
+        ]);
+
+        $qty = (int) $this->tambahStokQty;
+
+        try {
+            DB::transaction(function () use ($qty) {
+                // Lapis pertahanan tambahan (defense-in-depth) — trip sudah di-scope ke
+                // operator_id=auth()->id() sejak mount(), tapi dikunci lagi di sini agar
+                // konsisten dengan lockForUpdate yang dipakai MotorStockGuard, dan tegas
+                // menolak kalau trip ini ternyata bukan milik operator yang login (mis.
+                // snapshot Livewire basi lintas sesi).
+                $trip = Trip::whereKey($this->trip->id)
+                    ->where('operator_id', auth()->id())
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $trip) {
+                    throw new \RuntimeException('Trip tidak ditemukan atau bukan milik kamu.');
+                }
+
+                TripStockAddition::create([
+                    'trip_id' => $trip->id,
+                    'qty' => $qty,
+                    'added_by' => auth()->id(),
+                ]);
+            });
+        } catch (\Throwable $e) {
+            $this->addError('general', 'Gagal menambah stok. Coba lagi.');
+            return;
+        }
+
+        $this->trip->refresh();
+        $stokSekarang = $this->trip->getStokDiMotor();
+        $this->closeAddStockModal();
+        session()->flash('visit_saved', "Stok ditambah {$qty} mika. Stok di motor sekarang {$stokSekarang} mika.");
+    }
+
     // --- END TRIP FLOW ---
     public function openEndTripModal()
     {
-        $totalDrop = (int) Delivery::where('trip_id', $this->trip->id)->sum('qty_delivered');
+        // 🔴 DIPERBAIKI 27 Okt 2026 (brief "PENGAMAN STOK DI MOTOR") — $totalDrop dulu
+        // SUM polos semua delivery_type termasuk bs_redistribution (Dodol Sisa), padahal
+        // itu BUKAN keluar dari stok motor (berasal dari kios lain). Sekarang delegasi ke
+        // Trip::getStokDiMotor() (SATU sumber kebenaran, exclude BS, + sadar tambahan stok).
+        $this->trip->refresh();
         $qtyCarried = (int) ($this->trip->qty_carried_total ?? 0);
+        $totalDrop = (int) Delivery::where('trip_id', $this->trip->id)->sum('qty_delivered');
         $totalMikaCash = (int) Delivery::where('trip_id', $this->trip->id)
             ->where('delivery_type', 'cash_sale')
             ->sum('qty_delivered');
@@ -2477,9 +2605,11 @@ class ActiveTrip extends Component
             'kios_lama' => (int) $this->trip->kios_lama_count,
             'kios_baru' => (int) $this->trip->kios_baru_count,
             'qty_carried' => $qtyCarried,
+            'mika_tambahan' => (int) $this->trip->qty_added_total,
+            'mika_dibawa_display' => $this->trip->mika_dibawa_display,
             'total_mika_drop' => $totalDrop,
-            'total_mika_sisa' => $qtyCarried - $totalDrop,
-            
+            'total_mika_sisa' => $this->trip->getStokDiMotor(),
+
             'mika_terjual' => (float) $this->trip->mika_terjual,
             'mika_kios_baru' => (float) $this->trip->mika_kios_baru,
             'total_mika_cash' => $totalMikaCash,

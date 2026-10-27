@@ -31,7 +31,14 @@
                              sebagai satu area saja. --}}
                         Area: <span class="{{ $stats['area_crossed'] ? 'text-sky-700' : 'text-amber-700' }} font-semibold">{{ $stats['area_label'] }}</span>
                         | Mulai: <span class="font-medium text-slate-700">{{ $activeTrip->started_at ? $activeTrip->started_at->format('H:i') : '—' }}</span>
-                        | Bawa: <span class="font-medium text-slate-700">{{ $activeTrip->qty_carried_total }} mika</span>
+                        {{-- BRIEF 27 Okt 2026 "PENGAMAN STOK DI MOTOR" — "90 + 20 tambahan = 110"
+                             kalau trip ini pernah pakai ➕ Tambah Stok di Motor. Dibaca dari
+                             $stats (dihitung di LiveTripProgress::render() dari koleksi yang
+                             sudah di-eager-load), BUKAN $activeTrip->mika_dibawa_display /
+                             ->getStokDiMotor() langsung — itu query baru per trip, pecah
+                             anti-N+1 widget ini (lihat LiveTripProgressTest::test_render_query_count_is_bounded). --}}
+                        | Bawa: <span class="font-medium text-slate-700">{{ $stats['mika_dibawa_display'] }} mika</span>
+                        | Stok di motor: <span class="font-medium text-slate-700">{{ $stats['stok_di_motor'] }} mika</span>
                     </p>
                 </div>
                 <div class="text-right">

@@ -66,6 +66,7 @@ class LiveTripProgress extends Component
                 'visits.newDelivery',
                 'visits.settledDelivery.settlement',
                 'deliveries',
+                'stockAdditions',
             ])
             ->get();
 
@@ -151,6 +152,23 @@ class LiveTripProgress extends Component
 
             $komisi = $mikaKomisi * $komisiPerMika;
 
+            // Stok di motor & "Mika Dibawa" (BRIEF 27 Okt 2026 "PENGAMAN STOK DI
+            // MOTOR") — formula IDENTIK Trip::getStokDiMotor() / getMikaDibawaDisplayAttribute(),
+            // tapi dihitung dari koleksi yang SUDAH di-eager-load ($trip->deliveries,
+            // $trip->stockAdditions) bukan lewat accessor Trip (yang query sendiri-
+            // sendiri lewat relation method ->deliveries()/->stockAdditions(), persis
+            // alasan $mikaKomisi di atas tidak memakai accessor Trip).
+            $totalDropReal = (int) $trip->deliveries
+                ->where('delivery_type', '!=', 'bs_redistribution')
+                ->sum('qty_delivered');
+            $qtyAddedTotal = (int) $trip->stockAdditions->sum('qty');
+            $qtyAwal = (int) ($trip->qty_carried_total ?? 0);
+            $qtyCarriedEffective = $qtyAwal + $qtyAddedTotal;
+            $stokDiMotor = $qtyCarriedEffective - $totalDropReal;
+            $mikaDibawaDisplay = $qtyAddedTotal <= 0
+                ? (string) $qtyAwal
+                : "{$qtyAwal} + {$qtyAddedTotal} tambahan = {$qtyCarriedEffective}";
+
             // Visited sendiri + visited HARI INI oleh trip lain (lintas operator) —
             // digabung di sini, bukan dua array terpisah, supaya pemakai di bawah
             // (unvisited_kiosks) tak perlu tahu soal cross-operator sama sekali.
@@ -167,6 +185,8 @@ class LiveTripProgress extends Component
                 'omset' => $omset,
                 'mika_terjual' => $mikaTerjual,
                 'komisi' => $komisi,
+                'stok_di_motor' => $stokDiMotor,
+                'mika_dibawa_display' => $mikaDibawaDisplay,
                 'sorted_visits' => $trip->visits->sortByDesc('visited_at')->values(),
             ];
         }

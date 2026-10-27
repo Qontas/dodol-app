@@ -135,7 +135,7 @@ class TripHistoryController extends Controller
         // (dipakai juga TripExportController::buildTripData()), 'operator'/'startingCluster'
         // tetap ditambah di sini (kebutuhan halaman web, bukan baris kunjungan).
         $trip->loadMissing(array_merge(
-            ['operator', 'startingCluster'],
+            ['operator', 'startingCluster', 'stockAdditions.addedBy'],
             VisitRowBuilder::eagerLoad(),
         ));
 
@@ -148,10 +148,17 @@ class TripHistoryController extends Controller
             'trip' => $trip,
             'summary' => [
                 'mika_dibawa' => $mikaDibawa,
+                'mika_dibawa_display' => $trip->mika_dibawa_display,
+                'mika_tambahan' => (int) $trip->qty_added_total,
                 'mika_drop' => $mikaDrop,
-                'mika_sisa' => $mikaDibawa - $mikaDrop,
+                // BRIEF 27 Okt 2026 "PENGAMAN STOK DI MOTOR" — Trip::getStokDiMotor()
+                // (SATU sumber kebenaran), BUKAN lagi mikaDibawa - mikaDrop mentah.
+                // Lihat catatan sama di TripExportController::buildTripData().
+                'mika_sisa' => $trip->getStokDiMotor(),
             ],
             'visitRows' => $visitRows,
+            // Riwayat "➕ Tambah Stok di Motor" (waktu, jumlah, oleh siapa).
+            'stockAdditions' => $trip->stockAdditions,
             // Label area jujur — ikut menyebut area yang diseberangi, bukan cuma area awal.
             'area' => TripAreas::forTrip($trip->id),
         ]);

@@ -28,7 +28,7 @@ class TripExportController extends Controller
     public static function buildTripData(Trip $trip): array
     {
         $trip->loadMissing(array_merge(
-            ['owner', 'operator', 'startingCluster'],
+            ['owner', 'operator', 'startingCluster', 'stockAdditions.addedBy'],
             VisitRowBuilder::eagerLoad(),
         ));
 
@@ -52,22 +52,27 @@ class TripExportController extends Controller
             'komisiPerMika' => (int) ($trip->komisi_per_mika_snapshot ?? $trip->owner?->komisi_per_mika ?? 1000),
             'summary' => [
                 'mika_dibawa' => $mikaDibawa,
+                'mika_dibawa_display' => $trip->mika_dibawa_display,
+                'mika_tambahan' => (int) $trip->qty_added_total,
                 'mika_drop' => $mikaDrop,
-                // ⚠️ INVESTIGASI BRIEF 26 Okt 2026 item 4 (trip "KualiStories" 26 Okt:
-                // dibawa 90, dititip 107, sisa -17): rumus ini TIDAK mengecualikan
-                // delivery_type bs_redistribution (Dodol Sisa daur-ulang), padahal mika
-                // BS itu bukan stok bawaan motor — beda dari Trip::getTotalDropReal()
-                // (basis komisi) yang SUDAH benar mengecualikannya. Mika BS yang
-                // diletakkan ulang ikut mengurangi "sisa" seolah dari stok motor, jadi
-                // bisa jatuh negatif padahal stok fisik operator sebenarnya cukup/pas.
-                // BELUM diperbaiki di sini (brief: "jangan ubah logika dulu" — investigasi
-                // & proposal fix saja). Rencana fix: pisah basis bs_redistribution SAMA
-                // seperti getTotalDropReal(), + fitur "Tambah Mika Dibawa" di Active Trip
-                // untuk kasus operator benar-benar menambah stok di tengah trip (saat ini
-                // tidak ada jalur manapun untuk itu, dan tidak ada guard yang menolak
-                // titip/jual melebihi mika_dibawa).
-                'mika_sisa' => $mikaDibawa - $mikaDrop,
+                // ✅ DIPERBAIKI BRIEF 27 Okt 2026 "PENGAMAN STOK DI MOTOR" — investigasi
+                // BRIEF 26 Okt 2026 item 4 (trip "KualiStories" 26 Okt: dibawa 90, dititip
+                // 107, sisa -17) TERNYATA keliru: trip itu TIDAK PUNYA bs_redistribution
+                // sama sekali, jadi -17 BUKAN disebabkan Dodol Sisa. Akar masalahnya memang
+                // tidak ada guard & tidak ada jalur tambah stok — keduanya sekarang ada.
+                // mika_sisa SEKARANG pakai Trip::getStokDiMotor() (SATU sumber kebenaran,
+                // = stok dibawa efektif − total drop REAL, exclude bs_redistribution yang
+                // berasal dari KIOS bukan dari stok motor). Trip historis yang sudah
+                // negatif TETAP tampil merah apa adanya (data lama, tidak diretro-fix).
+                'mika_sisa' => $trip->getStokDiMotor(),
                 'biji_drop' => (int) $trip->biji_diantar,
+                // Riwayat "➕ Tambah Stok di Motor" (waktu, jumlah, oleh siapa) — kosong
+                // kalau trip belum pernah pakai fitur ini.
+                'stock_additions' => $trip->stockAdditions->map(fn ($a) => [
+                    'created_at' => $a->created_at,
+                    'qty' => (int) $a->qty,
+                    'added_by' => $a->addedBy?->name ?? '—',
+                ])->all(),
             ],
             'finansial' => [
                 'omset' => (int) $trip->omset_val,

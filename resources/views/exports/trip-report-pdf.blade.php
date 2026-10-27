@@ -38,7 +38,7 @@
     <table class="data">
         <tr><th>Mika Dibawa</th><th>Mika Dititip</th><th>Mika Sisa</th></tr>
         <tr>
-            <td class="num">{{ number_format($summary['mika_dibawa'], 0, ',', '.') }}</td>
+            <td class="num">{{ $summary['mika_dibawa_display'] }}</td>
             <td class="num">
                 {{ number_format($summary['mika_drop'], 0, ',', '.') }}
                 <br><span class="muted" style="font-size:9px;">({{ number_format($summary['biji_drop'], 0, ',', '.') }} biji)</span>
@@ -48,10 +48,28 @@
             </td>
         </tr>
     </table>
+    {{-- Riwayat "➕ Tambah Stok di Motor" (brief 27 Okt 2026) — kosong kalau trip ini
+         tidak pernah pakai fitur tambah stok. --}}
+    @if(!empty($summary['stock_additions']))
+        <table class="data" style="margin-top:-4px;">
+            <tr><th>Riwayat Tambah Stok</th><th style="text-align:right;">Jumlah</th><th>Oleh</th></tr>
+            @foreach($summary['stock_additions'] as $addition)
+                <tr>
+                    <td>{{ $addition['created_at']->format('d M Y H:i') }}</td>
+                    <td class="num">+{{ number_format($addition['qty'], 0, ',', '.') }}</td>
+                    <td>{{ $addition['added_by'] }}</td>
+                </tr>
+            @endforeach
+        </table>
+    @endif
     @if ($summary['mika_sisa'] < 0)
+        {{-- ✅ DIPERBAIKI BRIEF 27 Okt 2026 — bukan lagi hipotesis "mika BS ikut
+             terhitung" (sudah dikoreksi investigasi, lihat TripExportController::
+             buildTripData()). Trip baru tak bisa negatif lagi (server menolak titip/
+             jual melebihi stok di motor) — ini murni data trip LAMA. --}}
         <p class="negative" style="font-size:10px; margin:2px 0 0;">
-            ⚠ Mika Sisa negatif — kemungkinan ada mika BS (Dodol Sisa) yang ikut terhitung
-            keluar dari stok motor. Cek ulang stok fisik, bukan error perhitungan uang.
+            ⚠ Mika Sisa negatif — data trip lama sebelum ada pengaman stok di motor
+            (titip melebihi stok dibawa). Data historis, tidak diubah.
         </p>
     @endif
 
