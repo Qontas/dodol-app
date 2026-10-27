@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\DB;
  * KONSTAN berapa pun banyak trip). Meniru PERSIS accessor model Trip:
  *   omset_val, mika_terjual, mika_komisi (getTotalDropReal), komisi_rian, hpp_estimasi,
  *   untung_kotor, untung_bersih_owner, kios_baru_count, mika_kios_baru, kios_lama_count.
+ *   Tambahan 'kios' (BRIEF 27 Okt 2026, lihat (8b)) BUKAN accessor Trip — definisi BARU
+ *   "kios unik disentuh trip ini", dipakai kolom "Kios" Riwayat/Laporan/dashboard.
  *
  * Ini MURNI pengurang query (hilangkan N+1 accessor per-baris) — rumus & konstanta TIDAK
  * diubah, angka HARUS identik dengan accessor. Satu pola dipakai dashboard owner, laporan
@@ -132,6 +134,33 @@ class TripAggregator
             ->whereIn('id', $tripIds)
             ->pluck('komisi_per_mika_snapshot', 'id');
 
+        // (8b) BRIEF 27 Okt 2026 "KOLOM KIOS" — hitungan "Kios" YANG BENAR: kios UNIK yang
+        //      dikunjungi ATAU menerima mika pada trip ini, BUKAN cuma COUNT(kiosk_visits)
+        //      (itu 'active_visits' di atas — tetap dipertahankan, dipakai kios_lama_count).
+        //      Akar bug "Kios 0/1 padahal mika diantar banyak": jalur "Kios Baru" operator
+        //      (CreateKiosk::confirmCreate(), via ConsignmentDrop::record()) & OpeningBalance
+        //      MEMBUAT Delivery TANPA KioskVisit sama sekali (kiosk_visit_id tetap NULL) —
+        //      kios itu titip mika sungguhan tapi tak pernah terhitung "kunjungan". Definisi
+        //      baru = UNION dua sumber (trip_id, kiosk_id): (a) kiosk_visits aktif (belum
+        //      dikoreksi), (b) deliveries trip ini yang TANPA kiosk_visit_id (delivery
+        //      "visit-less"). UNION (bukan UNION ALL) otomatis DISTINCT — baik dalam satu
+        //      sisi (kios dikunjungi 2× di trip yang sama) maupun lintas sisi (kios yang
+        //      kebetulan ADA keduanya) — jadi tinggal group by trip_id & COUNT(*) baris,
+        //      tanpa unique() tambahan di PHP. SATU query batch, bukan N+1.
+        $kiosUnikRows = DB::table('kiosk_visits')
+            ->select('trip_id', 'kiosk_id')
+            ->whereIn('trip_id', $tripIds)
+            ->whereNull('corrected_at')
+            ->union(
+                DB::table('deliveries')
+                    ->select('trip_id', 'kiosk_id')
+                    ->whereIn('trip_id', $tripIds)
+                    ->whereNull('kiosk_visit_id')
+            )
+            ->get();
+
+        $kiosUnikByTrip = $kiosUnikRows->groupBy('trip_id')->map(fn ($rows) => $rows->count());
+
         // (8) Trip SENTINEL migrasi (lihat Trip::isMigrationSentinel()) — JARING PENGAMAN:
         //     pemanggil (dashboard/laporan/Riwayat Trip) seharusnya sudah memfilter trip
         //     id-nya lewat Trip::scopeRealOperational() SEBELUM sampai ke sini, tapi kalau
@@ -196,6 +225,10 @@ class TripAggregator
                 'komisi' => $komisi,
                 'untung_bersih' => $untungKotor - $komisi,
                 'active_visits' => $activeCount,
+                // Definisi "Kios" yang BENAR (lihat (8b) di atas) — SATU sumber dipakai
+                // Riwayat Trip, Laporan Bulanan, Laporan Periode & dashboard, supaya kolom
+                // "Kios" tak pernah berbeda-beda per halaman lagi.
+                'kios' => (int) ($kiosUnikByTrip[$id] ?? 0),
                 'kios_baru_count' => $kiosBaru,
                 'mika_kios_baru' => (float) ($kiosBaruRows[$id]->mika_kios_baru ?? 0),
                 'kios_lama_count' => max(0, $activeCount - $kiosBaru),

@@ -10,6 +10,7 @@ use App\Models\ProductVariant;
 use App\Models\Settlement;
 use App\Models\Trip;
 use App\Models\User;
+use App\Support\ConsignmentDrop;
 use App\Support\TripAggregator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -133,6 +134,11 @@ class TripAggregatorTest extends TestCase
         $this->assertEqualsWithDelta(7, $aA['mika_kios_baru'], 0.0001);
         $this->assertSame(1, $aA['kios_lama_count']);
         $this->assertSame(2, $aA['active_visits']);
+        // BRIEF 27 Okt 2026 "KOLOM KIOS" — di fixture ini kiosBaru & kiosLama SAMA-SAMA
+        // punya KioskVisit, jadi 'kios' (unik) kebetulan sama dengan 'active_visits' (2).
+        // Perbedaannya baru kelihatan di test_kios_counts_visit_less_consignment_drop()
+        // di bawah, lewat kios yang titip TANPA KioskVisit sama sekali.
+        $this->assertSame(2, $aA['kios']);
         // Biji (isi default varian 15): drop total 7+10+3+2(BS)=22 → 330 biji;
         // basis komisi exclude BS 7+10+3=20 → 300 biji; kios baru 7 → 105 biji;
         // terjual qty_sold mentah 150 biji (= mika_terjual 10 × 15).
@@ -145,6 +151,42 @@ class TripAggregatorTest extends TestCase
     public function test_empty_trip_ids_returns_empty(): void
     {
         $this->assertSame([], TripAggregator::for([], 1000));
+    }
+
+    /**
+     * BRIEF 27 Okt 2026 "KOLOM KIOS" — bukti bug & bukti fix. ConsignmentDrop::record()
+     * (dipakai jalur operator "Kios Baru" & OpeningBalance) membuat Delivery TANPA
+     * KioskVisit sama sekali (kiosk_visit_id tetap NULL). 'active_visits' (COUNT
+     * kiosk_visits) jadi 0 walau mika sungguhan sudah dititip ke kios ini — akar bug
+     * "Kios 0/1 padahal mika diantar banyak". 'kios' (definisi baru §8b) HARUS tetap
+     * menghitung kios ini lewat sisi UNION deliveries.kiosk_visit_id IS NULL.
+     */
+    public function test_kios_counts_visit_less_consignment_drop(): void
+    {
+        $trip = Trip::factory()->create([
+            'owner_id' => $this->owner->id, 'operator_id' => $this->operator->id,
+            'starting_cluster_id' => $this->cluster->id, 'trip_date' => today()->format('Y-m-d'),
+            'trip_number_of_day' => 1, 'started_at' => today(), 'ended_at' => today(),
+            'qty_carried_total' => 50,
+        ]);
+
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $this->cluster->id]);
+
+        // ConsignmentDrop::record() filter varian lewat whereHas('product',
+        // owner_id = cluster owner) — butuh varian yang produknya EKSPLISIT milik
+        // $this->owner (setUp() tak set owner_id produk default, jadi tak lolos filter).
+        $product = \App\Models\Product::factory()->create(['owner_id' => $this->owner->id]);
+        $variant = ProductVariant::factory()->create(['product_id' => $product->id, 'is_active' => true]);
+
+        // Jalur "Kios Baru" operator / OpeningBalance — Delivery TANPA KioskVisit.
+        $delivery = ConsignmentDrop::record($kiosk, $trip, 5);
+        $this->assertNotNull($delivery, 'ConsignmentDrop gagal buat delivery — cek setup varian/product owner');
+
+        $batch = TripAggregator::for([$trip->id], $this->owner->getKomisiPerMikaValue());
+        $a = $batch[$trip->id];
+
+        $this->assertSame(0, $a['active_visits'], 'active_visits buta thd delivery visit-less (bug lama)');
+        $this->assertSame(1, $a['kios'], 'kios (definisi baru) tetap menghitung kios ini via UNION deliveries');
     }
 
     /**
