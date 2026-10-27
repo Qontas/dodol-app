@@ -4,13 +4,24 @@
 @section('content')
     <div class="max-w-5xl mx-auto space-y-6">
         <div>
-            <a href="{{ url()->previous() !== url()->current() ? url()->previous() : route('owner.trips.index') }}"
+            {{-- BRIEF 27 Okt 2026 "KEMBALI MENAMPILKAN sw.js" — $backUrl dihitung SERVER-SIDE
+                 (TripHistoryController::show(), route eksplisit + filter aktif), BUKAN
+                 url()->previous() — rawan ketiban Referer/_previous.url dari request
+                 non-halaman (csrf-token polling, <img> foto kios, dst). --}}
+            <a href="{{ $backUrl }}"
                class="text-sm text-amber-700 hover:text-amber-800">&larr; Kembali ke Riwayat Trip</a>
         </div>
 
         @if (session('status'))
-            <div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-                {{ session('status') }}
+            <div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 flex items-center justify-between gap-3">
+                <span>{{ session('status') }}</span>
+                @if (session('archived_trip_id'))
+                    <form method="POST" action="{{ route('owner.trips.restore', session('archived_trip_id')) }}" class="shrink-0">
+                        @csrf
+                        <input type="hidden" name="redirect_to" value="show">
+                        <button type="submit" class="rounded-md border border-green-300 bg-white px-3 py-1 text-xs font-semibold text-green-800 hover:bg-green-100">Batalkan</button>
+                    </form>
+                @endif
             </div>
         @endif
 
@@ -50,13 +61,15 @@
                         <form method="POST" action="{{ route('owner.trips.restore', $trip) }}"
                               onsubmit="return confirm('Pulihkan trip ini? Akan kembali dihitung di laporan.');">
                             @csrf
+                            <input type="hidden" name="redirect_to" value="show">
                             <button type="submit" class="rounded bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Pulihkan</button>
                         </form>
                     @else
                         <form method="POST" action="{{ route('owner.trips.destroy', $trip) }}"
-                              onsubmit="return confirm('Arsipkan Trip #{{ $trip->trip_number_of_day }}? Trip & datanya disembunyikan dari laporan, tapi bisa dipulihkan.');">
+                              onsubmit="return confirm('Trip ini akan HILANG dari semua laporan, komisi, dan fee. Hanya untuk trip salah/uji coba. Bisa dipulihkan.');">
                             @csrf
                             @method('DELETE')
+                            <input type="hidden" name="redirect_to" value="show">
                             <button type="submit" class="rounded bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">Arsipkan</button>
                         </form>
                     @endif
@@ -157,8 +170,13 @@
 
         {{-- Daftar kunjungan kios --}}
         <div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
-            <div class="px-4 py-3 border-b border-slate-100">
+            <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
                 <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Kunjungan Kios ({{ $visitRows->count() }})</h2>
+                {{-- BRIEF 27 Okt 2026 "KOLOM KIOS" — "Kios Unik" (SATU SUMBER dgn kolom "Kios"
+                     Riwayat/Laporan Bulanan/Laporan Periode/dashboard). Beda dari angka di atas:
+                     N kunjungan di atas = jumlah BARIS/event (bisa >1 per kios kalau dikunjungi
+                     2× di trip ini); kios unik = jumlah kios BERBEDA yang disentuh. --}}
+                <span class="text-xs text-slate-500">Kios Unik: <span class="font-semibold text-slate-800">{{ $kiosUnik }}</span></span>
             </div>
             <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">

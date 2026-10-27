@@ -331,8 +331,12 @@
         {{-- Live Trip Progress — TUGAS 2 (BRIEF 23 Okt 2026, lanjutan): $activeTrips
              sudah dihitung controller (dengan eager load yang sama), dioper ke sini
              supaya render awal tidak query ulang. Poll 30s berikutnya tetap query
-             ulang seperti biasa (lihat LiveTripProgress::mount()). --}}
-        <livewire:owner.live-trip-progress :active-trips="$activeTrips" />
+             ulang seperti biasa (lihat LiveTripProgress::mount()).
+             id="live-trip-progress" — BRIEF 27 Okt 2026 "TRIP BERJALAN": anchor target
+             link "Lihat Laporan Real-Time" dari section Trip Berjalan di Riwayat Trip. --}}
+        <div id="live-trip-progress">
+            <livewire:owner.live-trip-progress :active-trips="$activeTrips" />
+        </div>
 
         {{-- Completed Trips Report --}}
         <div class="bg-white rounded-lg border border-slate-200 p-5 mt-6">
@@ -407,8 +411,12 @@
                     {{-- Physical Counts Grid --}}
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-white border border-slate-100 rounded-lg p-3 text-center mb-4 shadow-inner">
                         <div>
+                            {{-- BRIEF 27 Okt 2026 "KOLOM KIOS" — $agg['kios'] (unik, SATU SUMBER dgn
+                                 Riwayat Trip/Laporan Bulanan/Laporan Periode), bukan lagi
+                                 $completedTrip->visits->count() (undercount kios yang titip lewat
+                                 jalur "Kios Baru"/OpeningBalance tanpa kunjungan tercatat). --}}
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Kios Dikunjungi</p>
-                            <p class="text-base font-bold text-slate-900">{{ $completedTrip->visits->count() }} kios</p>
+                            <p class="text-base font-bold text-slate-900">{{ $agg['kios'] ?? 0 }} kios</p>
                         </div>
                         <div>
                             <p class="text-[10px] uppercase text-slate-500 font-medium">Kios Lama</p>
