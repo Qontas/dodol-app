@@ -1,6 +1,124 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 27 Oktober 2026*
 
+## 🟢 BRIEF 27 OKT 2026: TRIP LUPA DIAKHIRI — TUTUP OTOMATIS GANTI HARI + PENGAMAN MULAI TRIP SEMUA TANGGAL + LIVE BERTANGGAL — SELESAI, boleh push (tidak ada migrasi, commit `189c8b0`)
+
+Akar masalah: operator yang lupa menekan "Akhiri Trip" sebelum ganti hari membuat
+trip itu menggantung selamanya (`ended_at` tetap null) — tak pernah masuk Riwayat,
+Laporan Bulanan, atau komisi, DAN membajak guard "masih punya trip berjalan" di hari
+berikutnya kalau guard lama itu di-scope hanya "hari ini". Tidak ada akses prod.
+Angka uang **hanya berubah** karena trip lama kini ikut terhitung setelah ditutup
+(dibuktikan `reports:verify-locked-numbers`) — bukan karena rumus berubah.
+
+**Item 1 — SATU JALUR AKHIRI TRIP.** Logika `ActiveTrip::confirmEndTrip()` diekstrak
+ke `App\Support\TripCloser::close(Trip $trip, string $reason, ?Carbon $endedAt = null): bool`
+— satu-satunya tempat yang menulis `ended_at`/`ended_reason`/baris `commissions`,
+dipakai tombol manual DAN penutupan otomatis. Idempotent: trip yang sudah berakhir
+mengembalikan `false`, tidak diproses ulang, `ended_reason` asli tidak tertimpa.
+
+**Item 2 — TUTUP OTOMATIS GANTI HARI.** `App\Support\TripAutoCloser`: trip nyata
+(bukan sentinel migrasi `OpeningBalance`, bukan terarsip — SoftDeletes Trip
+otomatis menyembunyikannya) dengan `trip_date < hari ini` & `ended_at` masih null
+ditutup via `TripCloser::close()` dengan `reason='auto_closed'`, `endedAt` = waktu
+aktivitas TERAKHIR (kunjungan/delivery/tambah stok di motor — bukan `now()`,
+supaya laporan tak salah menampilkan jam "selesai" = jam admin kebetulan membuka
+halaman), fallback `started_at` kalau tak ada aktivitas sama sekali. Dipicu tiga
+jalur:
+- (a) `App\Http\Middleware\AutoCloseStaleTrips` (alias `auto-close-stale-trips`,
+  `bootstrap/app.php`) di route group operator & owner (`routes/web.php`) — scope
+  ke operator yang login (operator) atau ke semua operator milik owner (owner).
+  **Ringan:** TEPAT 1 query tambahan per request ketika tidak ada yang stale
+  (dibuktikan test query-count di level service DAN di level HTTP asli — bukan
+  `Livewire::test()`, yang TIDAK lewat pipeline middleware).
+- (b) `php artisan trips:auto-close-stale [--owner=N] [--force]` — default
+  **dry-run** (tabel preview, TIDAK mengubah data), `--force` benar-benar menutup,
+  `--owner` membatasi ke satu owner. Contoh output dry-run lokal (trip id=1,
+  owner_id NULL — sisa data lama dari sesi verifikasi browser sebelumnya, BUKAN
+  data produksi):
+  ```
+  [DRY-RUN] 1 trip stale (trip_date < hari ini, belum diakhiri):
+  +----+-------------+---------+-------+-----------------+-----------------+--------+
+  | ID | Tanggal     | Trip    | Owner | Operator        | Mika Diletakkan | Komisi |
+  +----+-------------+---------+-------+-----------------+-----------------+--------+
+  | 1  | 04 Oct 2026 | Trip #1 | —     | Kenyon Schimmel | 0 mika          | Rp 0   |
+  +----+-------------+---------+-------+-----------------+-----------------+--------+
+  Dry-run saja — tidak ada perubahan data. Tambahkan --force untuk benar-benar menutup.
+  ```
+- (c) (tidak ada jalur ketiga baru di luar a/b — item brief "operator membuka
+  halaman" dan "owner membuka dashboard/Riwayat/Laporan" SEMUA lewat (a), karena
+  semua route itu satu group middleware yang sama).
+
+**Item 3 — PENGAMAN MULAI TRIP.** `StartTrip::activeTrip()` (operator) & kartu
+"Trip Aktif" di Dashboard operator kini cek trip berjalan **TANPA filter
+tanggal** (dulu di-scope hari ini saja — trip kemarin yang lupa diakhiri tak
+pernah terlihat guard, operator bisa diam-diam mulai trip baru). Diuji dua
+skenario (`TripEscapeHatchTest`, `TripAreaSelectionTest`): trip kemarin belum
+diakhiri → buka app hari ini → sudah ditutup otomatis oleh middleware sebelum
+form dimuat → operator BISA mulai trip baru; trip HARI INI belum diakhiri →
+operator TETAP tidak bisa mulai trip baru (guard utama tak berubah, cuma
+cakupan tanggalnya diperluas).
+
+**Item 4 — TAMPILAN.**
+- Owner dashboard "Laporan Trip Real-Time (Live)" (`LiveTripProgress`) di-scope
+  **hanya trip `trip_date` hari ini** (`whereDate('trip_date', today())` —
+  jaring pengaman tambahan, bukan satu-satunya pencegah karena middleware sudah
+  menutup trip kemarin lebih dulu). Tiap kartu kini punya baris tanggal+jam
+  ber-locale Indonesia di bawah judul ("Selasa, 27 Okt 2026, 15:10").
+  390px screenshot: **belum sempat diambil sesi ini** (skill `verify-browser`
+  tersedia untuk sesi berikutnya — perlu server dev + minimal 1 trip aktif hari
+  ini untuk kartunya tampil).
+- Riwayat Trip, detail trip, PDF & Excel export: badge amber **"Ditutup
+  otomatis"** + catatan **"⚠️ Operator lupa menekan Akhiri Trip — cek sisa stok
+  manual."** ketika `ended_reason === 'auto_closed'`.
+- Dashboard owner "Laporan Akhir Trip Terbaru" memetakan `auto_closed` →
+  **"Ditutup otomatis (lupa diakhiri)"** di baris "Alasan Selesai", plus badge
+  amber tambahan di samping badge "Selesai".
+- `app/Livewire/Operator/ActiveTrip.php`: `VALID_END_REASONS` TIDAK bertambah
+  (`auto_closed` sengaja tidak bisa dipilih operator — hanya ditulis sistem).
+
+**Item 5 — VERIFIKASI.**
+- `trips.ended_reason` tetap `varchar(255)` (dicek `SHOW COLUMNS`) — bukan
+  ENUM, tidak ada migrasi, **boleh push**.
+- `reports:verify-locked-numbers 2 --before=storage/app/locked-numbers/owner-2-before-autoclose-20261027.json`
+  (snapshot gitignored, owner nyata "Ismi Qontas Lubis" yang DB lokalnya
+  memang punya trip stale asli, bukan data sintetis) → `Trip baru (tidak ada
+  di snapshot --before): 4` + `IDENTIK — delta 0 pada semua trip & agregat
+  bulanan yang cocok.` — trip stale lama itu memang dipakai sebagai bukti
+  nyata di sesi ini (lihat catatan DB di bawah).
+- Test baru membuktikan: trip lama yang ditutup otomatis MUNCUL di Laporan
+  Bulanan bulan trip itu sendiri (sebelumnya tidak muncul sama sekali karena
+  `ended_at` null); `AppFeeCalculator::summaryForOwners()` hasilnya TIDAK
+  berubah menutup trip stale (fee aplikasi tidak pernah difilter `ended_at`
+  sejak awal, by design).
+
+**Item 6 — Dokumentasi.** `docs/UI_INVENTORY.md` §A2, §A3, §A10, §B2, §B3, §C2
+diperbarui (sitasi file:baris diverifikasi ulang terhadap kode saat ini, bukan
+disalin dari audit lama 2026-10-20).
+
+**Catatan DB lokal (BUKAN migrasi/seeder, BUKAN prod):** dua trip stale
+ditemukan di database dev lokal sebelum sesi ini — trip id=1 (`owner_id`
+NULL, operator "Kenyon Schimmel", `trip_date` 4 Okt 2026) dan trip id=4
+(`owner_id`=2, operator "Test Operator", `trip_date` 26 Okt 2026) — hampir
+pasti sisa dari sesi verifikasi browser sebelumnya, bukan data produksi.
+Trip id=4 **sudah di-force-close** sebagai bagian dari verifikasi item 5 di
+atas (menghasilkan bukti "IDENTIK — delta 0" yang nyata, bukan hipotetis).
+Trip id=1 **dibiarkan stale** (dry-run di atas) — tidak ada alasan untuk
+menutupnya di luar kebutuhan verifikasi, dan menyentuhnya tidak akan
+mengubah fakta apa pun.
+
+**Test.** Full suite **674 passed, 2840 assertions** (naik dari baseline
+658 — 16 test baru: 8 `TripAutoCloserTest`, 4 `TripsAutoCloseStaleCommandTest`,
+3 `AutoCloseStaleTripsMiddlewareTest`, 1 tambahan `TripEscapeHatchTest`; 2
+test lama diperbaiki — `TripAreaSelectionTest` & `TripEscapeHatchTest` —
+karena `Livewire::test()` tidak melewati pipeline middleware HTTP yang
+sekarang menutup trip stale lebih dulu, jadi disimulasikan eksplisit lewat
+`TripAutoCloser::closeStaleForOperator()` di test). Tidak ada migrasi —
+**boleh push**.
+
+**Belum sempat dikerjakan sesi ini:** screenshot 390px Live Trip Progress
+bertanggal (butuh server dev + trip aktif hari ini sungguhan, bukan sekadar
+fixture test).
+
 ## 🟢 BRIEF 27 OKT 2026: TOMBOL KEMBALI MENAMPILKAN sw.js + TRIP BERJALAN + KOLOM KIOS + KEJELASAN ARSIP — SELESAI, boleh push (tidak ada migrasi)
 
 5 item, tidak ada akses prod, tidak ada migrasi. Angka uang **TIDAK berubah** — dibuktikan
