@@ -26,6 +26,14 @@
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
                 <div>
                     <span class="text-lg font-bold text-slate-900">Trip #{{ $activeTrip->trip_number_of_day }} — {{ $activeTrip->operator->name }}</span>
+                    {{-- BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" item 4 — header tiap kartu
+                         tampilkan tanggal + jam mulai ("Selasa, 27 Okt 2026, 15:10"), bukan
+                         cuma jam. Data dari $activeTrip->started_at yang SUDAH di-eager-load
+                         (bukan query baru) — ->locale('id') sama persis dashboard.blade.php
+                         (hari ini) supaya nama hari & bulan Indonesia (APP_LOCALE proyek 'en'). --}}
+                    <p class="text-xs font-semibold text-slate-600">
+                        {{ $activeTrip->started_at ? $activeTrip->started_at->locale('id')->isoFormat('dddd, D MMM Y, HH:mm') : '—' }}
+                    </p>
                     <p class="text-sm text-slate-500 mt-1">
                         {{-- Label area JUJUR: trip yang menyeberang tidak boleh tertulis
                              sebagai satu area saja. --}}

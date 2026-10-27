@@ -26,7 +26,14 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
                 </svg>
                 <span>Lanjutkan Trip Aktif</span>
-                <span class="text-sm font-normal opacity-90">Trip #{{ $activeTrip->trip_number_of_day }} hari ini</span>
+                {{-- BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" — label JUJUR: normalnya ini
+                     SELALU trip hari ini (trip hari sebelumnya sudah ditutup otomatis
+                     sebelum halaman ini dimuat), tapi kalau karena sebab apapun belum
+                     sempat, jangan berbohong bilang "hari ini" untuk trip kemarin. --}}
+                <span class="text-sm font-normal opacity-90">
+                    Trip #{{ $activeTrip->trip_number_of_day }}
+                    {{ $activeTrip->trip_date->isToday() ? 'hari ini' : 'sejak '.$activeTrip->trip_date->format('d M Y') }}
+                </span>
             </div>
         </a>
     @else

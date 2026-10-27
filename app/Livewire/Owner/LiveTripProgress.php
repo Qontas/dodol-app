@@ -56,8 +56,15 @@ class LiveTripProgress extends Component
         // Multi-tenant: owner hanya lihat trip bisnisnya sendiri. Render awal
         // pakai koleksi dari controller (lihat docblock $preloadedActiveTrips
         // di atas); setiap poll susulan query ulang di sini seperti biasa.
+        //
+        // BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" item 4 — whereDate('trip_date',
+        // today()) HARUS SAMA dengan query OwnerDashboardController (lihat
+        // docblock $preloadedActiveTrips) — tanpa ini, poll 30 detik susulan
+        // akan kembali menampilkan trip lama tanpa tanggal begitu
+        // $preloadedActiveTrips habis (null lagi setelah poll pertama).
         $activeTrips = $this->preloadedActiveTrips ?? Trip::whereNull('ended_at')
             ->where('owner_id', auth()->id())
+            ->whereDate('trip_date', today())
             ->with([
                 'operator',
                 'startingCluster',

@@ -36,7 +36,17 @@
                         @else
                             <span class="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Aktif</span>
                         @endif
+                        {{-- BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" item 4 — badge trip yang
+                             ditutup SISTEM (operator lupa tekan "Akhiri Trip"), bukan manual. --}}
+                        @if ($trip->ended_reason === 'auto_closed')
+                            <span class="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Ditutup otomatis</span>
+                        @endif
                     </div>
+                    @if ($trip->ended_reason === 'auto_closed')
+                        <p class="mt-1 text-xs text-amber-700">
+                            ⚠️ Operator lupa menekan Akhiri Trip — cek sisa stok manual.
+                        </p>
+                    @endif
                     <p class="mt-1 text-sm text-slate-600">
                         Trip #{{ $trip->trip_number_of_day }} &middot;
                         Operator: <span class="font-medium text-slate-800">{{ $trip->operator?->name ?? '—' }}</span> &middot;

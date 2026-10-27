@@ -443,14 +443,23 @@ class TripEscapeHatchTest extends TestCase
     }
 
     /**
-     * Trip basi HARI LALU tetap tidak menghalangi trip hari ini (regresi fix 28 Juli
-     * 2026 — kartu di-scope hari ini, sama seperti Proteksi 1).
+     * Trip basi HARI LALU tetap tidak menghalangi trip hari ini.
+     *
+     * BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" — sebelumnya dicegah dengan kartu
+     * yang di-scope HARI INI saja (regresi fix 28 Juli 2026), tapi itu
+     * menyembunyikan masalah: trip kemarin tetap menggantung selamanya di
+     * database (tidak masuk Riwayat/Laporan). Sekarang kartu TANPA filter
+     * tanggal (lihat StartTrip::activeTrip()) — trip kemarin SUDAH ditutup
+     * otomatis oleh App\Http\Middleware\AutoCloseStaleTrips SEBELUM operator
+     * sampai ke form (di produksi: tiap request halaman operator). Di sini
+     * disimulasikan eksplisit lewat TripAutoCloser::closeStaleForOperator()
+     * (Livewire::test() tidak lewat pipeline middleware HTTP).
      */
     public function test_stale_trip_from_yesterday_does_not_block_todays_form(): void
     {
         [$owner, $operator, $kota1] = $this->scaffold();
 
-        Trip::factory()->create([
+        $stale = Trip::factory()->create([
             'owner_id' => $owner->id, 'operator_id' => $operator->id,
             'trip_date' => today()->subDay(), 'trip_number_of_day' => 1,
             'starting_cluster_id' => $kota1->id,
@@ -459,9 +468,43 @@ class TripEscapeHatchTest extends TestCase
 
         $this->actingAs($operator);
 
+        // Simulasi pemicu 2a — di produksi dijalankan middleware tiap halaman
+        // operator dibuka, sebelum komponen ini mount().
+        \App\Support\TripAutoCloser::closeStaleForOperator($operator->id);
+
+        $stale->refresh();
+        $this->assertNotNull($stale->ended_at, 'Trip basi kemarin harus sudah ditutup otomatis.');
+        $this->assertSame('auto_closed', $stale->ended_reason);
+
         Livewire::test(StartTrip::class)
             ->assertDontSee('Kamu masih punya trip berjalan')
             ->assertSee('Berapa mika yang kamu bawa hari ini?');
+    }
+
+    /**
+     * Trip HARI INI yang belum diakhiri TETAP menghalangi mulai trip baru
+     * (guard utama tidak berubah — hanya cakupan tanggalnya yang diperluas
+     * ke "semua tanggal", trip hari ini tetap kena).
+     */
+    public function test_trip_from_today_still_blocks_new_trip(): void
+    {
+        [$owner, $operator, $kota1] = $this->scaffold();
+
+        Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'trip_date' => today(), 'trip_number_of_day' => 1,
+            'starting_cluster_id' => $kota1->id,
+            'started_at' => now(), 'ended_at' => null,
+        ]);
+
+        $this->actingAs($operator);
+
+        // Auto-closer tidak menyentuh trip hari ini (hanya trip_date < hari ini).
+        \App\Support\TripAutoCloser::closeStaleForOperator($operator->id);
+
+        Livewire::test(StartTrip::class)
+            ->assertSee('Kamu masih punya trip berjalan')
+            ->assertDontSee('Berapa mika yang kamu bawa hari ini?');
     }
 
     /**

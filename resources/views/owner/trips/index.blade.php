@@ -138,6 +138,13 @@
                                         {{ $trip->trip_date->format('d M Y') }}
                                     </a>
                                     <span class="block text-xs text-slate-400">Trip #{{ $trip->trip_number_of_day }}</span>
+                                    {{-- BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" item 4 — badge trip yang
+                                         ditutup SISTEM (operator lupa tekan "Akhiri Trip"), bukan manual. --}}
+                                    @if ($trip->ended_reason === 'auto_closed')
+                                        <span class="block mt-0.5 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800" title="Operator lupa menekan Akhiri Trip — cek sisa stok manual.">
+                                            Ditutup otomatis
+                                        </span>
+                                    @endif
                                 </td>
                                 <td class="px-4 py-3 whitespace-nowrap text-slate-700">{{ $trip->operator?->name ?? '—' }}</td>
                                 {{-- Area JUJUR: kalau trip menyeberang, labelnya menyebutkannya.

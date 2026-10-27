@@ -58,7 +58,7 @@ Route::middleware(['auth', 'verified', 'no-store'])->group(function () {
     })->name('dashboard');
 });
 
-Route::middleware(['auth', 'verified', 'no-store', 'role:owner'])
+Route::middleware(['auth', 'verified', 'no-store', 'role:owner', 'auto-close-stale-trips'])
     ->prefix('owner')
     ->name('owner.')
     ->group(function () {
@@ -75,7 +75,7 @@ Route::middleware(['auth', 'verified', 'no-store', 'role:owner'])
     });
 
 // Laporan & export — owner + super admin (otorisasi per-trip di controller).
-Route::middleware(['auth', 'verified', 'no-store', 'role:owner,super_admin'])
+Route::middleware(['auth', 'verified', 'no-store', 'role:owner,super_admin', 'auto-close-stale-trips'])
     ->prefix('owner')
     ->name('owner.')
     ->group(function () {
@@ -118,7 +118,7 @@ Route::middleware(['auth', 'verified', 'no-store', 'role:owner,super_admin'])
             ->name('reports.periode.excel');
     });
 
-Route::middleware(['auth', 'verified', 'no-store', 'role:operator'])
+Route::middleware(['auth', 'verified', 'no-store', 'role:operator', 'auto-close-stale-trips'])
     ->prefix('operator')
     ->name('operator.')
     ->group(function () {

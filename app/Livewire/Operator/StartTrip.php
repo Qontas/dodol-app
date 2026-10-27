@@ -56,7 +56,16 @@ class StartTrip extends Component
     private bool $activeTripResolved = false;
 
     /**
-     * Trip yang MASIH BERJALAN hari ini milik operator ini, atau null.
+     * Trip yang MASIH BERJALAN milik operator ini, atau null.
+     *
+     * BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" item 3 — dulu `whereDate('trip_date',
+     * today())`, jadi trip kemarin yang lupa diakhiri TIDAK terdeteksi guard ini
+     * (operator bisa mulai trip baru keesokan harinya, trip lama menggantung
+     * selamanya). Sekarang TANGGAL BERAPA PUN — jaring pengaman tambahan, karena
+     * trip hari-hari sebelumnya seharusnya SUDAH ditutup otomatis oleh
+     * App\Http\Middleware\AutoCloseStaleTrips (dijalankan sebelum render ini,
+     * lihat routes/web.php grup 'operator'), jadi yang tersisa normalnya cuma
+     * trip hari ini.
      *
      * `latest('id')` (bukan `first()` polos = id TERKECIL) supaya kartu di layar
      * menyebutkan trip yang SAMA dengan yang akan dibuka ActiveTrip::mount() —
@@ -67,7 +76,6 @@ class StartTrip extends Component
         if (! $this->activeTripResolved) {
             $this->resolvedActiveTrip = Trip::with('startingCluster')
                 ->where('operator_id', auth()->id())
-                ->whereDate('trip_date', today())
                 ->whereNotNull('started_at')
                 ->whereNull('ended_at')
                 ->latest('id')

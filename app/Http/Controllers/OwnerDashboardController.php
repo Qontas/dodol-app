@@ -254,8 +254,17 @@ class OwnerDashboardController extends Controller
         // dilakukan ulang di dalam komponen itu sendiri. Daftar relasi di
         // sini HARUS sama dengan yang dibutuhkan LiveTripProgress::render(),
         // lihat app/Livewire/Owner/LiveTripProgress.php.
+        //
+        // BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" item 4 — dulu TANPA filter
+        // tanggal sama sekali: trip lama yang lupa diakhiri (ended_at masih
+        // null) ikut nongkrong selamanya di "Laporan Trip Real-Time", tanpa
+        // tanggal, bikin owner bingung ("trip siapa ini"). Sekarang HANYA
+        // trip HARI INI — trip hari sebelumnya seharusnya sudah ditutup
+        // otomatis (lihat App\Http\Middleware\AutoCloseStaleTrips) sebelum
+        // controller ini jalan; whereDate di sini jaring pengaman tambahan.
         $activeTrips = Trip::whereNull('ended_at')
             ->where('owner_id', $ownerId)
+            ->whereDate('trip_date', today())
             ->with([
                 'operator',
                 'startingCluster',

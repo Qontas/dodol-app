@@ -32,6 +32,11 @@
         <tr><td>Operator</td><td>: {{ $operatorName }}</td></tr>
         <tr><td>Area</td><td>: {{ $clusterName }}</td></tr>
         <tr><td>Trip ke-</td><td>: {{ $trip->trip_number_of_day }}</td></tr>
+        {{-- BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" item 4 — trip yang ditutup
+             SISTEM (operator lupa tekan "Akhiri Trip"), bukan manual. --}}
+        @if ($trip->ended_reason === 'auto_closed')
+            <tr><td>Status Akhir</td><td>: <strong>Ditutup otomatis</strong> — Operator lupa menekan Akhiri Trip, cek sisa stok manual.</td></tr>
+        @endif
     </table>
 
     <div class="section-title">Ringkasan Mika</div>

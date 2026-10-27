@@ -2645,47 +2645,12 @@ class ActiveTrip extends Component
             return;
         }
 
-        DB::transaction(function () {
-            $this->trip->update([
-                'ended_at' => now(),
-                'ended_reason' => $this->endReason,
-            ]);
-
-            // Save commission record to the database using the new formula
-            $omset = $this->trip->omset_val;
-            $komisi = $this->trip->komisi_rian;
-
-            $cashCollectedReported = $omset;
-            $marginRateAssumed = 0;
-
-            if ($omset > 0) {
-                $marginRateAssumed = $komisi / ($omset * 0.2000);
-            }
-
-            // Fallback if omset is 0 or margin rate would overflow decimal(5,4)
-            if ($omset == 0 || $marginRateAssumed > 9.0) {
-                $cashCollectedReported = $komisi / 0.2000;
-                $marginRateAssumed = 1.0000;
-            }
-
-            // BRIEF 2 (21 Okt 2026): teks catatan HARUS menyebut tarif yang BENAR-BENAR
-            // dipakai menghitung $komisi di atas (komisi_rian, baca snapshot trip ini),
-            // bukan tarif owner SAAT INI — dulu dua-duanya kebetulan sama karena belum
-            // ada snapshot; sekarang owner bisa sudah ganti tarif sebelum trip ini
-            // diakhiri, dan notes tak boleh berbohong soal tarif mana yang dipakai.
-            $komisiPerMika = $this->trip->komisi_per_mika_snapshot ?? ($this->trip->owner?->getKomisiPerMikaValue() ?? 1000);
-
-            \App\Models\Commission::create([
-                'trip_id' => $this->trip->id,
-                'operator_id' => $this->trip->operator_id,
-                'cash_collected_reported' => $cashCollectedReported,
-                'margin_rate_assumed' => $marginRateAssumed,
-                'commission_rate' => 0.2000,
-                'status' => 'paid',
-                'paid_at' => now(),
-                'notes' => sprintf('Komisi Rian (basis DROP): mika diletakkan (exclude BS) x Rp %d', $komisiPerMika),
-            ]);
-        });
+        // BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" item 1 — SATU JALUR AKHIRI TRIP.
+        // Semua efek samping (ended_at, ended_reason, baris commissions) sekarang
+        // di App\Support\TripCloser, dipakai juga oleh penutupan otomatis
+        // (TripAutoCloser) supaya hasilnya identik. Jangan tulis ulang logika
+        // komisi di sini — lihat TripCloser::close().
+        \App\Support\TripCloser::close($this->trip, $this->endReason);
 
         session()->flash('trip_ended', 'Trip berhasil diakhiri.');
 

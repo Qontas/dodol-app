@@ -29,6 +29,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'no-store' => \App\Http\Middleware\NoStoreAuthPages::class,
+            // BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" item 2a/2b.
+            'auto-close-stale-trips' => \App\Http\Middleware\AutoCloseStaleTrips::class,
         ]);
 
         // Cap identitas sesi-live ke cookie readable (multi-tenant guard sinkron).

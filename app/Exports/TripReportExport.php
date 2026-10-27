@@ -51,6 +51,15 @@ class TripSummarySheet implements FromArray, WithHeadings, WithStrictNullCompari
             ['Tanggal Trip', $this->data['trip']->trip_date->format('d M Y')],
             ['Operator', $this->data['operatorName']],
             ['Cluster', $this->data['clusterName']],
+        ];
+
+        // BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" item 4 — trip yang ditutup SISTEM
+        // (operator lupa tekan "Akhiri Trip"), bukan manual.
+        if ($this->data['trip']->ended_reason === 'auto_closed') {
+            $rows[] = ['Status Akhir', 'Ditutup otomatis — Operator lupa menekan Akhiri Trip, cek sisa stok manual.'];
+        }
+
+        $rows = array_merge($rows, [
             // BRIEF 27 Okt 2026 "PENGAMAN STOK DI MOTOR" — Mika Dibawa tampil
             // "90 + 20 tambahan = 110" kalau trip pernah pakai ➕ Tambah Stok di Motor.
             ['Mika Dibawa', $s['mika_dibawa_display']],
@@ -58,7 +67,7 @@ class TripSummarySheet implements FromArray, WithHeadings, WithStrictNullCompari
             ['Biji Di-drop', $s['biji_drop']],
             // mika_sisa SEKARANG dari Trip::getStokDiMotor() (exclude bs_redistribution).
             ['Mika Sisa', $s['mika_sisa']],
-        ];
+        ]);
 
         // Riwayat tambah stok di motor (kosong kalau belum pernah dipakai).
         foreach ($s['stock_additions'] as $addition) {

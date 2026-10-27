@@ -52,6 +52,16 @@ class TripAreaSelectionTest extends TestCase
     /**
      * GEJALA 1 — akar (A). Trip kemarin yang belum di-end tidak boleh membajak
      * pilihan area hari ini.
+     *
+     * BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" — dulu dicegah dengan guard
+     * StartTrip yang di-scope HARI INI saja (trip kemarin tak pernah terlihat
+     * guard-nya, tapi tetap menggantung selamanya di database, tak masuk
+     * laporan). Sekarang guard-nya TANPA filter tanggal (lihat
+     * StartTrip::activeTrip()) — trip kemarin SUDAH ditutup otomatis oleh
+     * App\Http\Middleware\AutoCloseStaleTrips SEBELUM operator sampai ke form
+     * ini (di produksi: tiap request halaman operator). Di sini disimulasikan
+     * eksplisit lewat TripAutoCloser::closeStaleForOperator() (Livewire::test()
+     * tidak lewat pipeline middleware HTTP).
      */
     public function test_stale_unended_trip_from_yesterday_does_not_hijack_todays_area_choice(): void
     {
@@ -73,8 +83,16 @@ class TripAreaSelectionTest extends TestCase
 
         $this->actingAs($operator);
 
-        // Layar "Mulai Trip" TETAP tampil (guard mount() sudah per-hari) — owner memang
-        // sampai ke form, memilih Kota 1, mengisi 75 mika.
+        // Simulasi pemicu 2a (lihat docblock di atas) — di produksi dijalankan
+        // middleware tiap halaman operator dibuka, sebelum komponen ini mount().
+        \App\Support\TripAutoCloser::closeStaleForOperator($operator->id);
+
+        $stale->refresh();
+        $this->assertNotNull($stale->ended_at, 'Trip basi kemarin harus sudah ditutup otomatis.');
+        $this->assertSame('auto_closed', $stale->ended_reason);
+
+        // Layar "Mulai Trip" TETAP tampil — owner memang sampai ke form, memilih
+        // Kota 1, mengisi 75 mika.
         Livewire::test(StartTrip::class)
             ->set('selectedClusterId', $kota1->id)
             ->set('qtyCarried', 75)

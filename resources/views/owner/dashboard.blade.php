@@ -383,11 +383,19 @@
                                             @case('target_done') Target Selesai @break
                                             @case('sakit') Sakit @break
                                             @case('urgent_personal') Urusan Pribadi Mendesak @break
+                                            {{-- BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" item 4 — label baru,
+                                                 trip ini DITUTUP SISTEM (bukan operator tekan "Akhiri Trip"). --}}
+                                            @case('auto_closed') Ditutup otomatis (lupa diakhiri) @break
                                             @default Lainnya
                                         @endswitch
                                     </span>
                                 @endif
                             </p>
+                            @if ($completedTrip->ended_reason === 'auto_closed')
+                                <p class="text-xs text-amber-700 mt-1">
+                                    ⚠️ Operator lupa menekan Akhiri Trip — cek sisa stok manual.
+                                </p>
+                            @endif
                         </div>
                         <div class="text-right">
                             <p class="text-xs text-slate-500">Omset Akhir</p>
