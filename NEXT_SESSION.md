@@ -1,6 +1,67 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 27 Oktober 2026*
 
+## 🟢 BRIEF 27 OKT 2026: TOMBOL KEMBALI MENAMPILKAN sw.js + TRIP BERJALAN + KOLOM KIOS + KEJELASAN ARSIP — SELESAI, boleh push (tidak ada migrasi)
+
+5 item, tidak ada akses prod, tidak ada migrasi. Angka uang **TIDAK berubah** — dibuktikan
+full suite (lihat di bawah); satu-satunya figure yang berubah adalah hitungan "Kios" (Item 3),
+dan itu memang tujuan brief ini.
+
+**Item 1 — Akar bug "Kembali" nyasar (dilabeli "menampilkan sw.js" di laporan owner).**
+`url()->previous()` membaca `session('_previous.url')`, yang ditimpa Laravel bawaan
+(`Illuminate\Session\Middleware\StartSession::storeCurrentUrl()`) pada SETIAP GET non-ajax —
+termasuk polling `/csrf-token` (`pwa-token-refresh.blade.php`, tiap `pageshow`/
+`visibilitychange`) dan `<img>` foto kios (`/kiosks/{id}/photo`). `/sw.js` SENDIRI tak pernah
+bisa jadi sebabnya (file statis, tak lewat Laravel) — tetap dites sbg jaring pengaman.
+**Fix:** `App\Http\Middleware\StartSession` (subclass, dibind di `AppServiceProvider::register()`)
+skip `storeCurrentUrl()` untuk path: `/csrf-token`, `/kiosks/*/photo`, `/sw.js`,
+`/manifest.webmanifest`, `/build/*`, favicon/icon. `TripHistoryController::show()` hitung
+`$backUrl` SERVER-SIDE (`route('owner.trips.index', filter whitelist)`), bukan
+`url()->previous()`. `TripDeleteController::destroy()/restore()` ganti `redirect()->back()`
+jadi parameter `redirect_to` divalidasi whitelist (`'show'` atau index+filter) — tak pernah
+dipakai sebagai URL bebas (tak ada open-redirect). `OwnerDashboardController::reactivateKiosk()`
+juga diganti dari `back()` ke `redirect()->route('owner.dashboard')` (audit penuh `app/`:
+hanya 2 usage `back()`/`redirect()->back()` ditemukan, keduanya diperbaiki; `VerifyEmailController`
+pakai `redirect()->intended()` — session key BEDA (`url.intended`, diisi middleware
+`Authenticate`), dikonfirmasi AMAN, tak disentuh). Regresi:
+`tests/Feature/StartSessionPreviousUrlTest.php` (4 test: csrf-token, foto kios, sw.js/manifest,
+navigasi normal tetap jalan).
+
+**Item 2 — Trip Berjalan & kejelasan hitungan trip.** Riwayat Trip (`index.blade.php`) kini
+punya section **"Trip Berjalan"** terpisah di atas tabel utama (trip `ended_at` masih null):
+badge "Berjalan", jam mulai, operator, kios & omset berjalan (`TripAggregator` batch), link
+"Lihat Laporan Real-Time →" ke `owner.dashboard#live-trip-progress`; trip berjalan dari HARI
+SEBELUMNYA dapat peringatan "⚠️ Belum diakhiri sejak {tanggal}"; tak bisa diarsipkan dari sini.
+Widget super admin "Total Trip Hari Ini" (`SuperAdminStatsOverview`) menghitung SEMUA owner
+TERMASUK yang masih berjalan — beda dari tabel utama Riwayat Trip owner (hanya trip SELESAI) —
+sekarang diberi caption "Semua owner, termasuk yang masih berjalan" supaya tak disalahartikan.
+
+**Item 3 — "Kios" disatukan SATU SUMBER.** Akar bug: kios yang dilayani lewat jalur
+"Kios Baru"/`OpeningBalance` (`App\Support\ConsignmentDrop::record()`) membuat `Delivery`
+TANPA `KioskVisit` sama sekali — beberapa tempat menghitung kios dari `visits->count()`
+(buta thd delivery jenis ini, bisa tampil "Kios 0/1" walau banyak mika di-drop), tempat lain
+sudah pakai hitungan unik. Sekarang SEMUA permukaan (Riwayat Trip, detail trip — ditampilkan
+sbg "Kios Unik", Laporan Bulanan, Laporan Periode, dashboard) baca `TripAggregator::for()[...]['kios']`
+— kios UNIK via `UNION` (implicit DISTINCT) `kiosk_visits` + `deliveries`. **Dev DB lokal
+cuma punya 2 trip sparse (tak ada data cukup untuk contoh real sebelum/sesudah)** — mekanisme
+dibuktikan via test baru `TripAggregatorTest::test_kios_counts_visit_less_consignment_drop()`
+(fixture eksplisit: delivery visit-less → `visits->count()`=0 vs `kios`(baru)=1). HANYA angka
+kios berubah, semua angka uang identik (test lama `TripAggregatorTest` tetap PASS tanpa ubah
+assert finansial).
+
+**Item 4 — Kejelasan arsip.** Filter "Status" di Riwayat Trip kini menampilkan jumlah:
+"Aktif (N) / Diarsip (N) / Semua (N)". Setelah mengarsipkan: flash berubah jadi
+"Trip #{N} diarsipkan. Lihat di Status → Diarsip." + tombol "Batalkan" langsung dari flash
+(index & detail). Teks konfirmasi arsip diperjelas: "Trip ini akan HILANG dari semua laporan,
+komisi, dan fee. Hanya untuk trip salah/uji coba. Bisa dipulihkan."
+
+**Item 5 — Dokumentasi.** `docs/UI_INVENTORY.md` §B3 (Riwayat Trip), §B4 (Laporan Bulanan),
+§B4.5 (Laporan Periode) diperbarui mencatat semua perubahan di atas.
+
+**Test.** Full suite **658 passed, 2792 assertions** (naik dari baseline 653 — 5 test baru:
+4 di `StartSessionPreviousUrlTest` + 1 di `TripAggregatorTest`). Tidak ada migrasi — **boleh
+push**.
+
 ## 🔴 BRIEF 27 OKT 2026: PENGAMAN STOK DI MOTOR (blokir titip melebihi stok + "Tambah Stok di Motor") — SELESAI, **BELUM boleh push — ADA MIGRASI, owner harus backup DB dulu**
 
 Lanjutan investigasi "Mika Sisa negatif" brief 26 Okt: trip "KualiStories" (26 Okt)
