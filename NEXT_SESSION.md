@@ -1,6 +1,86 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 27 Oktober 2026*
 
+## 🟢 BRIEF LANJUTAN 27 OKT 2026: SYARAT IDLE MINIMAL 6 JAM (JANGAN TUTUP TRIP YANG MASIH DIPAKAI LEWAT TENGAH MALAM) — SELESAI, boleh push (tidak ada migrasi)
+
+Akar masalah pada brief sebelumnya (lihat bawah): auto-close `trip_date < hari ini`
+SAJA bisa menutup trip yang MASIH dipakai operator yang mengantar melewati jam
+00:00 — begitu operator membuka halaman apa pun setelah tengah malam, trip-nya
+sendiri langsung tertutup di tengah pengantaran. Tidak ada akses prod, tidak ada
+migrasi.
+
+**Item 1 — Syarat auto-close jadi KEDUANYA.** `App\Support\TripAutoCloser` &
+command `trips:auto-close-stale` sekarang mensyaratkan (a) `trip_date < hari ini`
+(zona app) **DAN** (b) aktivitas terakhir trip (kunjungan/delivery/tambah stok
+paling akhir; fallback `started_at` kalau tak ada) sudah **lebih dari N jam**
+yang lalu, `N = config('trips.auto_close_idle_hours')` (file baru
+`config/trips.php`), default **6**, bisa di-override lewat `.env`
+`TRIP_AUTO_CLOSE_IDLE_HOURS` (lihat `.env.example`). `ended_at` tetap = waktu
+aktivitas terakhir itu (tidak berubah dari brief sebelumnya). Fungsi baru:
+`TripAutoCloser::idleHoursThreshold()`, `idleInfo(Trip $trip)` (dipakai BERSAMA
+oleh tampilan dry-run dan keputusan tutup/tidak — satu `now()` snapshot, supaya
+angka yang ditampilkan dan yang menentukan penutupan tidak pernah beda sepersekian
+detik), `isIdleLongEnough()`. `staleQuery()` (filter tanggal, query tunggal)
+sengaja TIDAK ikut difilter idle — supaya kontrak performa "1 query saat tidak
+ada yang stale" tetap utuh; idle dicek per-trip hanya pada kandidat tanggal-stale
+(jarang).
+
+**Item 2 — Pengaman Mulai Trip (TIDAK PERLU UBAH KODE).** Dicek ulang:
+`StartTrip::activeTrip()` sudah tidak difilter tanggal sejak brief sebelumnya
+(item 3 di bawah) — begitu trip kemarin TIDAK ditutup middleware karena belum
+idle cukup lama, guard ini otomatis menemukannya & menampilkan kartu "Kamu masih
+punya trip berjalan" (Lanjutkan Trip / Batalkan Trip), bukan form trip baru.
+
+**Item 3 — Aksi lewat tengah malam (TIDAK PERLU UBAH KODE).** `ActiveTrip::mount()`,
+`confirmAddStock()`, `confirmEndTrip()` tidak punya filter tanggal apa pun —
+kunjungan/titip/tambah stok/Akhiri Trip tetap berjalan normal di trip yang sama
+berapa pun jam saat ini, selama trip itu belum ditutup sistem.
+
+**Item 4 — Dry-run command.** Tabel sekarang punya 2 kolom baru: **"Aktivitas
+Terakhir"** & **"Tidak Aktif (Jam)"**. Trip kandidat (tanggal sudah lewat) yang
+BELUM lewat ambang idle **tidak ikut ditampilkan sama sekali** (dikecualikan,
+bukan ditampilkan-lalu-dilewati) — kalau tidak ada satu pun yang cukup idle,
+pesannya sama seperti tidak ada trip stale: `"Tidak ada trip stale (lupa
+diakhiri) ditemukan."`. `--force` juga hanya menutup trip yang sama (sudah
+difilter idle). Contoh output nyata (skenario test "b": aktivitas terakhir
+02:00, command dijalankan jam 10:00 hari berikutnya):
+```
+[DRY-RUN] 1 trip stale (trip_date < hari ini & tidak aktif > 6 jam, belum diakhiri):
++----+-------------+---------+---------------------+----------+-----------------+--------+--------------------+-------------------+
+| ID | Tanggal     | Trip    | Owner               | Operator | Mika Diletakkan | Komisi | Aktivitas Terakhir | Tidak Aktif (Jam) |
++----+-------------+---------+---------------------+----------+-----------------+--------+--------------------+-------------------+
+| 1  | 28 Oct 2026 | Trip #1 | Toko Cemilan Qontas | Rian     | 0 mika          | Rp 0   | 29 Oct 2026 02:00  | 8 jam             |
++----+-------------+---------+---------------------+----------+-----------------+--------+--------------------+-------------------+
+
+Dry-run saja — tidak ada perubahan data. Tambahkan --force untuk benar-benar menutup.
+```
+
+**Item 5 — Test.** 11 test baru (semua skenario brief):
+- `TripAutoCloserTest`: (a) aktivitas 23:50 / "buka" 00:20 → TIDAK ditutup, DAN
+  operator masih bisa titip (KioskVisit baru) & `TripCloser::close()` tetap
+  berhasil; (b) aktivitas terakhir 02:00 / buka 09:00 → ditutup, `ended_at`=02:00;
+  (c) aktivitas 17:36 / buka besok 08:00 → ditutup; (d) trip hari ini TIDAK PERNAH
+  ditutup otomatis berapa pun N; (e) N dari `config('trips.auto_close_idle_hours')`
+  bisa diubah di runtime; shape `idleInfo()`.
+- `TripsAutoCloseStaleCommandTest`: dry-run & `--force` sama-sama mengecualikan
+  trip yang belum idle cukup lama; kolom baru muncul di tabel; header dry-run
+  ikut `config()` saat N diubah.
+- `TripEscapeHatchTest`: trip kemarin yang masih idle <N jam lewat tengah malam
+  tetap diblokir sebagai "trip berjalan" oleh `StartTrip`, DAN `ActiveTrip` masih
+  bisa dibuka ke trip yang sama (`trip.id` sama).
+
+**Item 6 — Dokumentasi.** `docs/UI_INVENTORY.md` §A2, §A3, §C2 ditambah catatan
+"BRIEF lanjutan ... SYARAT IDLE MINIMAL" (sitasi diverifikasi ulang terhadap kode
+saat ini). `NEXT_SESSION.md` (bagian ini).
+
+**Test.** Full suite **684 passed, 2877 assertions** (naik dari baseline 674 —
+tepat 11 test baru seperti di atas: 7 `TripAutoCloserTest` + 3
+`TripsAutoCloseStaleCommandTest` + 1 `TripEscapeHatchTest`; `AutoCloseStaleTripsMiddlewareTest`
+tidak berubah & tetap lolos tanpa modifikasi karena timestamp lama yang dipakainya
+sudah jauh di atas ambang 6 jam). Tidak ada migrasi — **boleh push**.
+
+**Belum sempat dikerjakan sesi ini:** tidak ada — semua 6 item brief selesai.
+
 ## 🟢 BRIEF 27 OKT 2026: TRIP LUPA DIAKHIRI — TUTUP OTOMATIS GANTI HARI + PENGAMAN MULAI TRIP SEMUA TANGGAL + LIVE BERTANGGAL — SELESAI, boleh push (tidak ada migrasi, commit `189c8b0`)
 
 Akar masalah: operator yang lupa menekan "Akhiri Trip" sebelum ganti hari membuat

@@ -16,16 +16,30 @@ use App\Support\AppFeeCalculator;
 use App\Support\TripAutoCloser;
 use App\Support\TripCloser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
  * BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" — App\Support\TripAutoCloser (item 2)
  * & App\Support\TripCloser (item 1, "SATU JALUR AKHIRI TRIP").
+ *
+ * BRIEF lanjutan "SYARAT IDLE MINIMAL" — tutup otomatis sekarang juga menuntut
+ * trip tidak aktif LEBIH dari config('trips.auto_close_idle_hours') jam
+ * (default 6), SELAIN trip_date < hari ini. Test di bawah pakai
+ * Carbon::setTestNow() supaya "sekarang" bisa dikontrol presisi ke menit
+ * (skenario lewat tengah malam) — dikembalikan di tearDown() apapun hasilnya.
  */
 class TripAutoCloserTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
 
     private function owner(): User
     {
@@ -320,5 +334,188 @@ class TripAutoCloserTest extends TestCase
 
         $this->assertSame($before['mika_total'], $after['mika_total']);
         $this->assertEqualsWithDelta($before['fee_total'], $after['fee_total'], 0.0001);
+    }
+
+    /**
+     * BRIEF lanjutan skenario (a) — aktivitas 23:50, halaman dibuka 00:20 (trip_date
+     * sudah "kemarin"). Masih idle < 6 jam (default) → TIDAK ditutup, walau syarat
+     * tanggal (trip_date < hari ini) sudah terpenuhi.
+     */
+    public function test_trip_still_idle_within_default_window_across_midnight_is_not_closed(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-28 00:20:00'));
+
+        $owner = $this->owner();
+        $operator = $this->operator($owner);
+        $cluster = Cluster::create(['name' => 'C', 'owner_id' => $owner->id]);
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $cluster->id]);
+
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'starting_cluster_id' => $cluster->id,
+            'trip_date' => '2026-10-27', 'trip_number_of_day' => 1,
+            'started_at' => Carbon::parse('2026-10-27 18:00:00'), 'ended_at' => null,
+        ]);
+        KioskVisit::create([
+            'trip_id' => $trip->id, 'kiosk_id' => $kiosk->id,
+            'visited_at' => Carbon::parse('2026-10-27 23:50:00'),
+            'visit_action' => 'drop_only', 'extension_granted' => false,
+        ]);
+
+        $closed = TripAutoCloser::closeStaleForOperator($operator->id);
+
+        $this->assertSame(0, $closed);
+        $this->assertNull($trip->refresh()->ended_at, 'Trip yang aktivitas terakhirnya belum 6 jam tidak boleh ditutup.');
+
+        // Operator TETAP bisa titip (kunjungan baru) & akhiri trip di trip yang sama.
+        KioskVisit::create([
+            'trip_id' => $trip->id, 'kiosk_id' => $kiosk->id,
+            'visited_at' => Carbon::parse('2026-10-28 00:15:00'),
+            'visit_action' => 'drop_only', 'extension_granted' => false,
+        ]);
+        $this->assertTrue(TripCloser::close($trip, 'target_done'));
+        $this->assertNotNull($trip->refresh()->ended_at);
+    }
+
+    /**
+     * BRIEF lanjutan skenario (b) — aktivitas terakhir jam 02:00, halaman dibuka
+     * 09:00 (idle 7 jam > 6 jam) → ditutup, ended_at = 02:00 (aktivitas terakhir),
+     * BUKAN 09:00 (jam dicek).
+     */
+    public function test_trip_idle_past_default_threshold_across_midnight_is_closed_with_last_activity_as_ended_at(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-28 09:00:00'));
+
+        $owner = $this->owner();
+        $operator = $this->operator($owner);
+        $cluster = Cluster::create(['name' => 'C', 'owner_id' => $owner->id]);
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $cluster->id]);
+
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'starting_cluster_id' => $cluster->id,
+            'trip_date' => '2026-10-27', 'trip_number_of_day' => 1,
+            'started_at' => Carbon::parse('2026-10-27 18:00:00'), 'ended_at' => null,
+        ]);
+        $lastActivity = Carbon::parse('2026-10-28 02:00:00');
+        KioskVisit::create([
+            'trip_id' => $trip->id, 'kiosk_id' => $kiosk->id,
+            'visited_at' => $lastActivity,
+            'visit_action' => 'drop_only', 'extension_granted' => false,
+        ]);
+
+        $closed = TripAutoCloser::closeStaleForOperator($operator->id);
+
+        $this->assertSame(1, $closed);
+        $trip->refresh();
+        $this->assertNotNull($trip->ended_at);
+        $this->assertSame('auto_closed', $trip->ended_reason);
+        $this->assertTrue($trip->ended_at->equalTo($lastActivity), 'ended_at harus sama dengan aktivitas terakhir (02:00), bukan jam saat dicek (09:00).');
+    }
+
+    /**
+     * BRIEF lanjutan skenario (c) — aktivitas terakhir 17:36, halaman dibuka besok
+     * 08:00 (idle ~14 jam > 6 jam) → ditutup.
+     */
+    public function test_trip_idle_overnight_without_crossing_near_midnight_is_closed(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-28 08:00:00'));
+
+        $owner = $this->owner();
+        $operator = $this->operator($owner);
+        $cluster = Cluster::create(['name' => 'C', 'owner_id' => $owner->id]);
+
+        $startedAt = Carbon::parse('2026-10-27 17:36:00');
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'starting_cluster_id' => $cluster->id,
+            'trip_date' => '2026-10-27', 'trip_number_of_day' => 1,
+            'started_at' => $startedAt, 'ended_at' => null,
+        ]);
+
+        $closed = TripAutoCloser::closeStaleForOperator($operator->id);
+
+        $this->assertSame(1, $closed);
+        $this->assertTrue($trip->refresh()->ended_at->equalTo($startedAt));
+    }
+
+    /** BRIEF lanjutan skenario (e) — ambang N jam bisa diubah lewat config (env). */
+    public function test_idle_threshold_is_configurable_via_config(): void
+    {
+        Config::set('trips.auto_close_idle_hours', 1);
+        $this->assertSame(1, TripAutoCloser::idleHoursThreshold());
+
+        Carbon::setTestNow(Carbon::parse('2026-10-28 00:20:00'));
+
+        $owner = $this->owner();
+        $operator = $this->operator($owner);
+        $cluster = Cluster::create(['name' => 'C', 'owner_id' => $owner->id]);
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $cluster->id]);
+
+        // Aktivitas terakhir 23:50 — idle 30 menit. Dengan ambang default (6 jam)
+        // TIDAK ditutup, tapi dengan ambang 1 jam juga belum (30 menit < 1 jam).
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'starting_cluster_id' => $cluster->id,
+            'trip_date' => '2026-10-27', 'trip_number_of_day' => 1,
+            'started_at' => Carbon::parse('2026-10-27 18:00:00'), 'ended_at' => null,
+        ]);
+        KioskVisit::create([
+            'trip_id' => $trip->id, 'kiosk_id' => $kiosk->id,
+            'visited_at' => Carbon::parse('2026-10-27 23:50:00'),
+            'visit_action' => 'drop_only', 'extension_granted' => false,
+        ]);
+
+        $this->assertSame(0, TripAutoCloser::closeStaleForOperator($operator->id));
+        $this->assertNull($trip->refresh()->ended_at);
+
+        // Majukan "sekarang" melewati ambang 1 jam sejak aktivitas terakhir (23:50 + 1 jam = 00:50).
+        Carbon::setTestNow(Carbon::parse('2026-10-28 01:00:00'));
+
+        $this->assertSame(1, TripAutoCloser::closeStaleForOperator($operator->id));
+        $this->assertNotNull($trip->refresh()->ended_at);
+    }
+
+    /** trip hari ini (trip_date = hari ini) tidak pernah masuk kandidat, berapa pun idle-nya. */
+    public function test_trip_from_today_is_never_auto_closed_regardless_of_idle_hours(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-28 23:59:00'));
+
+        $owner = $this->owner();
+        $operator = $this->operator($owner);
+        $cluster = Cluster::create(['name' => 'C', 'owner_id' => $owner->id]);
+
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'starting_cluster_id' => $cluster->id,
+            'trip_date' => '2026-10-28', 'trip_number_of_day' => 1,
+            'started_at' => Carbon::parse('2026-10-28 06:00:00'), 'ended_at' => null,
+        ]);
+
+        $this->assertSame(0, TripAutoCloser::closeStaleForOperator($operator->id));
+        $this->assertNull($trip->refresh()->ended_at);
+    }
+
+    /** idleInfo() melaporkan aktivitas terakhir & jam idle yang konsisten dengan closeStaleTrip(). */
+    public function test_idle_info_reports_last_activity_and_idle_hours(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-28 09:30:00'));
+
+        $owner = $this->owner();
+        $operator = $this->operator($owner);
+        $cluster = Cluster::create(['name' => 'C', 'owner_id' => $owner->id]);
+
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'starting_cluster_id' => $cluster->id,
+            'trip_date' => '2026-10-27', 'trip_number_of_day' => 1,
+            'started_at' => Carbon::parse('2026-10-28 02:00:00'), 'ended_at' => null,
+        ]);
+
+        $info = TripAutoCloser::idleInfo($trip);
+
+        $this->assertTrue($info['last_activity_at']->equalTo(Carbon::parse('2026-10-28 02:00:00')));
+        $this->assertSame(7.5, $info['idle_hours']);
+        $this->assertTrue($info['is_idle_long_enough']);
     }
 }

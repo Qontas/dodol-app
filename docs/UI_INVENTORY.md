@@ -35,6 +35,7 @@ File: `app/Livewire/Operator/Dashboard.php` + `resources/views/livewire/operator
   - Jika ADA trip aktif (`started_at` terisi, `ended_at` masih null — **TANPA filter tanggal** sejak brief 27 Okt 2026 "TRIP LUPA DIAKHIRI", lihat `Dashboard.php:32-39`): tombol hijau **"Lanjutkan Trip Aktif"** dengan sub-teks **"Trip #{nomor} hari ini"** (trip hari ini, kasus normal) atau **"Trip #{nomor} sejak {tgl}"** (kalau karena sebab apapun belum sempat ditutup otomatis sebelum halaman dimuat), mengarah ke `operator.trip.active` (`dashboard.blade.php:21-38`).
   - Jika TIDAK ada trip aktif: tombol kuning/amber **"Mulai Trip"** dengan sub-teks **"Tap untuk mulai ngantar"**, mengarah ke `operator.trip.start` (`dashboard.blade.php:32-42`).
 - **BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI"** — sebelum halaman ini dirender, `App\Http\Middleware\AutoCloseStaleTrips` menutup otomatis SEMUA trip milik operator ini yang `trip_date`-nya sudah lewat & belum diakhiri (`ended_reason='auto_closed'`) — lihat A3/C2. Konsekuensinya, kartu "Trip Hari Ini" & "Lanjutkan Trip Aktif" di atas praktis SELALU hanya mencerminkan trip hari ini.
+- **BRIEF lanjutan 27 Okt 2026 "SYARAT IDLE MINIMAL"** — penutupan otomatis di atas kini butuh DUA syarat sekaligus: `trip_date` lewat **DAN** trip tidak aktif lebih dari `config('trips.auto_close_idle_hours')` jam (default 6, lihat `App\Support\TripAutoCloser::idleInfo()`). Kalau operator masih mengantar lewat tengah malam (aktivitas terakhir < N jam lalu), trip kemarin itu TIDAK ditutup saat halaman ini dibuka jam 00:xx — kartu tetap menunjukkan trip kemarin sebagai "Lanjutkan Trip Aktif" ("Trip #{nomor} sejak {tgl}"), bukan trip baru.
 
 ### A3. Mulai Trip
 
@@ -64,6 +65,7 @@ Form "Mulai Trip" (ketika tidak ada trip aktif):
 - Pesan gagal total (`StartTrip.php:384-385`): **"Trip gagal dibuat. Coba tekan Mulai Trip sekali lagi; kalau tetap gagal, hubungi owner."**
 - Penomoran trip harian **unik per OWNER** (lintas semua operator owner itu), bukan per operator (`StartTrip.php:328-348`).
 - **BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI"** — guard "masih punya trip berjalan" (`activeTrip()`, `StartTrip.php:74-84`) sekarang mengecek trip berjalan **TANGGAL BERAPA PUN** (dulu hanya hari ini — operator bisa diam-diam mulai trip baru keesokan harinya sementara trip lama menggantung selamanya, tidak masuk Riwayat/Laporan). Tidak jadi masalah di layar ini: `App\Http\Middleware\AutoCloseStaleTrips` sudah menutup otomatis semua trip operator yang `trip_date`-nya lewat hari SEBELUM halaman ini dimuat, jadi yang tersisa & terdeteksi guard ini normalnya cuma trip hari ini — kartu di atas tetap tampil seperti biasa.
+- **BRIEF lanjutan 27 Okt 2026 "SYARAT IDLE MINIMAL" (item 2)** — ini JUSTRU jadi jaring pengaman utamanya: kalau trip kemarin belum idle cukup lama (operator masih mengantar lewat tengah malam), middleware TIDAK menutupnya (lihat A2), sehingga `activeTrip()` di sini tetap menemukannya dan menampilkan kartu "Kamu masih punya trip berjalan" (Lanjutkan Trip / Batalkan Trip) — operator tidak pernah diam-diam dilempar ke form trip baru di tengah pengantaran yang belum selesai.
 
 ### A4. Layar trip aktif
 
@@ -1072,6 +1074,8 @@ Konstanta `VALID_END_REASONS`:
 ```
 
 **Ditambahkan 27 Okt 2026 (BRIEF "TRIP LUPA DIAKHIRI" item 2/4):** nilai `ended_reason` yang bisa tersimpan di kolom `trips.ended_reason` (string biasa, bukan enum DB) bertambah satu: **`'auto_closed'`** — ditulis HANYA oleh sistem (`App\Support\TripCloser::close()` dipicu `App\Support\TripAutoCloser`, lihat A2/A3/B2/B3), bukan dari daftar `VALID_END_REASONS` di atas, sehingga operator tidak bisa memilihnya sendiri lewat modal "Alasan Mengakhiri" (A10). Mapping tampilan label untuk `auto_closed` adalah **"Ditutup otomatis (lupa diakhiri)"** di dashboard owner (B2) dan badge pendek **"Ditutup otomatis"** di Riwayat Trip/detail/PDF/Excel (B3, `app/Exports/TripReportExport.php`, `resources/views/exports/trip-report-pdf.blade.php`).
+
+**Diubah 27 Okt 2026 (BRIEF lanjutan "SYARAT IDLE MINIMAL" item 1):** `TripAutoCloser` (dan command `trips:auto-close-stale`, lihat NEXT_SESSION.md) tidak lagi menutup trip HANYA karena `trip_date < hari ini` — syaratnya sekarang KEDUANYA: tanggal lewat **DAN** aktivitas terakhir trip (kunjungan/delivery/tambah stok paling akhir; fallback `started_at`) sudah lebih dari `config('trips.auto_close_idle_hours')` jam yang lalu (default 6, override via `.env` `TRIP_AUTO_CLOSE_IDLE_HOURS`). `ended_at` yang ditulis tetap = waktu aktivitas terakhir itu (tidak berubah). Tujuannya: operator yang masih mengantar lewat tengah malam tidak mendadak kehilangan trip-nya sendiri begitu membuka halaman apa pun setelah jam 00:00 (lihat A2/A3).
 
 ### C3. Satuan Mika vs Biji
 

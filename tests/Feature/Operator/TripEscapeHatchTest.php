@@ -11,7 +11,9 @@ use App\Models\KioskVisit;
 use App\Models\ProductVariant;
 use App\Models\Trip;
 use App\Models\User;
+use App\Support\TripAutoCloser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -38,6 +40,12 @@ use Tests\TestCase;
 class TripEscapeHatchTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
 
     /** @return array{0: User, 1: User, 2: Cluster, 3: Cluster} */
     private function scaffold(): array
@@ -479,6 +487,47 @@ class TripEscapeHatchTest extends TestCase
         Livewire::test(StartTrip::class)
             ->assertDontSee('Kamu masih punya trip berjalan')
             ->assertSee('Berapa mika yang kamu bawa hari ini?');
+    }
+
+    /**
+     * BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" (lanjutan "SYARAT IDLE MINIMAL") —
+     * trip kemarin yang MASIH dipakai operator mengantar lewat tengah malam
+     * (aktivitas terakhir 23:50, halaman dibuka 00:20, idle < 6 jam default)
+     * TIDAK ditutup otomatis oleh middleware, sehingga guard "trip berjalan"
+     * tetap mendeteksinya — kartu "Lanjutkan Trip" muncul, BUKAN form trip baru.
+     */
+    public function test_trip_still_idle_across_midnight_keeps_blocking_new_trip_as_running(): void
+    {
+        [$owner, $operator, $kota1] = $this->scaffold();
+        Carbon::setTestNow(Carbon::parse('2026-10-28 00:20:00'));
+
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'trip_date' => '2026-10-27', 'trip_number_of_day' => 1,
+            'starting_cluster_id' => $kota1->id,
+            'started_at' => Carbon::parse('2026-10-27 18:00:00'), 'ended_at' => null,
+        ]);
+        $kiosk = Kiosk::factory()->create(['cluster_id' => $kota1->id]);
+        KioskVisit::create([
+            'trip_id' => $trip->id, 'kiosk_id' => $kiosk->id,
+            'visited_at' => Carbon::parse('2026-10-27 23:50:00'),
+            'visit_action' => 'drop_only', 'extension_granted' => false,
+        ]);
+
+        $this->actingAs($operator);
+
+        // Simulasi pemicu 2a (middleware) — trip ini TIDAK boleh ikut tertutup.
+        $closed = TripAutoCloser::closeStaleForOperator($operator->id);
+        $this->assertSame(0, $closed);
+        $this->assertNull($trip->refresh()->ended_at);
+
+        Livewire::test(StartTrip::class)
+            ->assertSee('Kamu masih punya trip berjalan')
+            ->assertSee('Trip #1')
+            ->assertDontSee('Berapa mika yang kamu bawa hari ini?');
+
+        // Operator tetap bisa lanjut memakai trip yang sama — ActiveTrip membukanya.
+        Livewire::test(ActiveTrip::class)->assertSet('trip.id', $trip->id);
     }
 
     /**
