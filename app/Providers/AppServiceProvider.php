@@ -24,6 +24,14 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->bind(LoginResponseContract::class, LoginResponse::class);
         $this->app->bind(LogoutResponseContract::class, LogoutResponse::class);
+
+        // BRIEF 27 Okt 2026 "KEMBALI MENAMPILKAN sw.js" — ganti StartSession bawaan
+        // dengan subclass yang tidak menimpa _previous.url untuk endpoint non-halaman
+        // (csrf-token, foto kios, dst). Lihat App\Http\Middleware\StartSession.
+        $this->app->bind(
+            \Illuminate\Session\Middleware\StartSession::class,
+            \App\Http\Middleware\StartSession::class,
+        );
     }
 
     /**

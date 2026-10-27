@@ -516,6 +516,9 @@ class OwnerDashboardController extends Controller
             'stopped_by' => null,
         ]);
 
-        return back()->with('kiosk_reactivated', "Kios {$kiosk->name} diaktifkan kembali.");
+        // BRIEF 27 Okt 2026 "KEMBALI MENAMPILKAN sw.js" audit — form aksi ini HANYA ada
+        // di dashboard owner (satu tujuan tetap), jadi diganti back() → route eksplisit
+        // supaya tak ikut bergantung pada Referer/_previous.url sama sekali.
+        return redirect()->route('owner.dashboard')->with('kiosk_reactivated', "Kios {$kiosk->name} diaktifkan kembali.");
     }
 }
