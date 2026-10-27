@@ -56,7 +56,13 @@ class SuperAdminStatsOverview extends BaseWidget
             Stat::make('Total Kios Terdaftar', $kiosks)
                 ->description('Semua kios aktif dari semua owner')
                 ->icon('heroicon-o-building-storefront'),
+            // BRIEF 27 Okt 2026 "TRIP BERJALAN" — $trips (atas) hitung SEMUA trip trip_date
+            // hari ini lintas owner, TERMASUK yang belum diakhiri (ended_at null). Riwayat
+            // Trip owner (TripHistoryController::index()) hanya menampilkan trip SELESAI di
+            // tabel utamanya (trip berjalan ditampilkan terpisah di atasnya) — caption ini
+            // supaya angka di sini tak disalahpahami "trip selesai" saat dibandingkan owner.
             Stat::make('Total Trip Hari Ini', $trips)
+                ->description('Semua owner, termasuk yang masih berjalan')
                 ->icon('heroicon-o-truck'),
             Stat::make('Total Omset Global Hari Ini', 'Rp ' . number_format($omset, 0, ',', '.'))
                 ->icon('heroicon-o-currency-dollar'),
