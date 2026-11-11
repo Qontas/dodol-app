@@ -25,6 +25,10 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(LoginResponseContract::class, LoginResponse::class);
         $this->app->bind(LogoutResponseContract::class, LogoutResponse::class);
 
+        // Singleton: penghitung query-nya state instance & listener DB::listen cukup
+        // didaftarkan sekali (aman di Octane yang memakai ulang proses antar request).
+        $this->app->singleton(\App\Http\Middleware\LogSlowRequests::class);
+
         // BRIEF 27 Okt 2026 "KEMBALI MENAMPILKAN sw.js" — ganti StartSession bawaan
         // dengan subclass yang tidak menimpa _previous.url untuk endpoint non-halaman
         // (csrf-token, foto kios, dst). Lihat App\Http\Middleware\StartSession.

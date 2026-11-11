@@ -26,6 +26,11 @@ return Application::configure(basePath: dirname(__DIR__))
             | Request::HEADER_X_FORWARDED_PROTO
             | Request::HEADER_X_FORWARDED_AWS_ELB);
 
+        // BRIEF 11 Nov 2026 "PERFORMA MELAMBAT" — pencatat request lambat + header
+        // Server-Timing. Paling depan supaya durasinya mencakup semua middleware lain.
+        // Ambang & saklar: config/performance.php.
+        $middleware->prepend(\App\Http\Middleware\LogSlowRequests::class);
+
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'no-store' => \App\Http\Middleware\NoStoreAuthPages::class,
