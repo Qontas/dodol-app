@@ -6,6 +6,7 @@ use App\Models\Trip;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * BRIEF 27 Okt 2026 "TRIP LUPA DIAKHIRI" item 2 — TUTUP OTOMATIS GANTI HARI.
@@ -163,11 +164,19 @@ class TripAutoCloser
      */
     public static function lastActivityAt(Trip $trip): Carbon
     {
-        $timestamps = collect([
-            $trip->visits()->max('visited_at'),
-            $trip->deliveries()->max('created_at'),
-            $trip->stockAdditions()->max('created_at'),
-        ])->filter()->map(fn ($t) => Carbon::parse($t));
+        // PERF (brief 11 Nov 2026): dulu 3 query max() terpisah, dihitung ULANG di
+        // setiap request selama ada trip kemarin yang belum cukup idle. Kini satu
+        // query dengan 3 subselect (hasil identik, 3 → 1 round-trip per request).
+        $row = DB::selectOne(
+            'select
+                (select max(visited_at) from kiosk_visits where trip_id = ?) as last_visit,
+                (select max(created_at) from deliveries where trip_id = ?) as last_delivery,
+                (select max(created_at) from trip_stock_additions where trip_id = ?) as last_stock',
+            [$trip->id, $trip->id, $trip->id],
+        );
+
+        $timestamps = collect([$row->last_visit, $row->last_delivery, $row->last_stock])
+            ->filter()->map(fn ($t) => Carbon::parse($t));
 
         return $timestamps->isNotEmpty() ? $timestamps->max() : Carbon::parse($trip->started_at);
     }

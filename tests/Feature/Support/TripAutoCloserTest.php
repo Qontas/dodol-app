@@ -518,4 +518,33 @@ class TripAutoCloserTest extends TestCase
         $this->assertSame(7.5, $info['idle_hours']);
         $this->assertTrue($info['is_idle_long_enough']);
     }
+
+    /** PERF (brief 11 Nov 2026): lastActivityAt() = SATU query, bukan 3 max() terpisah. */
+    public function test_last_activity_at_uses_a_single_query_and_picks_latest_source(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-28 09:30:00'));
+
+        $owner = $this->owner();
+        $operator = $this->operator($owner);
+        $cluster = Cluster::create(['name' => 'C', 'owner_id' => $owner->id]);
+
+        $trip = Trip::factory()->create([
+            'owner_id' => $owner->id, 'operator_id' => $operator->id,
+            'starting_cluster_id' => $cluster->id,
+            'trip_date' => '2026-10-27', 'trip_number_of_day' => 1,
+            'started_at' => Carbon::parse('2026-10-27 06:00:00'), 'ended_at' => null,
+        ]);
+        TripStockAddition::create([
+            'trip_id' => $trip->id, 'qty' => 20, 'added_by' => $operator->id,
+        ])->forceFill(['created_at' => Carbon::parse('2026-10-27 22:15:00')])->save();
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $last = TripAutoCloser::lastActivityAt($trip);
+        $queries = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        $this->assertSame(1, $queries);
+        $this->assertTrue($last->equalTo(Carbon::parse('2026-10-27 22:15:00')));
+    }
 }
