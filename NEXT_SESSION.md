@@ -1,6 +1,59 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 11 November 2026*
 
+## 🟢 BRIEF 11 NOV 2026: PERFORMA MELAMBAT — LOG REQUEST LAMBAT DI PROD + AUDIT ULANG DATA SEKARANG — SELESAI, boleh push (tidak ada migrasi)
+
+Commit: `636a2ea` (instrumentasi), `a35ac9a` (lastActivityAt 3→1 query), `d52c5ee` (widget stok batch withSum), `22a1e9f` (seeder + harness audit). Suite penuh **743 PASS** (741 setelah instrumentasi, +2 test baru).
+
+**1. Instrumentasi prod** — `App\Http\Middleware\LogSlowRequests` (global, `prepend`), config `config/performance.php`:
+- Request dengan durasi > `SLOW_REQUEST_MS` (800) ATAU query > `SLOW_REQUEST_QUERIES` (40) → SATU baris warning ke channel `SLOW_REQUEST_LOG_CHANNEL` (default `stderr`, supaya muncul di Railway Logs; channel `single` menulis file di container yang tak terlihat):
+  `SLOW_REQUEST route=owner.dashboard method=GET status=200 dur_ms=1234 queries=69 db_ms=210 role=owner`
+- Isi HANYA: nama route (route tak bernama → template `uri:...`, bukan URL asli), method, status, durasi, jumlah query, total ms query, role. TIDAK ada email/nama/parameter/isi query.
+- Header `Server-Timing: app;dur=…, db;dur=…, q;desc="N queries"` di respons HTML (DevTools → Network → Timing; ikut terlihat di sw/Chrome Android remote debugging).
+- Saklar via Variables Railway (tanpa deploy kode): `SLOW_REQUEST_ENABLED`, `SLOW_REQUEST_MS`, `SLOW_REQUEST_QUERIES`, `SLOW_REQUEST_LOG_CHANNEL`, `SERVER_TIMING_ENABLED`. phpunit.xml mematikannya (test sendiri menyalakan). Aman untuk Octane (singleton, `DB::listen` sekali).
+- **Cara baca di Railway:** service → Logs → filter `SLOW_REQUEST`. Kelompokkan per `route=`; `queries` tinggi + `db_ms` tinggi = masalah query; `dur_ms` tinggi tapi `db_ms` rendah = PHP/render/jaringan eksternal (mis. peta/foto). Turunkan `SLOW_REQUEST_MS` ke 300 sementara bila ingin tahu lebih banyak.
+
+**2. Audit ulang** — dataset prod-like: `database/seeders/PerfDatasetSeeder.php` (3 owner; A=300 kios/6 area/3 operator, 60 hari trip, trip berjalan, trip kemarin belum idle, trip lupa diakhiri; menolak DB bukan `*_perf_db`) + `scripts/perf-audit.php`:
+```
+mysql: CREATE DATABASE cemilan_qontas_perf_db;
+DB_DATABASE=cemilan_qontas_perf_db php artisan migrate:fresh --force
+DB_DATABASE=cemilan_qontas_perf_db php artisan db:seed --class=PerfDatasetSeeder --force
+DB_DATABASE=cemilan_qontas_perf_db SESSION_DRIVER=array CACHE_STORE=array php scripts/perf-audit.php <label> [runs=5] [substring-skenario-untuk-dump-query]
+```
+Hasil JSON di `storage/perf/<label>.json` (di-.gitignore). Wall ms = dalam proses PHP di mesin dev, BUKAN Railway → pakai jumlah query sebagai pembanding utama.
+
+| Halaman | Query sebelum → sesudah | DB ms | Catatan |
+|---|---|---|---|
+| Login | 0 → 0 | 0 | — |
+| Beranda operator (trip berjalan) | 4 → 4 | 1.5→1.4 | — |
+| Beranda operator (trip kemarin belum idle) | **7 → 5** | 2.2→1.7 | idleInfo dihitung tiap request: 3→1 query |
+| Mulai Trip | 3 → 3 | — | — |
+| Trip Aktif (300 kios) | 14 → 14 | 26 | withCount kios ±30 ms (dilaporkan) |
+| Kios Baru | 8 → 8 | — | — |
+| Dashboard owner | **74 → 69** | **102→69** | trip belum idle −2; stok batch: query 9.5 ms → SUM |
+| Riwayat Trip | **35 → 31** | 21→18 | kandidat belum idle −4 (owner A punya 2 trip kemarin) |
+| Detail Trip | **42 → 38** | 13→11 | 6 duplikat persis TETAP (dilaporkan) |
+| Laporan Periode | **26 → 22** | 24→29 | — |
+| Laporan Bulanan | **29 → 25** | 36→33 | — |
+| Manajemen Kios (300 kios) | 6 → 6 | 32→13 | wall ±390 ms = render Filament 300 baris |
+| Live Trip poll 30s | 14 → 14 | 8 | — |
+| Widget admin (6) | 15/12/13/1/3/2 → sama | — | OwnerPerformance & OperatorKomisi ±115 ms wall |
+
+(Penghematan −4 di halaman owner = 2 trip kandidat × (3→1 query); di data nyata tergantung ada/tidaknya trip lintas tengah malam yang belum idle.)
+
+**3. Biaya per page-load (dari dump query)**
+- `AutoCloseStaleTrips`: kasus normal 1 query (kandidat stale). Bila ada trip kemarin yang BELUM idle 6 jam, `idleInfo()` dihitung ulang tiap request (sebelumnya +3 query, kini +1) selama jendela itu (maks ±6 jam setelah tengah malam). Tidak di-cache lintas request sengaja (hasil harus akurat saat aksi operator).
+- Trip Berjalan (Riwayat): murah — pakai `TripAggregator::for` batch.
+- Guard stok `MotorStockGuard`: hanya saat aksi (lockForUpdate), bukan tiap page-load. `getStokDiMotor()` dipakai di Detail Trip (2–3 query kecil).
+- Polling: Live Trip 30 s = 14 query/tick/owner yang membuka dashboard (±8 ms DB); AppFee widgets 30 s hanya admin; OmsetChart 60 s 1 query. Murah, tapi ×jumlah tab terbuka.
+- Service worker v6: navigasi network-first (timeout 8 s), `/livewire/*` dibypass → tidak menambah beban server.
+
+**4. TIDAK dikerjakan (laporan, butuh keputusan)**
+- Detail Trip: 6 query duplikat persis (sum deliveries ×4, sum stockAdditions ×3, max visited_at) dari accessor Trip dipanggil berulang di view → bisa dicache per-instance; risiko rendah tapi menyentuh accessor inti → tunggu OK.
+- Owner Dashboard `TripAggregator::for` dipanggil 3× (bulan ini, bulan lalu, completedTrips) = 3×9 query; bisa digabung 1 panggilan (±18 query) → perubahan besar di controller keuangan, laporkan dulu.
+- Manajemen Kios: wall ±390 ms (300 baris Filament); saran paginate 25 (cek default) atau kurangi kolom.
+- Index: tidak ada migrasi di brief ini → kandidat `kiosk_visits(trip_id, visited_at)`, `deliveries(trip_id, created_at)`, `trip_stock_additions(trip_id, created_at)` untuk max() lastActivityAt; belum perlu pada 300 kios (semua < 1 ms).
+
 ## 🟡 BRIEF 11 NOV 2026: DAFTAR HARGA PER KEDAI + TITIPAN PERTAMA DARI PANEL OWNER KENA FEE — SELESAI LOKAL, ADA MIGRASI → **JANGAN PUSH SEBELUM OWNER BACKUP DB PRODUKSI**
 
 Branch `feat/price-tiers-owner-placed`, 1 commit atomik lokal (belum di-push). Tidak ada akses prod.
