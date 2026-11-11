@@ -4,7 +4,6 @@ namespace App\Support;
 
 use App\Models\Delivery;
 use App\Models\Kiosk;
-use App\Models\ProductVariant;
 use App\Models\Trip;
 
 /**
@@ -26,7 +25,7 @@ class ConsignmentDrop
      * Return null bila qty < 1 atau owner kios tak punya varian produk aktif (caller
      * memutuskan apakah itu fatal — untuk create-kiosk tidak fatal: kios tetap tersimpan).
      */
-    public static function record(Kiosk $kiosk, Trip $trip, int $qtyMika, ?string $notes = null): ?Delivery
+    public static function record(Kiosk $kiosk, Trip $trip, int $qtyMika, ?string $notes = null, string $sourceType = 'new_procurement'): ?Delivery
     {
         if ($qtyMika < 1) {
             return null;
@@ -34,10 +33,7 @@ class ConsignmentDrop
 
         $ownerId = $kiosk->cluster?->owner_id;
 
-        $variant = ProductVariant::query()
-            ->where('is_active', true)
-            ->when($ownerId !== null, fn ($q) => $q->whereHas('product', fn ($p) => $p->where('owner_id', $ownerId)))
-            ->first();
+        $variant = KioskPricing::activeVariantForOwner($ownerId);
 
         if (! $variant) {
             return null; // tak ada varian aktif → tak bisa buat titipan
@@ -48,10 +44,10 @@ class ConsignmentDrop
             'trip_id' => $trip->id,
             'product_variant_id' => $variant->id,
             'procurement_batch_id' => null,
-            'source_type' => 'new_procurement',
+            'source_type' => $sourceType,
             'delivery_type' => 'consignment',
             'qty_delivered' => $qtyMika,
-            'unit_price' => $variant->sale_price_per_pack,
+            'unit_price' => KioskPricing::pricePerPack($kiosk, $variant),
             'cost_snapshot' => $variant->cost_per_pack,
             'units_per_pack_snapshot' => $variant->units_per_pack,
             'notes' => $notes,

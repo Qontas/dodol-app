@@ -430,7 +430,7 @@
 
                 {{-- Total otomatis: mika × harga per mika VARIAN AKTIF (bukan konstanta
                      15/800 global) — lihat ActiveTrip::previewVariant(). --}}
-                @php $pv = $this->previewVariant(); @endphp
+                @php $pv = $this->previewVariant(true); @endphp
                 <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
                     <p class="text-xs text-amber-700 font-semibold uppercase tracking-wide">Total Harga (Lunas Cash)</p>
                     <p class="text-2xl font-bold text-amber-800 mt-1">
@@ -891,7 +891,9 @@
                                     <span class="text-xs font-bold text-amber-800 uppercase tracking-wider">Titipan Sebelumnya</span>
                                     <span class="text-sm font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} Mika ({{ $pendingDelivery->qty_biji_delivered }} Biji)</span>
                                 </div>
-                                <div class="grid grid-cols-2 gap-4 mb-4">
+                                <p class="text-xs text-amber-800 mb-3">Harga tagihan titipan lama: <b>Rp {{ number_format($pendingDelivery->harga_per_biji, 0, ',', '.') }}/biji</b> (snapshot saat dititip).</p>
+
+                            <div class="grid grid-cols-2 gap-4 mb-4">
                                     <div>
                                         <label class="block text-xs font-medium text-slate-700 mb-1">Sisa Bagus (Biji)</label>
                                         <input type="number" onfocus="this.select()" wire:model.live="returnFresh" class="w-full rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-center text-lg font-bold" min="0">
@@ -1158,6 +1160,15 @@
                         @endswitch
                     </p>
 
+                    @if(in_array($chosenAction, ['tagih_titip', 'titip_cash', 'mulai_titipan'], true))
+                        @php $newPrice = $this->previewVariant(); @endphp
+                        <p class="text-xs text-emerald-700 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
+                            Harga titipan baru: <b>Rp {{ number_format($newPrice->sale_price_per_pack / max(1, $newPrice->units_per_pack), 0, ',', '.') }}/biji</b>
+                            (Rp {{ number_format($newPrice->sale_price_per_pack, 0, ',', '.') }}/mika, {{ $newPrice->units_per_pack }} biji).
+                            Tidak mengubah tagihan titipan lama.
+                        </p>
+                    @endif
+
                     {{-- AREA TAGIHAN — AKSI 1 (tagih + titip ulang) & GANTI KE CASH
                          (tagih titipan TERAKHIR, tak titip lagi). Form settle-nya sama. --}}
                     @if(in_array($chosenAction, ['tagih_titip', 'ganti_cash'], true) && $pendingDelivery)
@@ -1171,6 +1182,8 @@
                                 <span class="text-xs font-bold text-amber-800 uppercase tracking-wider">Titipan Sebelumnya</span>
                                 <span class="text-sm font-bold text-slate-900">{{ $pendingDelivery->qty_delivered }} Mika ({{ $pendingDelivery->qty_biji_delivered }} Biji)</span>
                             </div>
+
+                            <p class="text-xs text-amber-800 mb-3">Harga tagihan titipan lama: <b>Rp {{ number_format($pendingDelivery->harga_per_biji, 0, ',', '.') }}/biji</b> (snapshot saat dititip).</p>
 
                             <div class="grid grid-cols-2 gap-4 mb-4">
                                 <div>

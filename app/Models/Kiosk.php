@@ -24,6 +24,23 @@ class Kiosk extends Model
     protected static function booted(): void
     {
         static::addGlobalScope(new OwnerScope);
+
+        static::saving(function (self $kiosk): void {
+            if ($kiosk->price_tier_id === null) {
+                return;
+            }
+            $cluster = Cluster::query()->find($kiosk->cluster_id);
+            $tier = PriceTier::query()->with('productVariant.product')->find($kiosk->price_tier_id);
+            if (! $cluster || ! $tier || $tier->owner_id !== $cluster->owner_id
+                || $tier->productVariant?->product?->owner_id !== $cluster->owner_id) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'price_tier_id' => 'Tingkatan harga harus berasal dari usaha yang sama dengan kios.',
+                ]);
+            }
+            if (! $kiosk->exists || $kiosk->isDirty('price_tier_id')) {
+                \App\Support\KioskPricing::validateTier((int) $tier->id, $cluster->owner_id, (int) $tier->product_variant_id);
+            }
+        });
     }
 
     /**
@@ -40,6 +57,7 @@ class Kiosk extends Model
         'owner_name',
         'phone',
         'cluster_id',
+        'price_tier_id',
         'sort_order',
         'target_visit_interval_days',
         'warning_visit_interval_days',
@@ -85,6 +103,11 @@ class Kiosk extends Model
         return $this->stop_reason
             ? (self::STOP_REASONS[$this->stop_reason] ?? $this->stop_reason)
             : null;
+    }
+
+    public function priceTier(): BelongsTo
+    {
+        return $this->belongsTo(PriceTier::class);
     }
 
     public function cluster(): BelongsTo

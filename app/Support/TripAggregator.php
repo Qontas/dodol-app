@@ -44,10 +44,10 @@ class TripAggregator
             ->groupBy('trip_id')
             ->selectRaw('trip_id,
                 COALESCE(SUM(qty_delivered), 0) as mika_diantar,
-                COALESCE(SUM(CASE WHEN delivery_type <> ? THEN qty_delivered ELSE 0 END), 0) as drop_komisi,
+                COALESCE(SUM(CASE WHEN delivery_type <> ? AND source_type <> ? THEN qty_delivered ELSE 0 END), 0) as drop_komisi,
                 COALESCE(SUM(qty_delivered * COALESCE(units_per_pack_snapshot, 15)), 0) as biji_diantar,
-                COALESCE(SUM(CASE WHEN delivery_type <> ? THEN qty_delivered * COALESCE(units_per_pack_snapshot, 15) ELSE 0 END), 0) as biji_komisi',
-                ['bs_redistribution', 'bs_redistribution'])
+                COALESCE(SUM(CASE WHEN delivery_type <> ? AND source_type <> ? THEN qty_delivered * COALESCE(units_per_pack_snapshot, 15) ELSE 0 END), 0) as biji_komisi',
+                ['bs_redistribution', 'owner_placed', 'bs_redistribution', 'owner_placed'])
             ->get()
             ->keyBy('trip_id');
 

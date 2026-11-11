@@ -30,8 +30,12 @@ class OpeningBalance
      * Idempotensi ringan: kalau kios sudah punya delivery pending, TIDAK menumpuk.
      * Return null bila qty < 1 atau tak ada varian aktif owner.
      */
-    public static function create(Kiosk $kiosk, int $qtyMika): ?Delivery
+    public static function create(Kiosk $kiosk, int $qtyMika, string $sourceType = 'migration'): ?Delivery
     {
+        if (! in_array($sourceType, ['migration', 'owner_placed'], true)) {
+            throw new \InvalidArgumentException('Opening balance source must be migration or owner_placed.');
+        }
+
         if ($qtyMika < 1) {
             return null;
         }
@@ -43,22 +47,33 @@ class OpeningBalance
 
         $ownerId = $kiosk->cluster?->owner_id;
 
-        return DB::transaction(function () use ($kiosk, $qtyMika, $ownerId) {
+        return DB::transaction(function () use ($kiosk, $qtyMika, $ownerId, $sourceType) {
             $trip = static::migrationTripFor($ownerId);
 
             // Kios lama: first_titip_date di masa lampau (sebelum sistem) supaya tidak
             // terhitung "kios baru" untuk komisi. Hanya set kalau belum diisi owner.
             if ($kiosk->first_titip_date === null) {
-                $kiosk->forceFill(['first_titip_date' => today()->subDay()->toDateString()])->save();
+                $date = $sourceType === 'owner_placed' ? today() : today()->subDay();
+                $kiosk->forceFill(['first_titip_date' => $date->toDateString()])->save();
             }
 
             // SATU jalur delivery: sama dgn drop operator, hanya trip-nya = trip migrasi.
-            return ConsignmentDrop::record(
+            $delivery = ConsignmentDrop::record(
                 $kiosk,
                 $trip,
                 $qtyMika,
                 'Saldo awal (kios lama) — titipan berjalan sebelum masuk sistem.',
+                $sourceType,
             );
+
+            // The sentinel is shared for all dates/rates: never snapshot fee on it.
+            if ($delivery && $sourceType === 'owner_placed') {
+                $delivery->forceFill([
+                    'app_fee_per_pack_snapshot' => User::find($ownerId)?->getAppFeePerPackValue() ?? 0,
+                ])->save();
+            }
+
+            return $delivery;
         });
     }
 

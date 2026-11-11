@@ -20,6 +20,26 @@ class ProductVariant extends Model
     protected static function booted(): void
     {
         static::addGlobalScope(new OwnerScope);
+
+        static::created(function (self $variant): void {
+            PriceTier::create([
+                'product_variant_id' => $variant->id,
+                'name' => 'Standar',
+                'sale_price_per_pack' => $variant->sale_price_per_pack,
+                'is_default' => true,
+                'is_active' => true,
+            ]);
+        });
+    }
+
+    // A new variant and its initial default tier must commit (or roll back) together.
+    public function save(array $options = [])
+    {
+        if (! $this->exists) {
+            return \Illuminate\Support\Facades\DB::transaction(fn () => parent::save($options));
+        }
+
+        return parent::save($options);
     }
 
     protected $fillable = [
@@ -55,6 +75,16 @@ class ProductVariant extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function priceTiers(): HasMany
+    {
+        return $this->hasMany(PriceTier::class);
+    }
+
+    public function defaultPriceTier(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(PriceTier::class)->where('is_default', true)->where('is_active', true);
     }
 
     public function procurementBatches(): HasMany

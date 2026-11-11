@@ -6,7 +6,6 @@ use App\Filament\Concerns\RedirectsToIndex;
 use App\Filament\Resources\KioskResource;
 use App\Models\Kiosk;
 use App\Support\OpeningBalance;
-use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreateKiosk extends CreateRecord
@@ -15,15 +14,23 @@ class CreateKiosk extends CreateRecord
 
     protected static string $resource = KioskResource::class;
 
-    /**
-     * JENIS KEDAI saat create (radio "Jenis Kedai", form-only/dehydrated false):
-     *  - cash_only  → set is_cash_only=true (tak ada titipan/jatah).
-     *  - konsinyasi → kalau JATAH TITIPAN (default_qty_mika) >=1, otomatis buat titipan
-     *    berjalan SEJUMLAH JATAH itu (1 delivery konsinyasi PENDING) via OpeningBalance —
-     *    TANPA field mika terpisah — sehingga kios langsung bisa "Tagih + Titip Ulang" di
-     *    kunjungan pertama; tagihannya dikoreksi otomatis oleh input sisa/BS operator.
-     * Kegagalan titipan tak menggagalkan pembuatan kios.
-     */
+    // Create + titipan adalah satu transaksi: jangan simpan kedai seolah sudah
+    // dititip jika pencatatan owner_placed gagal.
+    protected ?bool $hasDatabaseTransactions = true;
+
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        if (($this->data['jenis_kedai'] ?? 'konsinyasi') === 'konsinyasi'
+            && ! in_array($this->data['first_placement'] ?? null, ['operator', 'owner_placed'], true)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'data.first_placement' => 'Pilih siapa yang menaruh titipan pertama.',
+            ]);
+        }
+
+        return $data;
+    }
+
+    /** Titipan operator menunggu trip; titipan owner dicatat tanpa komisi/stok motor. */
     protected function afterCreate(): void
     {
         $data = $this->data;
@@ -58,20 +65,24 @@ class CreateKiosk extends CreateRecord
             return;
         }
 
-        // Konsinyasi: titipan awal = JATAH (default_qty_mika). Satu angka, satu sumber.
+        if (($data['first_placement'] ?? null) === 'operator') {
+            // Jatah tetap terisi, tetapi belum ada delivery. Operator Mulai Titipan
+            // pada trip nyata supaya fee, komisi, dan stok motor tercatat di sana.
+            return;
+        }
+
+        // Owner menaruh sendiri: jumlah awal = jatah, fee dibekukan per delivery.
         $jatah = (int) ($kiosk->default_qty_mika ?? 0);
         if ($jatah < 1) {
             return;
         }
 
-        $delivery = OpeningBalance::create($kiosk, $jatah);
+        $delivery = OpeningBalance::create($kiosk, $jatah, 'owner_placed');
 
         if ($delivery === null) {
-            Notification::make()
-                ->title('Titipan berjalan belum tercatat')
-                ->body('Kios tersimpan, tapi titipan awal tidak dibuat (kios sudah punya titipan, atau belum ada varian produk aktif). Cek Master Data → Produk.')
-                ->warning()
-                ->send();
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'data.first_placement' => 'Titipan pertama belum dapat dicatat. Pastikan ada varian produk aktif milik usaha ini.',
+            ]);
         }
     }
 }

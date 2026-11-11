@@ -147,14 +147,16 @@ class BookingKiosOperatorTest extends TestCase
 
     public function test_badge_absent_for_cash_only_and_konsinyasi(): void
     {
-        // Cash-only & konsinyasi (punya jatah) BUKAN booking → tak ada badge.
+        // Cash-only tidak memakai badge; konsinyasi harus punya riwayat titipan,
+        // bukan sekadar jatah (C1 owner boleh menyiapkan jatah sebelum operator drop).
         Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id, 'name' => 'Kedai Cash', 'is_cash_only' => true,
         ]);
-        Kiosk::factory()->create([
+        $konsinyasi = Kiosk::factory()->create([
             'cluster_id' => $this->cluster->id, 'name' => 'Kedai Konsinyasi', 'is_cash_only' => false,
             'default_qty_mika' => 4,
         ]);
+        \App\Support\OpeningBalance::create($konsinyasi, 4);
 
         $this->actingAs($this->operator);
 

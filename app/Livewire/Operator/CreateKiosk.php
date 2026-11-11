@@ -10,6 +10,7 @@ use App\Support\ConsignmentDrop;
 use App\Support\GoogleMapsShortLinkResolver;
 use App\Support\KioskLocationParser;
 use App\Support\KioskPhoto;
+use App\Support\KioskPricing;
 use App\Support\MotorStockGuard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -26,6 +27,7 @@ class CreateKiosk extends Component
     public string $namaPemilik = '';
     public string $telepon = '';
     public ?int $clusterId = null;
+    public ?int $price_tier_id = null;
     public int $defaultQtyMika = 1;
     public ?float $latitude = null;
     public ?float $longitude = null;
@@ -156,6 +158,7 @@ class CreateKiosk extends Component
                 }
             })],
             'jenisKedai' => 'required|in:konsinyasi,cash_only,booking',
+            'price_tier_id' => 'nullable|integer',
             // Jatah WAJIB hanya saat menaruh dodol ke trip aktif (konsinyasi + trip aktif).
             // Cash-only / booking / konsinyasi-tanpa-trip tak punya jatah saat daftar.
             'defaultQtyMika' => $titipToTrip ? 'required|integer|min:1|max:100' : 'nullable|integer|min:1',
@@ -175,6 +178,11 @@ class CreateKiosk extends Component
             'defaultQtyMika.required' => 'Isi jatah (mika biasa dititip)',
             'defaultQtyMika.min' => 'Minimal 1 mika',
         ], KioskPhoto::pesanValidasi('foto')));
+
+        // Pilihan harga terikat varian aktif yang sama dengan penulis titipan.
+        // Validasi server wajib, termasuk payload tier tenant/varian lain atau nonaktif.
+        $variant = KioskPricing::activeVariantForOwner($ownerId);
+        KioskPricing::validateTier($this->price_tier_id, $ownerId, $variant?->id);
 
         // HEIC di server tanpa delegate HEIF: tolak DI SINI dengan instruksi yang bisa
         // ditindaklanjuti, jangan biarkan tersimpan mentah (= foto blank buat yang lain).
@@ -202,6 +210,7 @@ class CreateKiosk extends Component
                     'owner_name' => $this->namaPemilik,
                     'phone' => $this->telepon ?: null,
                     'cluster_id' => $this->clusterId, // wajib & tervalidasi milik owner.
+                    'price_tier_id' => $this->price_tier_id, // null = Standard, tanpa input harga bebas.
                     // Jatah HANYA di-set kalau dodol benar-benar ditaruh ke trip aktif.
                     // Booking / konsinyasi-tanpa-trip → NULL (belum ada titipan/jatah).
                     'default_qty_mika' => $titipToTrip ? $this->defaultQtyMika : null,
@@ -279,6 +288,7 @@ class CreateKiosk extends Component
     {
         return view('livewire.operator.create-kiosk', [
             'clusters' => $this->clusters,
+            'priceTierOptions' => KioskPricing::options(auth()->user()->owner_id, KioskPricing::activeVariantForOwner(auth()->user()->owner_id)?->id),
         ]);
     }
 }

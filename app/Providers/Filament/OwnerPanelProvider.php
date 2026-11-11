@@ -5,6 +5,7 @@ namespace App\Providers\Filament;
 use App\Filament\Resources\ClusterResource;
 use App\Filament\Resources\KioskResource;
 use App\Filament\Resources\OperatorResource;
+use App\Filament\Resources\PriceTierResource;
 use App\Filament\Resources\ProcurementBatchResource;
 use App\Filament\Resources\ProductResource;
 use App\Filament\Resources\ProductVariantResource;
@@ -55,6 +56,7 @@ class OwnerPanelProvider extends PanelProvider
                 SupplierResource::class,
                 ProductResource::class,
                 ProductVariantResource::class,
+                PriceTierResource::class,
                 ProcurementBatchResource::class,
                 OperatorResource::class,
             ])

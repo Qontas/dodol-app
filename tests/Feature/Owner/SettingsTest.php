@@ -201,6 +201,7 @@ class SettingsTest extends TestCase
                 'name' => 'Kios Default Owner',
                 'cluster_id' => $cluster->id,
                 'jenis_kedai' => 'konsinyasi',
+                'first_placement' => 'operator',
             ])
             ->call('create')
             ->assertHasNoFormErrors();

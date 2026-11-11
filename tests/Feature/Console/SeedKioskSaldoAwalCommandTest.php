@@ -85,7 +85,7 @@ class SeedKioskSaldoAwalCommandTest extends TestCase
         $dA = Delivery::where('kiosk_id', $kA->id)->firstOrFail();
         $this->assertSame(3, (int) $dA->qty_delivered);              // qty dari kolom E
         $this->assertSame('consignment', $dA->delivery_type);
-        $this->assertSame('new_procurement', $dA->source_type);
+        $this->assertSame('migration', $dA->source_type);
         $this->assertNull($dA->procurement_batch_id);
         $this->assertFalse($dA->settlement()->exists());             // TANPA settlement → pending
         $this->assertSame('2025-03-15', $kA->fresh()->first_titip_date->toDateString());
@@ -115,6 +115,22 @@ class SeedKioskSaldoAwalCommandTest extends TestCase
         $this->assertSame(2, Delivery::count());      // tidak dobel
         $this->assertSame(1, Trip::count());          // tidak buat trip kedua
         @unlink($file);
+    }
+
+    public function test_variant_is_scoped_to_selected_owner(): void
+    {
+        $otherOwner = User::factory()->create(['role' => 'owner']);
+        $this->makeVariant($otherOwner->id); // inserted first: must not be selected
+        [$owner, $kiosk] = $this->seedOwnerWithKiosks();
+        $file = $this->makeFixture();
+        try {
+            $this->artisan('kios:saldo-awal', ['file' => $file, '--owner' => $owner->id])->assertSuccessful();
+            $delivery = Delivery::where('kiosk_id', $kiosk->id)->firstOrFail();
+            $this->assertSame($owner->id, $delivery->productVariant->product->owner_id);
+            $this->assertSame('migration', $delivery->source_type);
+        } finally {
+            @unlink($file);
+        }
     }
 
     public function test_requires_owner(): void

@@ -65,14 +65,19 @@ class KioskListTitipanColumnTest extends TestCase
         $booking = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'is_cash_only' => false, 'default_qty_mika' => null]);
         $this->assertTrue($booking->isBooking());
 
-        // Konsinyasi TANPA titipan (jatah terisi tapi titipan hilang) → "Belum ada titipan" (anomali, merah).
-        Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'is_cash_only' => false, 'default_qty_mika' => 6]);
+        // Pernah dititip, tetapi tak ada titipan pending → anomali.
+        $lost = Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'is_cash_only' => false, 'default_qty_mika' => 6]);
+        $old = OpeningBalance::create($lost, 6);
+        \App\Models\Settlement::factory()->create(['delivery_id' => $old->id, 'qty_sold' => $old->qty_biji_delivered]);
+        // C1: jatah owner terisi, belum pernah ada delivery → bukan anomali.
+        Kiosk::factory()->create(['cluster_id' => $this->cluster->id, 'is_cash_only' => false, 'default_qty_mika' => 3]);
 
         Livewire::test(ListKiosks::class)
             ->assertSee('4 mika')
             ->assertSee('Cash Only')
             ->assertSee('Booking')          // kondisi baru: booking bukan anomali
             ->assertSee('Belum ada titipan') // anomali betulan (konsinyasi kehilangan titipan)
+            ->assertSee('Belum pernah dititip')
             ->assertDontSee('Telepon');
     }
 

@@ -114,6 +114,7 @@ class Trip extends Model
     {
         return (int) $this->deliveries()
             ->where('delivery_type', '!=', 'bs_redistribution')
+            ->where('source_type', '!=', 'owner_placed')
             ->sum('qty_delivered');
     }
 
@@ -152,6 +153,11 @@ class Trip extends Model
      */
     public function getStokDiMotor(): int
     {
+        // A shared opening-balance trip has no physical motor inventory, including
+        // legacy manual balances before their owner_placed reclassification.
+        if ($this->isMigrationSentinel()) {
+            return 0;
+        }
         return $this->qty_carried_effective - $this->getTotalDropReal();
     }
 
@@ -181,6 +187,7 @@ class Trip extends Model
     {
         return (int) $this->deliveries()
             ->where('delivery_type', '!=', 'bs_redistribution')
+            ->where('source_type', '!=', 'owner_placed')
             ->selectRaw('COALESCE(SUM(qty_delivered * COALESCE(units_per_pack_snapshot, 15)), 0) as total')
             ->value('total');
     }

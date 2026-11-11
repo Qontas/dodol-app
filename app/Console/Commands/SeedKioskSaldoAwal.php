@@ -7,6 +7,7 @@ use App\Models\Kiosk;
 use App\Models\ProductVariant;
 use App\Models\Trip;
 use App\Models\User;
+use App\Support\KioskPricing;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -64,7 +65,7 @@ class SeedKioskSaldoAwal extends Command
         $dryRun = (bool) $this->option('dry-run');
 
         // Varian aktif tunggal — sama dengan yang dipakai alur operator (resolveActiveVariant).
-        $variant = ProductVariant::where('is_active', true)->first();
+        $variant = KioskPricing::activeVariantForOwner($ownerId);
         if (! $variant) {
             $this->error('Tidak ada varian produk aktif. Tidak bisa membuat delivery.');
 
@@ -200,10 +201,10 @@ class SeedKioskSaldoAwal extends Command
                         'trip_id' => $trip->id,
                         'product_variant_id' => $variant->id,
                         'procurement_batch_id' => null,
-                        'source_type' => 'new_procurement',
+                        'source_type' => 'migration',
                         'delivery_type' => 'consignment',
                         'qty_delivered' => $s['qty'],
-                        'unit_price' => $variant->sale_price_per_pack,
+                        'unit_price' => KioskPricing::pricePerPack($kiosk, $variant),
                         'cost_snapshot' => $variant->cost_per_pack,
                         'units_per_pack_snapshot' => $variant->units_per_pack,
                         'notes' => 'Saldo awal migrasi (titipan lapangan sebelum sistem).',
@@ -274,6 +275,7 @@ class SeedKioskSaldoAwal extends Command
     {
         $this->newLine();
         $this->line('===== RINGKASAN '.($dryRun ? 'DRY-RUN' : 'SEEDING').' SALDO AWAL =====');
+        $estimatedValue = array_sum(array_map(fn ($row) => $row['qty'] * KioskPricing::pricePerPack($row['kiosk'], $variant), $toSeed));
         $this->table(['Metrik', 'Nilai'], [
             ['Total baris di file', count($rows)],
             ['Baris dekoratif/kosong (dilewati)', $skipNoName],
@@ -282,7 +284,7 @@ class SeedKioskSaldoAwal extends Command
             ['Dilewati — kios sudah punya delivery', $skipHasDelivery],
             ['Dilewati — nama tak match kios', count($skipUnmatched)],
             ['Total mika saldo awal', $totalMika],
-            ['Estimasi nilai tunggakan (Rp)', number_format($totalMika * (float) $variant->sale_price_per_pack, 0, ',', '.')],
+            ['Estimasi nilai tunggakan (Rp)', number_format($estimatedValue, 0, ',', '.')],
             ['Tanggal trip migrasi (paling awal)', $earliest?->toDateString() ?? '—'],
             ['Varian dipakai', $variant->name.' @ Rp '.number_format((float) $variant->sale_price_per_pack, 0, ',', '.')],
         ]);

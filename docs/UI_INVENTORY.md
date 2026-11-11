@@ -5,6 +5,21 @@
 
 ---
 
+## Pembaruan 11 November 2026 — Daftar Harga & Titipan Pertama
+
+Bagian ini menggantikan aturan lama di A5/A6/A8/A9, B5/B7/B8.5/B8.6 dan C14 bila bertentangan.
+
+- **Owner — Daftar Harga:** menu menuju `/owner-panel/price-tiers`. CRUD modal **"Tingkatan Harga"**: varian, nama, harga per mika, default, aktif. Setiap varian mendapat **"Standar"** saat migrasi/pembuatan. Default wajib aktif; mengganti default otomatis melepas default lama dalam transaksi terkunci; default tidak boleh dihapus tanpa pengganti (`app/Models/PriceTier.php:25`, `app/Filament/Resources/PriceTierResource.php:69`).
+- **Owner — Kios:** dropdown **"Daftar Harga"**, placeholder **"Ikuti harga default varian"**. Label pilihan menampilkan Rp/mika dan Rp/biji. Harga nonaktif tidak dapat dipilih baru, tetapi assignment lama tetap berlaku dan dapat dipertahankan saat edit. List memiliki kolom/filter **Harga** (`app/Filament/Resources/KioskResource.php:90`, `:546`, `:694`). Mengubah tier tidak mengubah snapshot delivery lama.
+- **Owner — Titipan pertama (wajib, hanya create konsinyasi):** **"Operator yang menaruh (saat trip)"** menyimpan jatah tanpa delivery; **"Sudah saya taruh sendiri"** membuat delivery `owner_placed` pada sentinel, kena fee aplikasi, tanpa komisi/stok motor. Tidak ada opsi saldo awal historis di form. Create+delivery atomik: gagal varian berarti kiosk ikut rollback (`KioskResource.php:179`, `KioskResource/Pages/CreateKiosk.php:20`).
+- **Operator — Kios Baru:** dropdown **"Harga"**, default **"Standard (default)"**, hanya tier aktif varian operasional milik owner; tidak ada input harga bebas. Validasi server menolak owner/varian/tier nonaktif palsu. Perubahan harga kios selanjutnya hanya owner (`app/Livewire/Operator/CreateKiosk.php:161`).
+- **Operator — kartu & kunjungan:** badge **"📌 Belum pernah dititip"** berasal dari nol riwayat delivery, termasuk jatah yang sudah diisi owner. **Mulai Titipan** memprefill jatah kios, fallback default owner. Tagihan titipan lama memakai snapshot delivery lama; harga titipan baru/cash/BS memakai tier kios; walk-in memakai default varian (`app/Livewire/Operator/ActiveTrip.php:364`, `:1566`).
+- **Koreksi:** harga/HPP/isi/varian delivery asli dipertahankan saat replay, termasuk BS dan mode cash-extra; tidak mengambil tier/master terbaru (`ActiveTrip.php:1857`).
+- **Resolusi multivarian:** tier kios hanya berlaku jika varian tier sama dengan varian delivery; varian lain memakai defaultnya sendiri. HPP tetap dari varian, fee/komisi per mika tidak bergantung harga (`app/Support/KioskPricing.php:13`).
+- **Fee admin:** `owner_placed` dihitung menurut tanggal `delivery.created_at` zona app dan `deliveries.app_fee_per_pack_snapshot` per baris. Tarif owner saat dibuat/direklasifikasi dibekukan; sentinel bersama tidak menyimpan tarif ini. Delivery normal tetap tanggal/tarif trip. `migration`, BS, sentinel historis, trip terarsip tetap dikecualikan. **Basis fee kini TIDAK selalu identik dengan komisi**, karena owner_placed kena fee tanpa komisi (`app/Support/AppFeeCalculator.php:91`).
+- **CLI historis:** `kios:saldo-awal` tetap tersedia, provenance `migration`, bukan owner_placed. Dua command penyesuaian wajib `--owner`, default dry-run, hanya menulis dengan `--force`: `fee:reclassify-owner-placed --since=YYYY-MM-DD` dan `deliveries:reprice-pending`. Reprice hanya konsinyasi tanpa settlement **status apa pun**, hanya kolom `unit_price`, bukan HPP/isi/timestamp (`app/Console/Commands/RepricePendingDeliveries.php:18`).
+- **Rilis ditahan:** ADA dua migrasi 2026_11_11; commit atomik lokal, **JANGAN PUSH sebelum owner backup DB**. Tidak ada akses produksi.
+
 ## A. OPERATOR (layar HP)
 
 ### A1. Login

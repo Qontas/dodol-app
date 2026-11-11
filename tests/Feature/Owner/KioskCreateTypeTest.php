@@ -52,6 +52,7 @@ class KioskCreateTypeTest extends TestCase
                 'store_note' => 'Biasa titip 4',
                 'default_qty_mika' => 4,
                 'jenis_kedai' => 'konsinyasi',
+                'first_placement' => 'owner_placed',
             ])
             ->call('create')
             ->assertHasNoFormErrors();

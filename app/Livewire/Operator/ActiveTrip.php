@@ -13,6 +13,7 @@ use App\Models\ProductVariant;
 use App\Models\TripStockAddition;
 use App\Exceptions\InsufficientMotorStockException;
 use App\Support\KioskPhoto;
+use App\Support\KioskPricing;
 use App\Support\MotorStockGuard;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -363,12 +364,11 @@ class ActiveTrip extends Component
             ->filter(fn ($k) => (int) ($k->pending_titipan_count ?? 0) > 0)
             ->pluck('id')->all();
 
-        // BADGE "belum pernah dititip" = kedai BOOKING (belum ada dodol; belum cash-only,
-        // belum punya jatah). Diturunkan dari kolom yang SUDAH termuat di tiap kios
-        // (is_cash_only + default_qty_mika, lihat Kiosk::isBooking) → 0 query tambahan,
-        // BUKAN N+1. Hilang otomatis begitu operator Titip Cash (jadi cash) atau Mulai
-        // Titipan (jatah terisi) → isBooking() jadi false.
-        $bookingKioskIds = $kiosks->filter(fn ($k) => $k->isBooking())->pluck('id')->all();
+        // Owner boleh menyiapkan jatah sebelum titipan pertama. Badge mengikuti
+        // riwayat delivery, bukan ada/tidaknya jatah; subquery count tidak N+1.
+        $bookingKioskIds = $kiosks
+            ->filter(fn ($k) => ! $k->is_cash_only && (int) $k->delivery_history_count === 0)
+            ->pluck('id')->all();
 
         return [
             'kiosks' => $kiosks,
@@ -671,6 +671,7 @@ class ActiveTrip extends Component
     {
         return $query
             ->with('cluster:id,name')
+            ->withCount('deliveries as delivery_history_count')
             ->withCount(['deliveries as pending_titipan_count' => fn ($q) => $q->doesntHave('settlement')])
             ->withSum(
                 ['deliveries as pending_titipan_mika' => fn ($q) => $q->doesntHave('settlement')],
@@ -1117,8 +1118,8 @@ class ActiveTrip extends Component
         // dititip ($dropBaru) + jatah seterusnya ($jatahMulai). Pra-isi jatah dari
         // default lama kalau ada, drop dari jatah itu sebagai titik awal.
         if ($action === 'mulai_titipan') {
-            $this->jatahMulai = $defaultQty >= 1 ? $defaultQty : 0;
-            $this->dropBaru = $defaultQty >= 1 ? $defaultQty : 0;
+            $this->jatahMulai = $defaultQty >= 1 ? $defaultQty : (auth()->user()->owner?->getDefaultQtyMikaValue() ?? 1);
+            $this->dropBaru = $this->jatahMulai;
         }
 
         // AKSI 1 (Tagih+Titip): hitung tagihan langsung (uangDiterima default = tagihan
@@ -1552,9 +1553,7 @@ class ActiveTrip extends Component
         // ambil varian owner lain untuk mencatat penjualan.
         $ownerId = auth()->user()?->owner_id;
 
-        $variant = ProductVariant::where('is_active', true)
-            ->when($ownerId !== null, fn ($q) => $q->whereHas('product', fn ($p) => $p->where('owner_id', $ownerId)))
-            ->first();
+        $variant = KioskPricing::activeVariantForOwner($ownerId);
 
         if (!$variant) {
             throw new \RuntimeException('Tidak ada varian produk aktif.');
@@ -1563,17 +1562,45 @@ class ActiveTrip extends Component
         return $variant;
     }
 
-    /**
-     * Varian aktif untuk PREVIEW kalkulasi SEBELUM delivery dibuat (modal walk-in
-     * cash & titip cash) — bungkus resolveActiveVariant(), tapi AMAN dipanggil
-     * dari Blade tiap render: balikkan isi/harga FALLBACK (konstanta historis
-     * lama) bila operator belum punya varian aktif, supaya modal preview tetap
-     * tampil. Validasi SEBENARNYA tetap di resolveActiveVariant() saat submit.
-     */
-    public function previewVariant(): object
+    /** Harga kios untuk transaksi baru; snapshot asli untuk replay koreksi. */
+    private function deliveryTerms(Kiosk $kiosk, ?Delivery $original = null): object
+    {
+        if ($original) {
+            // Koreksi mengulang kontrak delivery ASLI, bukan master harga/produk hari ini.
+            $price = (float) $original->unit_price;
+            $units = max(1, (int) ($original->units_per_pack_snapshot ?? self::BIJI_PER_MIKA));
+
+            return (object) [
+                'id' => $original->product_variant_id,
+                'sale_price_per_pack' => $price,
+                'cost_per_pack' => $original->cost_snapshot,
+                'units_per_pack' => $units,
+                'harga_per_biji' => $price / $units,
+            ];
+        }
+
+        $variant = $this->resolveActiveVariant();
+        $price = KioskPricing::pricePerPack($kiosk, $variant);
+        $units = max(1, (int) $variant->units_per_pack);
+
+        return (object) [
+            'id' => $variant->id,
+            'sale_price_per_pack' => $price,
+            'cost_per_pack' => $variant->cost_per_pack,
+            'units_per_pack' => $units,
+            'harga_per_biji' => $price / $units,
+        ];
+    }
+
+    public function previewVariant(bool $walkIn = false): object
     {
         try {
-            return $this->resolveActiveVariant();
+            // Baca kios ulang, jangan percaya atribut harga dari snapshot klien.
+            $kiosk = ! $walkIn && $this->selectedKiosk
+                ? $this->ownedKiosk($this->selectedKiosk->id)
+                : new Kiosk(['owner_id' => auth()->user()?->owner_id]);
+
+            return $this->deliveryTerms($kiosk ?? new Kiosk(['owner_id' => auth()->user()?->owner_id]));
         } catch (\RuntimeException $e) {
             return (object) [
                 'units_per_pack' => self::BIJI_PER_MIKA,
@@ -1827,7 +1854,12 @@ class ActiveTrip extends Component
 
         // --- Siapkan state untuk penyimpanan ulang ---
         $this->selectedKiosk = $visit->kiosk()->first();
-        $this->isCashOnly = (bool) ($this->selectedKiosk?->is_cash_only);
+        $originalDeliveries = Delivery::where('kiosk_visit_id', $visit->id)->get();
+        $originalDelivery = $originalDeliveries->firstWhere('id', $visit->new_delivery_id);
+        $originalBs = $originalDeliveries->firstWhere('delivery_type', 'bs_redistribution');
+        $originalCash = $originalDelivery?->delivery_type === 'cash_sale';
+        $cashBs = $originalCash ? (int) ($originalDelivery->settlement?->qty_returned_expired ?? 0) : 0;
+        $this->isCashOnly = $originalCash;
         // Titipan lama yang akan di-settle ulang = yang dulu di-settle visit ini
         // (settlement-nya dihapus di transaksi → titipan aktif lagi).
         $this->pendingDelivery = $visit->settled_delivery_id
@@ -1838,15 +1870,15 @@ class ActiveTrip extends Component
         $this->returnFresh = $returnFresh;
         $this->returnExpired = $returnExpired;
         $this->uangDiterima = $uangDiterima;
-        // Koreksi hanya angka — flag perilaku lain dinetralkan.
-        // chosenAction=null WAJIB: cegah guard 'cek' di resolveVisitAction() keliru
-        // memaksa check_only saat koreksi visit tagih/settle (akan merusak titipan).
-        $this->chosenAction = null;
+        // Koreksi angka mempertahankan jenis delivery asli. Cash-ekstra pada kios
+        // konsinyasi tetap cash (beserta BS), bukan berubah menjadi titipan baru.
+        // Aksi 'cek' dinetralkan agar penagihan lama tidak berubah jadi check_only.
+        $this->chosenAction = $originalCash ? 'titip_cash' : null;
         $this->extensionGranted = false;
         $this->ubahJatah = false;
-        $this->qtyBsCash = 0;
-        $this->adaBsRedistribusi = false;
-        $this->qtyBsMika = 0;
+        $this->qtyBsCash = $cashBs;
+        $this->adaBsRedistribusi = $originalBs !== null;
+        $this->qtyBsMika = (int) ($originalBs?->qty_delivered ?? 0);
         $this->alasanCheck = '';
         $this->sisaBiji = 0;
 
@@ -1859,7 +1891,7 @@ class ActiveTrip extends Component
         ]);
 
         try {
-            DB::transaction(function () use ($visit) {
+            DB::transaction(function () use ($visit, $originalDelivery, $originalBs) {
                 // a. Hapus settlement milik delivery yang dibuat visit ini.
                 $linkedDeliveryIds = Delivery::where('kiosk_visit_id', $visit->id)->pluck('id');
                 if ($linkedDeliveryIds->isNotEmpty()) {
@@ -1886,7 +1918,7 @@ class ActiveTrip extends Component
                 $visit->update(['corrected_at' => now()]);
 
                 // e. Tulis ulang dengan angka baru — visit baru menaut ke visit lama.
-                $message = $this->persistVisitFromState($visit->id);
+                $message = $this->persistVisitFromState($visit->id, $originalDelivery, $originalBs);
                 if ($message === null) {
                     // Error sudah di-addError oleh persist → rollback semuanya.
                     throw new \RuntimeException('Penyimpanan ulang gagal.');
@@ -1915,8 +1947,15 @@ class ActiveTrip extends Component
      *
      * @param int|null $correctionOfVisitId  Bila ini hasil koreksi: id visit yang dikoreksi.
      */
-    private function persistVisitFromState(?int $correctionOfVisitId = null): ?string
+    private function persistVisitFromState(?int $correctionOfVisitId = null, ?Delivery $originalDelivery = null, ?Delivery $originalBs = null): ?string
     {
+        // Harga/tier dibaca dari DB, bukan atribut snapshot klien.
+        $this->selectedKiosk = $this->ownedKiosk($this->selectedKiosk?->id);
+        if (! $this->selectedKiosk) {
+            $this->addError('general', 'Kios tidak valid atau bukan milik Anda.');
+            return null;
+        }
+
         $drop = (int) $this->dropBaru;
         $fresh = (int) $this->returnFresh;
         $expired = (int) $this->returnExpired;
@@ -1961,7 +2000,7 @@ class ActiveTrip extends Component
             }
 
             try {
-                $variant = $this->resolveActiveVariant();
+                $variant = $this->deliveryTerms($this->selectedKiosk, $originalDelivery);
             } catch (\RuntimeException $e) {
                 $this->addError('general', $e->getMessage());
                 return null;
@@ -2051,7 +2090,7 @@ class ActiveTrip extends Component
             // BS dicatat per biji, jadi di sini TETAP butuh harga-per-biji turunan
             // (bukan shortcut mika-langsung), lihat ProductVariant::harga_per_biji.
             try {
-                $variant = $this->resolveActiveVariant();
+                $variant = $this->deliveryTerms($this->selectedKiosk, $originalDelivery);
             } catch (\RuntimeException $e) {
                 $this->addError('general', $e->getMessage());
                 return null;
@@ -2182,7 +2221,7 @@ class ActiveTrip extends Component
 
         // SKENARIO 7: mika BS redistribusi yang ikut di-drop (delivery terpisah,
         // titipan konsinyasi biasa — TIDAK di-settle saat ini, dibayar saat terjual).
-        $bsMika = ($isDrop && $this->adaBsRedistribusi && (int) $this->qtyBsMika > 0)
+        $bsMika = (($isDrop || ($isCorrection && $originalBs)) && $this->adaBsRedistribusi && (int) $this->qtyBsMika > 0)
             ? (int) $this->qtyBsMika
             : 0;
 
@@ -2226,14 +2265,15 @@ class ActiveTrip extends Component
 
         // --- Resolve varian aktif SEBELUM transaksi (tidak ada block stok batch) ---
         try {
-            $variant = $isDrop ? $this->resolveActiveVariant() : null;
+            $variant = $isDrop ? $this->deliveryTerms($this->selectedKiosk, $originalDelivery) : null;
+            $bsTerms = $bsMika > 0 ? $this->deliveryTerms($this->selectedKiosk, $originalBs ?? $originalDelivery) : null;
         } catch (\RuntimeException $e) {
             $this->addError('general', $e->getMessage());
             return null;
         }
 
         try {
-            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $bsMika, $applyJatahDrop, $establishBaseline, $changedDefault, $correctionOfVisitId, $isGantiCash, $isMulaiTitipan) {
+            DB::transaction(function () use ($action, $drop, $fresh, $expired, $isSettleAction, $createSettlement, $extension, $isDrop, $variant, $bsTerms, $originalBs, $bsMika, $applyJatahDrop, $establishBaseline, $changedDefault, $correctionOfVisitId, $isGantiCash, $isMulaiTitipan) {
                 $newDeliveryId = null;
                 $settledDeliveryId = null;
                 $createdDeliveryIds = [];
@@ -2289,29 +2329,31 @@ class ActiveTrip extends Component
                 }
 
                 // 2. Drop titipan baru (new_procurement, tanpa link batch — operasional bebas)
-                if ($isDrop) {
-                    // PENGAMAN STOK DI MOTOR — HANYA menjaga $drop (konsinyasi baru keluar
-                    // dari stok motor). SENGAJA TIDAK menjaga $bsMika di bawah: Dodol Sisa
-                    // (bs_redistribution) berasal dari kios lain, bukan dari stok motor
-                    // (lihat Trip::getStokDiMotor()) — tak pernah diblokir guard ini.
-                    MotorStockGuard::assertAvailable($this->trip, $drop);
+                if ($isDrop || $bsMika > 0) {
+                    if ($isDrop) {
+                        // PENGAMAN STOK DI MOTOR — HANYA menjaga $drop (konsinyasi baru keluar
+                        // dari stok motor). SENGAJA TIDAK menjaga $bsMika di bawah: Dodol Sisa
+                        // (bs_redistribution) berasal dari kios lain, bukan dari stok motor
+                        // (lihat Trip::getStokDiMotor()) — tak pernah diblokir guard ini.
+                        MotorStockGuard::assertAvailable($this->trip, $drop);
 
-                    // Titipan hari ini = konsinyasi MURNI sejumlah $drop. Kelebihan/ekstra
-                    // dibayar tunai bukan lagi di sini — itu AKSI 2 "Titip Cash" terpisah.
-                    $newDelivery = Delivery::create([
-                        'kiosk_id' => $this->selectedKiosk->id,
-                        'trip_id' => $this->trip->id,
-                        'product_variant_id' => $variant->id,
-                        'procurement_batch_id' => null,
-                        'source_type' => 'new_procurement',
-                        'delivery_type' => 'consignment',
-                        'qty_delivered' => $drop,
-                        'unit_price' => $variant->sale_price_per_pack,
-                        'cost_snapshot' => $variant->cost_per_pack,
-                        'units_per_pack_snapshot' => $variant->units_per_pack,
-                    ]);
-                    $newDeliveryId = $newDelivery->id;
-                    $createdDeliveryIds[] = $newDelivery->id;
+                        // Titipan hari ini = konsinyasi MURNI sejumlah $drop. Kelebihan/ekstra
+                        // dibayar tunai bukan lagi di sini — itu AKSI 2 "Titip Cash" terpisah.
+                        $newDelivery = Delivery::create([
+                            'kiosk_id' => $this->selectedKiosk->id,
+                            'trip_id' => $this->trip->id,
+                            'product_variant_id' => $variant->id,
+                            'procurement_batch_id' => null,
+                            'source_type' => 'new_procurement',
+                            'delivery_type' => 'consignment',
+                            'qty_delivered' => $drop,
+                            'unit_price' => $variant->sale_price_per_pack,
+                            'cost_snapshot' => $variant->cost_per_pack,
+                            'units_per_pack_snapshot' => $variant->units_per_pack,
+                        ]);
+                        $newDeliveryId = $newDelivery->id;
+                        $createdDeliveryIds[] = $newDelivery->id;
+                    }
 
                     // SKENARIO 7: mika BS redistribusi = delivery terpisah, titipan
                     // konsinyasi biasa (HPP 0 karena loss sudah dihitung di kios asal).
@@ -2320,14 +2362,14 @@ class ActiveTrip extends Component
                         $bsDelivery = Delivery::create([
                             'kiosk_id' => $this->selectedKiosk->id,
                             'trip_id' => $this->trip->id,
-                            'product_variant_id' => $variant->id,
+                            'product_variant_id' => $bsTerms->id,
                             'procurement_batch_id' => null,
                             'source_type' => 'new_procurement',
                             'delivery_type' => 'bs_redistribution',
                             'qty_delivered' => $bsMika,
-                            'unit_price' => $variant->sale_price_per_pack,
-                            'cost_snapshot' => 0, // HPP 0 sengaja — loss sudah dihitung di kios asal
-                            'units_per_pack_snapshot' => $variant->units_per_pack,
+                            'unit_price' => $bsTerms->sale_price_per_pack,
+                            'cost_snapshot' => $originalBs ? $bsTerms->cost_per_pack : 0, // replay snapshot; new BS retains zero HPP
+                            'units_per_pack_snapshot' => $bsTerms->units_per_pack,
                         ]);
                         $createdDeliveryIds[] = $bsDelivery->id;
 
@@ -2440,7 +2482,7 @@ class ActiveTrip extends Component
         }
 
         try {
-            $variant = $this->resolveActiveVariant();
+            $variant = $this->deliveryTerms($sentinel);
         } catch (\RuntimeException $e) {
             $this->addError('general', $e->getMessage());
             return;

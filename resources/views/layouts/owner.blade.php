@@ -40,6 +40,7 @@
                     ['label' => 'Dashboard', 'route' => 'owner.dashboard', 'active' => request()->routeIs('owner.dashboard')],
                     ['label' => 'Riwayat Trip', 'route' => 'owner.trips.index', 'active' => request()->routeIs('owner.trips.*')],
                     ['label' => 'Manajemen Kios', 'route' => 'filament.owner.resources.kiosks.index', 'active' => request()->routeIs('filament.owner.resources.kiosks.*')],
+                    ['label' => 'Daftar Harga', 'route' => 'filament.owner.resources.price-tiers.index', 'active' => request()->routeIs('filament.owner.resources.price-tiers.*')],
                     ['label' => 'Manajemen Area', 'route' => 'filament.owner.resources.clusters.index', 'active' => request()->routeIs('filament.owner.resources.clusters.*')],
                     ['label' => 'Manajemen Supplier', 'route' => 'filament.owner.resources.suppliers.index', 'active' => request()->routeIs('filament.owner.resources.suppliers.*')],
                     ['label' => 'Manajemen Anggota', 'route' => 'filament.owner.resources.operators.index', 'active' => request()->routeIs('filament.owner.resources.operators.*')],

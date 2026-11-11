@@ -1,5 +1,37 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 27 Oktober 2026*
+*Sesi terakhir: 11 November 2026*
+
+## 🟡 BRIEF 11 NOV 2026: DAFTAR HARGA PER KEDAI + TITIPAN PERTAMA DARI PANEL OWNER KENA FEE — SELESAI LOKAL, ADA MIGRASI → **JANGAN PUSH SEBELUM OWNER BACKUP DB PRODUKSI**
+
+Branch `feat/price-tiers-owner-placed`, 1 commit atomik lokal (belum di-push). Tidak ada akses prod.
+
+**A. Temuan investigasi**
+- `deliveries.source_type` dulu ENUM `new_procurement|fresh_return_redeploy`; kini + `owner_placed` & `migration`.
+- `unit_price`, `cost_snapshot`, `units_per_pack_snapshot` = per MIKA (pack). `qty_delivered` = mika. Settlement `qty_sold`/`qty_returned_*` = BIJI. Tagihan titipan lama = round(biji terjual × harga-per-biji delivery lama).
+- `pendingDelivery` = delivery kios tanpa settlement apa pun (`doesntHave('settlement')->latest('id')`); tabel tak punya kolom status.
+- `resolveActiveVariant` = varian aktif pertama milik owner (tanpa urutan/cek produk aktif). Kini lewat `KioskPricing::activeVariantForOwner` (urut id).
+- Koreksi kunjungan menghapus & memutar ulang settlement/delivery; dulu delivery dibuat ulang pada harga SAAT INI → kini memakai snapshot asli (`ActiveTrip::deliveryTerms`).
+- Bug lama diperbaiki: lookup varian `kios:saldo-awal` tidak di-scope owner. `DeliveriesBackfillSnapshot` TIDAK disentuh (waspada kalau dijalankan lagi).
+
+**Arsitektur**
+- Migrasi: `2026_11_11_000001_create_price_tiers_and_kiosk_price_tier` (tabel `price_tiers`, seed "Standar" per varian, unik 1 default/varian, `kiosks.price_tier_id` nullable) dan `2026_11_11_000002_add_owner_placed_delivery_source_and_fee_snapshot` (ENUM + `deliveries.app_fee_per_pack_snapshot`; `down()` menolak jika ada baris owner_placed/migration).
+- `KioskPricing::pricePerPack(kios, varian)`: tier kios hanya berlaku di varian tier itu; varian lain → tier default; fallback harga varian. HPP & fee/komisi tak berubah.
+- Owner: menu "Daftar Harga" (CRUD), dropdown + kolom + filter di Kios, radio wajib "Titipan pertama" (operator menaruh / owner sudah menaruh). Operator: dropdown Harga di Kios Baru (tier aktif owner saja), tak bisa ubah harga kios lama.
+- Owner-placed: delivery di trip sentinel `source_type=owner_placed`; kena FEE (tanggal = `DATE(created_at)` zona app, tarif owner dibekukan per delivery di `app_fee_per_pack_snapshot`), TIDAK kena komisi & TIDAK mengurangi stok motor. `kios:saldo-awal` tetap provenance `migration` (tak kena fee).
+- Keputusan tarif: user memilih "Bekukan tarif owner SEKARANG" per delivery (tanpa tarif sentinel bersama, tanpa `--rate`).
+
+**D. Command (default dry-run, `--owner` wajib, `--force` menerapkan, idempoten)**
+- `fee:reclassify-owner-placed --owner=N --since=YYYY-MM-DD` — ubah delivery saldo-awal sentinel kios baru (created_at ≥ since) jadi owner_placed + bekukan tarif.
+- `deliveries:reprice-pending --owner=N` — hanya delivery konsinyasi TANPA settlement apa pun; hanya `unit_price`. Angka yang sudah ditagih tak berubah.
+- Contoh dry-run lokal (owner demo 7): reclassify → 1 delivery, 4 mika, tambahan fee Rp 1.200; reprice → delivery #8 4 mika, 16.000→14.000/mika, delta Rp -8.000.
+
+**E. Verifikasi**
+- Suite penuh: baseline 684 → 731 PASS (730 + 1 tes reprice yang disesuaikan kolom "Tanggal", dijalankan ulang hijau).
+- `reports:verify-locked-numbers 2` IDENTIK vs baseline kode HEAD (catatan: data lokal owner 2 hampir kosong → bukti lemah; cek ulang di prod setelah backup).
+- Screenshot 390px: `.claude/skills/verify-browser/shots/{operator,owner}-price-tier-390.png`.
+
+**Gate deploy:** backup DB produksi → baru push/deploy → jalankan migrasi → dry-run kedua command → `--force` setelah dicek owner.
+
 
 ## 🟢 BRIEF LANJUTAN 27 OKT 2026: SYARAT IDLE MINIMAL 6 JAM (JANGAN TUTUP TRIP YANG MASIH DIPAKAI LEWAT TENGAH MALAM) — SELESAI, boleh push (tidak ada migrasi)
 

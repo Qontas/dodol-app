@@ -96,6 +96,21 @@
             @enderror
         </div>
 
+        <div>
+            <label for="price_tier_id" class="block text-sm font-bold text-slate-900 mb-2">Harga</label>
+            <select id="price_tier_id" wire:model="price_tier_id"
+                    class="w-full rounded-xl border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-3">
+                <option value="">Standard (default)</option>
+                @foreach($priceTierOptions as $tierId => $tierLabel)
+                    <option value="{{ $tierId }}">{{ $tierLabel }}</option>
+                @endforeach
+            </select>
+            <p class="text-xs text-slate-500 mt-1">Harga untuk titipan baru. Perubahan harga kios selanjutnya hanya oleh owner.</p>
+            @error('price_tier_id')
+                <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+            @enderror
+        </div>
+
         {{-- JENIS KEDAI: konsinyasi (titip sekarang) / cash-only / booking (identitas saja) --}}
         <div>
             <label class="block text-sm font-bold text-slate-900 mb-2">

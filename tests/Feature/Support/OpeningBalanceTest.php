@@ -49,6 +49,8 @@ class OpeningBalanceTest extends TestCase
 
         $this->assertNotNull($delivery);
         $this->assertSame('consignment', $delivery->delivery_type);
+        $this->assertSame('migration', $delivery->source_type);
+        $this->assertNull($delivery->app_fee_per_pack_snapshot);
         $this->assertSame(4, (int) $delivery->qty_delivered);
         $this->assertNotNull(Delivery::where('kiosk_id', $kiosk->id)->doesntHave('settlement')->first());
     }

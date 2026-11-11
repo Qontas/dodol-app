@@ -5,6 +5,8 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\KioskResource\Pages;
 use App\Models\Cluster;
 use App\Models\Kiosk;
+use App\Models\PriceTier;
+use App\Support\KioskPricing;
 use App\Support\GoogleMapsShortLinkResolver;
 use App\Support\KioskLocationParser;
 use App\Support\KioskPhoto;
@@ -73,6 +75,8 @@ class KioskResource extends Resource
                             ->required()
                             ->placeholder('Pilih area')
                             ->helperText('Area tempat kios ini berada')
+                            ->live()
+                            ->afterStateUpdated(fn (Set $set) => $set('price_tier_id', null))
                             ->createOptionForm([
                                 Forms\Components\TextInput::make('name')
                                     ->label('Nama Area')
@@ -81,6 +85,36 @@ class KioskResource extends Resource
                                 Forms\Components\Textarea::make('notes')
                                     ->label('Deskripsi')
                                     ->rows(2),
+                            ]),
+
+                        Forms\Components\Select::make('price_tier_id')
+                            ->label('Daftar Harga')
+                            ->options(function (Get $get, ?Kiosk $record): array {
+                                $ownerId = static::pricingOwnerId($get('cluster_id'));
+                                $options = KioskPricing::options($ownerId);
+                                $current = $record?->priceTier;
+                                if ($current && (int) $current->owner_id === (int) $ownerId) {
+                                    $options[$current->id] = KioskPricing::label($current).($current->is_active ? '' : ' (nonaktif — sedang dipakai)');
+                                }
+                                return $options;
+                            })
+                            ->placeholder('Ikuti harga default varian')
+                            ->helperText('Harga untuk titipan baru. Titipan lama tetap memakai snapshot sampai penyesuaian dijalankan.')
+                            ->native()
+                            ->rules([
+                                fn (Get $get, ?Kiosk $record): \Closure => function (string $attribute, $value, \Closure $fail) use ($get, $record): void {
+                                    try {
+                                        $ownerId = static::pricingOwnerId($get('cluster_id'));
+                                        if ($record && $value && (int) $value === (int) $record->price_tier_id
+                                            && (int) $record->priceTier?->owner_id === (int) $ownerId) {
+                                            return; // Existing assignments survive deactivation or active-variant changes.
+                                        }
+                                        $variant = KioskPricing::activeVariantForOwner($ownerId);
+                                        KioskPricing::validateTier($value ? (int) $value : null, $ownerId, $variant?->id);
+                                    } catch (\Illuminate\Validation\ValidationException $e) {
+                                        $fail(collect($e->errors())->flatten()->first());
+                                    }
+                                },
                             ]),
 
                         Forms\Components\TextInput::make('owner_name')
@@ -116,15 +150,10 @@ class KioskResource extends Resource
                             ->helperText('Optional. Untuk hitung umur kios sebagai customer. Kosongkan untuk auto-set saat delivery pertama.'),
                     ]),
 
-                // JENIS KEDAI + JATAH TITIPAN (owner input kedai KARENA sudah titip di sana).
-                // SATU field mika saja: "Jatah Titipan" (default_qty_mika). Konsinyasi →
-                // CreateKiosk::afterCreate() otomatis bikin 1 delivery konsinyasi PENDING
-                // (App\Support\OpeningBalance) SEJUMLAH JATAH itu → kios langsung bisa "Tagih
-                // + Titip Ulang" di kunjungan pertama; tagihan dikoreksi otomatis oleh input
-                // sisa/BS operator di lapangan (owner tak perlu tahu stok fisik). Cash-only →
-                // is_cash_only, tak ada titipan/jatah. Radio form-only (dehydrated false).
+                // Titipan pertama wajib jelas: operator menaruh lewat trip atau owner
+                // sudah menaruh sendiri. Saldo awal historis hanya lewat CLI, bukan panel.
                 Section::make('Jenis Kedai & Jatah Titipan')
-                    ->description('Konsinyasi: dodol dititip, dibayar pas laku. Cash-only: beli putus tiap kali (tak ada titipan/jatah). Jatah titipan sekaligus jadi titipan awal — operator yang cek sisa fisiknya di lapangan.')
+                    ->description('Konsinyasi: dodol dititip, dibayar pas laku. Tentukan siapa yang menaruh titipan pertama. Jatah adalah jumlah mika per kunjungan.')
                     // Tampil saat create (semua jenis) ATAU saat edit kedai konsinyasi
                     // (bukan cash-only). Edit cash-only → section disembunyikan (tak relevan).
                     ->visible(fn (string $operation, Get $get): bool => $operation === 'create' || ! ($get('is_cash_only') ?? false))
@@ -137,7 +166,7 @@ class KioskResource extends Resource
                                 'booking' => '📌 Kedai Booking (belum ada dodol)',
                             ])
                             ->descriptions([
-                                'konsinyasi' => 'Sudah punya titipan berjalan (kedai lama). Isi jatah → langsung bisa ditagih.',
+                                'konsinyasi' => 'Titipan dibayar setelah laku. Pilih siapa yang menaruh titipan pertama di bawah.',
                                 'cash_only' => 'Beli putus tiap kali, tanpa titipan/jatah.',
                                 'booking' => 'Catat identitas saja. Belum ada titipan; jenis final ditentukan operator di lapangan.',
                             ])
@@ -147,6 +176,23 @@ class KioskResource extends Resource
                             ->dehydrated(false)
                             ->visibleOn('create'),
 
+                        Forms\Components\Radio::make('first_placement')
+                            ->label('Titipan pertama')
+                            ->options([
+                                'operator' => 'Operator yang menaruh (saat trip)',
+                                'owner_placed' => 'Sudah saya taruh sendiri',
+                            ])
+                            ->descriptions([
+                                'operator' => 'Kedai belum dititip. Operator memakai Mulai Titipan saat trip; jatah di bawah sudah terisi.',
+                                'owner_placed' => 'Catat titipan sekarang, tanpa komisi operator dan tanpa mengurangi stok motor.',
+                            ])
+                            ->required(fn (string $operation, Get $get): bool => $operation === 'create'
+                                && $get('jenis_kedai') === 'konsinyasi')
+                            ->in(['operator', 'owner_placed'])
+                            ->dehydrated(false)
+                            ->visible(fn (string $operation, Get $get): bool => $operation === 'create'
+                                && ($get('jenis_kedai') ?? 'konsinyasi') === 'konsinyasi'),
+
                         Forms\Components\TextInput::make('default_qty_mika')
                             ->label('Jatah Titipan (mika per kunjungan)')
                             ->numeric()
@@ -154,7 +200,7 @@ class KioskResource extends Resource
                             ->minValue(1)
                             ->maxValue(100)
                             ->suffix('mika')
-                            ->helperText('Berapa mika yang dititip di kedai ini tiap kunjungan. Ini juga jadi titipan awal — operator yang nanti cek berapa sisanya di lapangan.')
+                            ->helperText('Jatah per kunjungan. Jika owner sudah menaruh sendiri, jumlah ini dicatat sebagai titipan pertama; jika operator, baru dicatat lewat Mulai Titipan.')
                             // Create: hanya untuk konsinyasi. Edit: sembunyi kalau cash-only.
                             ->visible(fn (string $operation, Get $get): bool => $operation === 'create'
                                 ? (($get('jenis_kedai') ?? 'konsinyasi') === 'konsinyasi')
@@ -497,6 +543,19 @@ class KioskResource extends Resource
                     ->badge()
                     ->color('primary'),
 
+                Tables\Columns\TextColumn::make('harga_kedai')
+                    ->label('Harga')
+                    ->getStateUsing(function (Kiosk $record): string {
+                        if ($record->priceTier) {
+                            return KioskPricing::label($record->priceTier);
+                        }
+                        $price = (float) ($record->default_tier_price ?? 0);
+                        $units = max(1, (int) ($record->default_tier_units ?? 1));
+                        return 'Default · Rp '.number_format($price, 0, ',', '.').'/mika · Rp '
+                            .number_format($price / $units, 0, ',', '.').'/biji';
+                    })
+                    ->wrap(),
+
                 // TITIPAN / MODAL yang ada di kedai (jauh lebih berguna dari telepon).
                 // 3 kondisi: cash-only → "Cash Only" (kuning); konsinyasi bertitipan →
                 // "X mika" (hijau); konsinyasi TANPA titipan (anomali) → merah. Nilai
@@ -524,7 +583,8 @@ class KioskResource extends Resource
                             return $mika.' mika';
                         }
 
-                        return $record->isBooking() ? 'Booking' : 'Belum ada titipan';
+                        return $record->isBooking() ? 'Booking'
+                            : ((int) $record->delivery_history_count === 0 ? 'Belum pernah dititip' : 'Belum ada titipan');
                     })
                     ->color(function (Kiosk $record): string {
                         if ($record->is_cash_only) {
@@ -534,7 +594,7 @@ class KioskResource extends Resource
                             return 'success';
                         }
 
-                        return $record->isBooking() ? 'gray' : 'danger';
+                        return $record->isBooking() || (int) $record->delivery_history_count === 0 ? 'gray' : 'danger';
                     })
                     ->icon(function (Kiosk $record): ?string {
                         if ($record->is_cash_only) {
@@ -544,7 +604,7 @@ class KioskResource extends Resource
                             return 'heroicon-m-inbox-arrow-down';
                         }
 
-                        return $record->isBooking()
+                        return $record->isBooking() || (int) $record->delivery_history_count === 0
                             ? 'heroicon-m-bookmark'
                             : 'heroicon-m-exclamation-triangle';
                     }),
@@ -630,6 +690,19 @@ class KioskResource extends Resource
                     ->searchable()
                     ->preload()
                     ->multiple(),
+
+                SelectFilter::make('price_tier_id')
+                    ->label('Harga')
+                    ->options(fn (): array => ['default' => 'Ikuti default varian'] + PriceTier::query()
+                        ->where('is_active', true)->with('productVariant')->get()
+                        ->mapWithKeys(fn (PriceTier $tier): array => [$tier->id => KioskPricing::label($tier)])->all())
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+                        if ($value === 'default') {
+                            return $query->whereNull('price_tier_id');
+                        }
+                        return $query->when($value, fn (Builder $q) => $q->where('price_tier_id', $value));
+                    }),
 
                 TernaryFilter::make('is_active')
                     ->label('Status')
@@ -720,9 +793,31 @@ class KioskResource extends Resource
             ]);
     }
 
+    public static function pricingOwnerId($clusterId): ?int
+    {
+        if ($clusterId) {
+            return Cluster::whereKey($clusterId)->value('owner_id');
+        }
+        return auth()->user()?->isOwner() ? auth()->id() : null;
+    }
+
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
+        $query->with(['priceTier.productVariant'])->withCount('deliveries as delivery_history_count');
+        // Correlated defaults resolve each row's owner, including admin's multi-owner list.
+        // No per-row variant/tier queries (nor accessor-in-loop N+1).
+        $defaultTier = static fn () => \Illuminate\Support\Facades\DB::table('price_tiers as pt')
+            ->join('product_variants as pv', 'pv.id', '=', 'pt.product_variant_id')
+            ->join('products as p', 'p.id', '=', 'pv.product_id')
+            ->join('clusters as c', 'c.owner_id', '=', 'p.owner_id')
+            ->whereColumn('c.id', 'kiosks.cluster_id')
+            ->where('pv.is_active', true)->where('pt.is_default', true)
+            ->orderBy('pv.id')->limit(1);
+        $query->addSelect([
+            'default_tier_price' => $defaultTier()->select('pt.sale_price_per_pack'),
+            'default_tier_units' => $defaultTier()->select('pv.units_per_pack'),
+        ]);
 
         // Kios sentinel walk-in tidak pernah ditampilkan/diedit di panel — bahkan untuk super admin.
         $query->excludeWalkInSentinel();

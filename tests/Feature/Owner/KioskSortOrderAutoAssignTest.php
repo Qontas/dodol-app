@@ -96,6 +96,7 @@ class KioskSortOrderAutoAssignTest extends TestCase
                 'name' => 'Kios Owner Akhir',
                 'cluster_id' => $this->cluster->id,
                 'jenis_kedai' => 'konsinyasi',
+                'first_placement' => 'operator',
                 'default_qty_mika' => 3,
             ])
             ->call('create')
