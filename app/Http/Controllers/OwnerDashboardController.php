@@ -302,11 +302,11 @@ class OwnerDashboardController extends Controller
 
         // Widget stok batch — sisa mika per batch (scoped owner).
         $batchStok = ProcurementBatch::where('owner_id', $ownerId)
-            ->with('deliveries')
+            ->withSum('deliveries', 'qty_delivered')
             ->orderBy('created_at')
             ->get()
             ->map(function ($batch) {
-                // Hitung stok SEKALI (pakai koleksi deliveries yang sudah di-eager-load),
+                // Hitung stok SEKALI (pakai SUM subquery withSum — bukan memuat semua delivery),
                 // turunkan flag dari nilai itu — jangan panggil ulang accessor is_habis/
                 // is_hampis_habis yang tiap kali menghitung ulang stok. Nilai identik.
                 $stok = $batch->stok_tersisa;

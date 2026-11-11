@@ -79,9 +79,15 @@ class ProcurementBatch extends Model
         // dipanggil, 3x/batch lewat stok_tersisa/is_habis/is_hampir_habis). Kalau BELUM
         // di-load, query fresh via builder — JANGAN lazy-load-and-cache, supaya baca ulang
         // setelah nambah delivery di instance yang sama tetap akurat (perilaku lama utuh).
-        $delivered = $this->relationLoaded('deliveries')
-            ? (int) $this->deliveries->sum('qty_delivered')
-            : (int) $this->deliveries()->sum('qty_delivered');
+        // PERF (brief 11 Nov 2026): kalau di-query dengan ->withSum('deliveries','qty_delivered')
+        // angkanya sudah ada di atribut → tak perlu memuat SEMUA baris delivery hanya untuk dijumlah.
+        if (array_key_exists('deliveries_sum_qty_delivered', $this->attributes)) {
+            $delivered = (int) $this->attributes['deliveries_sum_qty_delivered'];
+        } else {
+            $delivered = $this->relationLoaded('deliveries')
+                ? (int) $this->deliveries->sum('qty_delivered')
+                : (int) $this->deliveries()->sum('qty_delivered');
+        }
 
         return max(0, (int) $this->qty_packs - $delivered);
     }

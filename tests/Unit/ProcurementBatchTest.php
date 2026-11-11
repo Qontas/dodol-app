@@ -59,4 +59,39 @@ class ProcurementBatchTest extends TestCase
         $batch->refresh();
         $this->assertEquals(45, $batch->remaining_packs);
     }
+
+    /** PERF (brief 11 Nov 2026): withSum menghasilkan angka sama & tidak memuat baris delivery. */
+    public function test_remaining_packs_with_sum_matches_and_skips_loading_deliveries()
+    {
+        $batch = ProcurementBatch::factory()->create(['qty_packs' => 100]);
+        $operator = User::factory()->create(['role' => 'operator', 'is_active' => true]);
+        $trip = Trip::factory()->create([
+            'operator_id' => $operator->id, 'qty_carried_total' => 60,
+            'trip_date' => today()->format('Y-m-d'),
+        ]);
+        $kiosk = Kiosk::factory()->create();
+        $variant = ProductVariant::factory()->create();
+
+        foreach ([20, 35] as $qty) {
+            Delivery::factory()->create([
+                'kiosk_id' => $kiosk->id, 'trip_id' => $trip->id, 'product_variant_id' => $variant->id,
+                'procurement_batch_id' => $batch->id, 'qty_delivered' => $qty, 'source_type' => 'new_procurement',
+            ]);
+        }
+
+        $fresh = ProcurementBatch::withSum('deliveries', 'qty_delivered')->findOrFail($batch->id);
+
+        \DB::flushQueryLog();
+        \DB::enableQueryLog();
+        $remaining = $fresh->remaining_packs;
+        $queries = count(\DB::getQueryLog());
+        \DB::disableQueryLog();
+
+        $this->assertSame(0, $queries);
+        $this->assertSame(45, $remaining);
+        $this->assertSame(45, $fresh->stok_tersisa);
+
+        // Tanpa withSum (perilaku lama) angkanya sama.
+        $this->assertSame(45, ProcurementBatch::findOrFail($batch->id)->remaining_packs);
+    }
 }
