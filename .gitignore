@@ -34,3 +34,6 @@ frankenphp
 frankenphp-worker.php
 rr
 .rr.yaml
+
+# hasil audit performa lokal (scripts/perf-audit.php)
+/storage/perf
