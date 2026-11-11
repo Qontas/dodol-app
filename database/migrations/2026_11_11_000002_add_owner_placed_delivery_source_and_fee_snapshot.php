@@ -10,9 +10,11 @@ return new class extends Migration
     public function up(): void
     {
         DB::statement("ALTER TABLE deliveries MODIFY source_type ENUM('new_procurement','fresh_return_redeploy','owner_placed','migration') NOT NULL DEFAULT 'new_procurement'");
-        Schema::table('deliveries', function (Blueprint $table) {
-            $table->decimal('app_fee_per_pack_snapshot', 12, 2)->nullable();
-        });
+        if (! Schema::hasColumn('deliveries', 'app_fee_per_pack_snapshot')) {
+            Schema::table('deliveries', function (Blueprint $table) {
+                $table->decimal('app_fee_per_pack_snapshot', 12, 2)->nullable();
+            });
+        }
     }
 
     public function down(): void

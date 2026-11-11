@@ -9,6 +9,8 @@ return new class extends Migration
 {
     public function up(): void
     {
+        $this->cleanUpPartialRun();
+
         Schema::create('price_tiers', function (Blueprint $table) {
             $table->id();
             $table->foreignId('owner_id')->nullable()->constrained('users')->cascadeOnDelete();
@@ -18,12 +20,13 @@ return new class extends Migration
             $table->boolean('is_default')->default(false);
             $table->boolean('is_active')->default(true);
             $table->timestamps();
-            // NULL values may repeat; each variant may appear only once as default.
-            // Supported by MariaDB/MySQL and SQLite (including the test fallback).
-            $table->unsignedBigInteger('default_variant_id')
-                ->nullable()->storedAs('CASE WHEN is_default = 1 THEN product_variant_id ELSE NULL END');
-            $table->unique('default_variant_id');
+            // "Exactly one default tier per variant" is enforced in PriceTier::save()/delete()
+            // (transaction + row lock on the variant), covered by PriceTierResourceTest.
+            // Do NOT reintroduce a STORED generated column over product_variant_id for a unique
+            // index: MySQL rejects an FK with ON DELETE CASCADE on a generated column's base
+            // column (error 1215), while MariaDB accepts it.
             $table->index(['owner_id', 'product_variant_id', 'is_active']);
+            $table->index(['product_variant_id', 'is_default']);
         });
 
         DB::table('product_variants')->join('products', 'products.id', '=', 'product_variants.product_id')
@@ -42,6 +45,7 @@ return new class extends Migration
                 ])->all());
             });
 
+        // Any leftover kiosks.price_tier_id was removed by cleanUpPartialRun(), so this never double-adds.
         Schema::table('kiosks', function (Blueprint $table) {
             $table->foreignId('price_tier_id')->nullable()->constrained('price_tiers')->nullOnDelete();
         });
@@ -49,7 +53,36 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('kiosks', fn (Blueprint $table) => $table->dropConstrainedForeignId('price_tier_id'));
+        if (Schema::hasColumn('kiosks', 'price_tier_id')) {
+            Schema::table('kiosks', fn (Blueprint $table) => $table->dropConstrainedForeignId('price_tier_id'));
+        }
         Schema::dropIfExists('price_tiers');
+    }
+
+    /**
+     * MySQL DDL is not transactional: a run that failed half-way leaves price_tiers and/or
+     * kiosks.price_tier_id behind while the migration is not recorded. Remove such leftovers
+     * only when they hold no data; otherwise stop with a clear message.
+     */
+    private function cleanUpPartialRun(): void
+    {
+        if (Schema::hasColumn('kiosks', 'price_tier_id')) {
+            if (DB::table('kiosks')->whereNotNull('price_tier_id')->exists()) {
+                throw new RuntimeException('kiosks.price_tier_id already exists and contains data; resolve manually before migrating.');
+            }
+            try {
+                Schema::table('kiosks', fn (Blueprint $table) => $table->dropForeign(['price_tier_id']));
+            } catch (Throwable) {
+                // Foreign key was never created; only the column is left.
+            }
+            Schema::table('kiosks', fn (Blueprint $table) => $table->dropColumn('price_tier_id'));
+        }
+
+        if (Schema::hasTable('price_tiers')) {
+            if (DB::table('price_tiers')->exists()) {
+                throw new RuntimeException('Table price_tiers already exists and contains rows; refusing to drop it. Resolve manually before migrating.');
+            }
+            Schema::drop('price_tiers');
+        }
     }
 };

@@ -149,15 +149,32 @@ class KioskPricingTest extends TestCase
         $this->assertTrue($tier->fresh()->is_default);
     }
 
-    public function test_sql_rejects_a_second_default_even_when_bypassing_model(): void
+    /**
+     * The one-default-per-variant rule is enforced in PriceTier::save() (a DB unique index over a
+     * stored generated column is not portable: MySQL 9 rejects it with FK CASCADE, error 1215).
+     */
+    public function test_model_keeps_exactly_one_default_per_variant(): void
     {
         $variant = $this->variant();
-        $this->expectException(QueryException::class);
-        DB::table('price_tiers')->insert([
+        $this->assertSame(1, PriceTier::where('product_variant_id', $variant->id)->where('is_default', true)->count());
+
+        PriceTier::create([
             'product_variant_id' => $variant->id,
-            'name' => 'Illegal duplicate', 'sale_price_per_pack' => 10000,
+            'name' => 'Default baru', 'sale_price_per_pack' => 10000,
             'is_default' => true, 'is_active' => true,
         ]);
+
+        $this->assertSame(1, PriceTier::where('product_variant_id', $variant->id)->where('is_default', true)->count());
+        $this->assertSame('Default baru', PriceTier::where('product_variant_id', $variant->id)->where('is_default', true)->value('name'));
+    }
+
+    public function test_model_refuses_to_remove_the_only_default(): void
+    {
+        $variant = $this->variant();
+        $default = PriceTier::where('product_variant_id', $variant->id)->where('is_default', true)->firstOrFail();
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $default->update(['is_default' => false]);
     }
 
     public function test_owner_scope_options_label_and_active_variant_are_isolated(): void
