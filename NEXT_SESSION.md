@@ -1,5 +1,23 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 11 November 2026*
+*Sesi terakhir: 12 November 2026*
+
+## 🟢 HOTFIX 12 NOV 2026: JUAL CASH CEPAT INPUT ≠ TOTAL — SELESAI LOKAL, JANGAN PUSH
+
+Branch `fix/operator-cash-input-binding`. Tidak ada akses prod, tidak ada migrasi. **747 PASS / 3268 assertions**, 4 test PHP baru; browser sungguhan Chrome sistem, 390×844, **32/32 cek PASS**.
+
+**Reproduksi SEBELUM fix (bukan `Livewire::set`):** nilai awal 0 → total0/Simpan disabled (benar). Ketik keyboard hapus→20 dan hapus→tunggu request kosong→20 **LOLOS di lokal**; kegagalan typed-only dari laporan lapangan belum terbukti. Tetapi tekan tombol `+` 20 kali → input20, ringkasan **0 mika / Rp0**, Simpan disabled: **persis visual laporan**. `-` dan ketik20→`+` juga tidak memperbarui ringkasan. Tambah Stok punya cacat identik. Jangan menyatakan typed-only gagal atau menyalahkan keyboard Android tanpa bukti perangkat asli.
+
+**Akar:** `resources/views/livewire/operator/active-trip.blade.php` tombol walk-in (sekitar baris419/425) & tambah stok (504/508) memakai `$wire.prop = ...`: hanya reactive client berubah, TIDAK menjadwalkan request. Total/konfirmasi/disabled adalah Blade server-side. Dibuktikan tidak ada request stepper, state canonical tetap0; vendor Livewire `generateWireObject` setter hanya mengubah state, sedangkan `$set(..., live=true)` memanggil `requestCommit` (`vendor/.../dist/livewire.js:4530–4535,4590–4596`). Input memakai `wire:model.live`, bukan x-model/entangle buatan aplikasi.
+
+**Kapan mulai:** walk-in `40b6ce4` (15 Juni 2026); pola disalin ke Tambah Stok `443acc7` (27 Oktober 2026). BUKAN regresi harga per kedai: `3aeaa7e` hanya mengubah preview walk-in menjadi `previewVariant(true)` di bagian ini, `379834d` migrasi/test saja; rentang `636a2ea..568e520` tidak menyentuh binding operator.
+
+**Fix:** kedua pasang stepper memakai live `$wire.$set` + `Number(...)` sebelum aritmetika. Input eksplisit `.live.number`; kedua state `?int` mengakomodasi input kosong (IntSynth menghidrasi kosong→null), validasi minimum tetap. Shared `incrementDrop/decrementDrop` cast `(int)` sebelum aritmetika: input kosong lalu +/- sebelumnya TypeError (test terbukti merah pada baseline). Tidak mengubah rumus harga, tier, stok guard, idempotensi, atau persist finansial.
+
+**Audit saudara:** Tagih+Titip Ulang, Titip Cash, Mulai Titipan memakai `wire:click` metode server, bukan assignment Alpine; hanya perbaikan empty-stepper di atas. Browser ketiganya lolos prefill, ketik20, +21/-20, kosong→+1; cash total cocok. Kios Baru `wire:model` deferred, tanpa stepper/preview live: prefill1, hapus→20→simpan sukses; kode tidak diubah.
+
+**Bukti:** `.claude/skills/verify-browser/cash-input-binding.cjs` permanen, semua input lewat DOM keyboard/click, TIDAK memanggil setter Livewire dari browser. Baseline 6 cek gagal; sesudah 32 PASS, 0 JS/HTTP error. Screenshot gitignored di `.claude/skills/verify-browser/shots/cash-binding/`: `before-stepper-20.png` (input20/total0/disabled), `before-typed-20.png` (ketik memang lolos), `after-typed-20-final.png` (20×20×800/Rp320.000/tombol aktif), `after-saved.png`, `after-stock-20.png`, `after-kiosk-created.png`. Screenshot sebelum/sesudah dibuka dan diperiksa visual. DB fixture lokal terisolasi terverifikasi: semua penjualan browser qty20, unit_price16000, amount_paid320000; kios baru delivery20. Harness lama `motor-stock-flow.cjs` diperbaiki agar tidak lagi menutupi cacat binding dengan setter langsung (belum dijalankan ulang; harness baru mencakup flow hotfix).
+
+**Test:** `NumericInputBindingTest` 4 test (clear/retype/simpan walk-in dan stok, validasi kosong, shared stepper kosong/string); test stepper MERAH pada baseline (`Unsupported operand types: string + int`), hijau setelah fix. Full suite 747 PASS; ada warning deprecation PHPUnit doc-comment lama. `pint --dirty --test` masih menandai gaya lama di seluruh `ActiveTrip.php` (tidak melakukan format massal di hotfix); `git diff --check` bersih.
 
 ## 🟢 BRIEF 11 NOV 2026: PERFORMA MELAMBAT — LOG REQUEST LAMBAT DI PROD + AUDIT ULANG DATA SEKARANG — SELESAI, boleh push (tidak ada migrasi)
 

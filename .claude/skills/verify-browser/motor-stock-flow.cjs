@@ -4,13 +4,9 @@
 // but does NOT touch/reset the DB — it drives an EXISTING active trip (id=4,
 // operator@cemilanqontas.id, qty_carried_total=50, stok di motor=50 saat ini).
 //
-// NOTE: the quantity fields are Livewire wire:model.live number inputs paired
-// with Alpine steppers (`x-on:click="$wire.prop = $wire.prop + 1"`). Simulated
-// Playwright clicks/typing on them do NOT reliably reach the Livewire component
-// in this headless session (confirmed via debug-flow.cjs: no /livewire/update
-// request ever fired for click()/type()). Calling `Livewire.find(id).set(...)`
-// directly via page.evaluate DOES fire a real request and IS what wire:model.live
-// itself calls under the hood — so that's what this script uses to set quantities.
+// Quantity fields MUST be exercised via DOM typing, not Livewire.set(): the old
+// direct Alpine assignment did not commit to the server (hotfix 12 Nov 2026).
+// cash-input-binding.cjs additionally covers actual +/- clicks and empty inputs.
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright-core');
@@ -39,31 +35,14 @@ async function shot(page, name) {
   console.log(`  [shot] ${name}`);
 }
 
-async function rootWireId(page) {
-  return page.evaluate(() => {
-    const el = document.querySelector('[wire\\:id]');
-    return el ? el.getAttribute('wire:id') : null;
-  });
-}
-
-/** Set a Livewire component property directly (see NOTE above) and wait for
- *  the resulting request + DOM morph to settle. */
-async function setWireProp(page, prop, value) {
-  const id = await rootWireId(page);
-  const result = await page.evaluate(
-    ({ id, prop, value }) => {
-      try {
-        window.Livewire.find(id).set(prop, value);
-        return 'ok';
-      } catch (e) {
-        return 'ERROR: ' + e.message;
-      }
-    },
-    { id, prop, value }
-  );
-  if (result !== 'ok') throw new Error(`setWireProp(${prop}, ${value}) failed: ${result}`);
-  await page.waitForLoadState('networkidle').catch(() => {});
-  await page.waitForTimeout(500);
+async function typeQuantity(page, prop, value) {
+  const field = page.locator(`input[wire\\:model\\.live\\.number="${prop}"]`);
+  await field.click();
+  await field.press('ControlOrMeta+A');
+  await field.press('Backspace');
+  await field.pressSequentially(String(value), { delay: 60 });
+  await page.waitForTimeout(300);
+  await page.waitForLoadState('networkidle');
 }
 
 (async () => {
@@ -94,11 +73,11 @@ async function setWireProp(page, prop, value) {
 
     // 3. Jual Cash Cepat, isi jumlah MELEBIHI stok di motor (60 > 50) -> harus ditolak.
     await page.click('button:has-text("Jual Cash Cepat")');
-    await page.locator('input[wire\\:model\\.live="walkInMika"]').waitFor({ state: 'visible' });
+    await page.locator('input[wire\\:model\\.live\\.number="walkInMika"]').waitFor({ state: 'visible' });
     await page.waitForTimeout(300);
     await shot(page, '02-jual-cash-cepat-modal.png');
 
-    await setWireProp(page, 'walkInMika', 60);
+    await typeQuantity(page, 'walkInMika', 60);
     await shot(page, '03-jual-cash-60-mika-blocked.png');
 
     const rejectBannerVisible = await page.locator('text=/Stok di motor tinggal .* mika, kamu mau menaruh .* mika/').count();
@@ -115,12 +94,12 @@ async function setWireProp(page, prop, value) {
     } else {
       await page.click('button:has-text("➕ Tambah Stok di Motor")');
     }
-    await page.locator('input[wire\\:model\\.live="tambahStokQty"]').waitFor({ state: 'visible' });
+    await page.locator('input[wire\\:model\\.live\\.number="tambahStokQty"]').waitFor({ state: 'visible' });
     await page.waitForTimeout(300);
     await shot(page, '04-modal-tambah-stok.png');
 
     // 5. Isi 20, konfirmasi.
-    await setWireProp(page, 'tambahStokQty', 20);
+    await typeQuantity(page, 'tambahStokQty', 20);
     const confirmText = await page.locator('text=/Tambah 20 mika ke stok motor\\?/').count();
     console.log(`Teks konfirmasi "Tambah 20 mika ke stok motor?" terlihat: ${confirmText > 0 ? 'YA' : 'TIDAK'}`);
     if (confirmText === 0) ok = false;
@@ -143,7 +122,7 @@ async function setWireProp(page, prop, value) {
     // unrelated to this feature, not something introduced here, so we verify
     // success the way it's actually observable: modal closes + header count bumps.
     await shot(page, '06-tambah-stok-sukses.png');
-    const addStockModalClosed = (await page.locator('input[wire\\:model\\.live="tambahStokQty"]').count()) === 0;
+    const addStockModalClosed = (await page.locator('input[wire\\:model\\.live\\.number="tambahStokQty"]').count()) === 0;
     console.log(`Modal Tambah Stok tertutup setelah konfirmasi (sukses): ${addStockModalClosed ? 'YA' : 'TIDAK'}`);
     if (!addStockModalClosed) ok = false;
 
@@ -156,10 +135,10 @@ async function setWireProp(page, prop, value) {
 
     // 6. Ulangi Jual Cash Cepat 60 mika -> sekarang harus LOLOS (50+20=70 >= 60).
     await page.click('button:has-text("Jual Cash Cepat")');
-    await page.locator('input[wire\\:model\\.live="walkInMika"]').waitFor({ state: 'visible' });
+    await page.locator('input[wire\\:model\\.live\\.number="walkInMika"]').waitFor({ state: 'visible' });
     await page.waitForTimeout(300);
 
-    await setWireProp(page, 'walkInMika', 60);
+    await typeQuantity(page, 'walkInMika', 60);
     await shot(page, '08-jual-cash-60-mika-after-tambah.png');
 
     const saveBtnNowEnabled = await page.locator('button:has-text("Simpan Penjualan")').count();
@@ -173,7 +152,7 @@ async function setWireProp(page, prop, value) {
     await shot(page, '09-jual-cash-60-mika-berhasil.png');
 
     // Modal should have closed on success (closeWalkInModal() runs after save).
-    const modalStillOpen = await page.locator('input[wire\\:model\\.live="walkInMika"]').count();
+    const modalStillOpen = await page.locator('input[wire\\:model\\.live\\.number="walkInMika"]').count();
     console.log(`Modal Jual Cash Cepat tertutup setelah simpan (sukses): ${modalStillOpen === 0 ? 'YA' : 'TIDAK (masih terbuka, cek screenshot 09)'}`);
     if (modalStillOpen > 0) ok = false;
   } catch (e) {

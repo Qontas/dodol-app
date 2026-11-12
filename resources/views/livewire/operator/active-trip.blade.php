@@ -415,12 +415,14 @@
 
                 <div>
                     <label class="block text-sm font-semibold text-slate-700 mb-1.5">Jumlah Mika</label>
+                    {{-- $set is live: direct $wire.prop assignment only changes client state,
+                         leaving the server-rendered total and disabled button stale. --}}
                     <div class="flex items-center justify-center gap-3">
-                        <button type="button" x-on:click="$wire.walkInMika = Math.max(0, ($wire.walkInMika || 0) - 1)"
+                        <button type="button" x-on:click="$wire.$set('walkInMika', Math.max(0, (Number($wire.walkInMika) || 0) - 1))"
                                 class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">-</button>
-                        <input type="number" onfocus="this.select()" min="1" wire:model.live="walkInMika"
+                        <input type="number" onfocus="this.select()" min="1" wire:model.live.number="walkInMika"
                                class="w-24 text-center text-2xl font-bold rounded-lg border-slate-300 focus:border-amber-500 focus:ring-amber-500">
-                        <button type="button" x-on:click="$wire.walkInMika = ($wire.walkInMika || 0) + 1"
+                        <button type="button" x-on:click="$wire.$set('walkInMika', (Number($wire.walkInMika) || 0) + 1)"
                                 class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
                     </div>
                     @error('walkInMika')
@@ -497,11 +499,11 @@
                 <div>
                     <label class="block text-sm font-semibold text-slate-700 mb-1.5">Jumlah Mika Ditambah</label>
                     <div class="flex items-center justify-center gap-3">
-                        <button type="button" x-on:click="$wire.tambahStokQty = Math.max(0, ($wire.tambahStokQty || 0) - 1)"
+                        <button type="button" x-on:click="$wire.$set('tambahStokQty', Math.max(0, (Number($wire.tambahStokQty) || 0) - 1))"
                                 class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">-</button>
-                        <input type="number" onfocus="this.select()" min="1" max="500" wire:model.live="tambahStokQty"
+                        <input type="number" onfocus="this.select()" min="1" max="500" wire:model.live.number="tambahStokQty"
                                class="w-24 text-center text-2xl font-bold rounded-lg border-slate-300 focus:border-amber-500 focus:ring-amber-500">
-                        <button type="button" x-on:click="$wire.tambahStokQty = ($wire.tambahStokQty || 0) + 1"
+                        <button type="button" x-on:click="$wire.$set('tambahStokQty', (Number($wire.tambahStokQty) || 0) + 1)"
                                 class="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xl font-bold flex items-center justify-center active:bg-slate-200">+</button>
                     </div>
                     @error('tambahStokQty')

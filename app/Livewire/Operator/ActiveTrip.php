@@ -194,14 +194,15 @@ class ActiveTrip extends Component
 
     // --- STATE WALK-IN CASH (penjualan cash ke pembeli random, bukan kios) ---
     public bool $isWalkInModalOpen = false;
-    public int $walkInMika = 0;
+    // A cleared number input is hydrated as null by Livewire's IntSynth.
+    public ?int $walkInMika = 0;
 
     // --- PENGAMAN STOK DI MOTOR (brief 27 Okt 2026): "➕ Tambah Stok di Motor" ---
     // Modal konfirmasi 2-langkah (angka + teks konfirmasi) — operator menambah stok
     // yang BENAR-BENAR dibawa lagi di tengah trip. qty_carried_total TIDAK pernah
     // ditimpa; tambahan dicatat sebagai baris TripStockAddition (lihat confirmAddStock()).
     public bool $isAddStockModalOpen = false;
-    public int $tambahStokQty = 0;
+    public ?int $tambahStokQty = 0;
 
     // --- STATE KOREKSI ANGKA VISIT (UI Tahap 3; logic reversal di correctVisit) ---
     public bool $isCorrectionModalOpen = false;
@@ -1476,12 +1477,12 @@ class ActiveTrip extends Component
 
     public function incrementDrop()
     {
-        $this->dropBaru = max(0, $this->dropBaru + 1);
+        $this->dropBaru = max(0, (int) $this->dropBaru + 1);
     }
 
     public function decrementDrop()
     {
-        $this->dropBaru = max(0, $this->dropBaru - 1);
+        $this->dropBaru = max(0, (int) $this->dropBaru - 1);
     }
 
     /**
