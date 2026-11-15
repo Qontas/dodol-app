@@ -37,3 +37,6 @@ rr
 
 # hasil audit performa lokal (scripts/perf-audit.php)
 /storage/perf
+
+# cache font dompdf (dibuat otomatis saat runtime oleh AppFeeInvoicePdf::render)
+/storage/fonts

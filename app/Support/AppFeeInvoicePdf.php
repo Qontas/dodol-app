@@ -6,6 +6,7 @@ use App\Models\AppFeeInvoice;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\File;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -82,9 +83,46 @@ class AppFeeInvoicePdf
         $d['terbilang'] = Terbilang::rupiah($d['total_fee']);
         $d['issuer'] = array_merge(InvoiceSettings::defaults(), $d['issuer'] ?? []);
         $d['logo'] = public_path('images/brand/cq-logo-utama.png');
+        $d['fonts'] = self::fontUrls();
+        $d['show_attention'] = self::showAttention($d['billed_to'] ?? []);
 
         return $d;
     }
+
+    /**
+     * Baris "u.p. <nama>" disembunyikan bila nama user == nama usaha setelah dinormalisasi
+     * (abaikan spasi & huruf besar/kecil) — menghindari baris dobel "Kuali Stories / u.p. Kuali Stories".
+     *
+     * @param  array<string, mixed>  $billedTo
+     */
+    public static function showAttention(array $billedTo): bool
+    {
+        $norm = fn (?string $s): string => mb_strtolower((string) preg_replace('/\s+/u', '', (string) $s));
+        $owner = $norm($billedTo['owner_name'] ?? '');
+
+        return $owner !== '' && $owner !== $norm($billedTo['business'] ?? '');
+    }
+
+    /**
+     * Font OFL (Fraunces = judul/angka total/nama penerbit; Lato = isi) disimpan di
+     * resources/fonts/invoice dan didaftarkan lewat @font-face dompdf (subsetting aktif).
+     *
+     * @return array<string, string>
+     */
+    private static function fontUrls(): array
+    {
+        $dir = str_replace('\\', '/', resource_path('fonts/invoice'));
+
+        return [
+            'fraunces_bold' => $dir.'/Fraunces72pt-SemiBold.ttf',
+            'lato' => $dir.'/Lato-Regular.ttf',
+            'lato_bold' => $dir.'/Lato-Bold.ttf',
+            'lato_italic' => $dir.'/Lato-Italic.ttf',
+        ];
+    }
+
+    /** Lebar penuh teks "Hal n/n" supaya ujung kanannya rata dgn margin kanan konten. */
+    private const PAGE_MARGIN_RIGHT = 44;
 
     public static function filename(array $d): string
     {
@@ -95,9 +133,16 @@ class AppFeeInvoicePdf
         return "Invoice {$nomor} {$usaha} {$d['period_label']}.pdf";
     }
 
-    /** @param  array<string, mixed>  $d */
-    public static function download(array $d): Response
+    /**
+     * Render + gambar nomor halaman. Dipisah dari download() agar jumlah halaman bisa diuji.
+     *
+     * @param  array<string, mixed>  $d
+     */
+    public static function render(array $d): \Barryvdh\DomPDF\PDF
     {
+        // dompdf menyalin font @font-face ke font_dir (storage/fonts) + membuat installed-fonts.json.
+        File::ensureDirectoryExists(storage_path('fonts'));
+
         $pdf = Pdf::loadView('exports.app-fee-invoice-pdf', $d)
             ->setPaper('a4', 'portrait')
             ->setOption('isFontSubsettingEnabled', true);
@@ -106,9 +151,13 @@ class AppFeeInvoicePdf
         // Nomor halaman "Hal 1/2" — dompdf tak punya counter CSS, digambar di canvas.
         $dompdf = $pdf->getDomPDF();
         $canvas = $dompdf->getCanvas();
-        $font = $dompdf->getFontMetrics()->getFont('DejaVu Sans', 'normal');
+        $metrics = $dompdf->getFontMetrics();
+        $font = $metrics->getFont('Lato', 'normal') ?: $metrics->getFont('DejaVu Sans', 'normal');
+        $pages = $canvas->get_page_count();
+        // Rata kanan ke margin kanan konten: ukur teks terpanjang ("Hal n/n").
+        $textWidth = $metrics->getTextWidth("Hal {$pages}/{$pages}", $font, 8);
         $canvas->page_text(
-            $canvas->get_width() - 44 - 60,
+            $canvas->get_width() - self::PAGE_MARGIN_RIGHT - $textWidth,
             $canvas->get_height() - 34,
             'Hal {PAGE_NUM}/{PAGE_COUNT}',
             $font,
@@ -116,6 +165,18 @@ class AppFeeInvoicePdf
             [0.45, 0.42, 0.40]
         );
 
-        return $pdf->download(self::filename($d));
+        return $pdf;
+    }
+
+    /** Jumlah halaman hasil render (untuk test & laporan). */
+    public static function pageCount(\Barryvdh\DomPDF\PDF $pdf): int
+    {
+        return $pdf->getDomPDF()->getCanvas()->get_page_count();
+    }
+
+    /** @param  array<string, mixed>  $d */
+    public static function download(array $d): Response
+    {
+        return self::render($d)->download(self::filename($d));
     }
 }

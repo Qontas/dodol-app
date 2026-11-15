@@ -23,6 +23,22 @@ class IdDate
         return $date->day.' '.self::bulan($date->month).' '.$date->year;
     }
 
+    private const BULAN_SINGKAT = [1 => 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+    /** Indeks Carbon dayOfWeek: 0 = Minggu. */
+    private const HARI_SINGKAT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+
+    public static function hariSingkat(CarbonInterface $date): string
+    {
+        return self::HARI_SINGKAT[$date->dayOfWeek];
+    }
+
+    /** "20 Okt · Sen" — bulan & tahun sudah tertulis di baris Periode. */
+    public static function tanggalHari(CarbonInterface $date): string
+    {
+        return $date->day.' '.self::BULAN_SINGKAT[$date->month].' · '.self::hariSingkat($date);
+    }
+
     /** "November 2026" dari 'YYYY-MM' */
     public static function bulanTahun(string $period): string
     {
