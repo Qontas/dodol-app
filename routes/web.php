@@ -129,6 +129,21 @@ Route::middleware(['auth', 'verified', 'no-store', 'role:operator', 'auto-close-
         Route::get('/profile', \App\Livewire\Operator\Profile::class)->name('profile');
     });
 
+// Invoice fee aplikasi (PDF) — SUPER ADMIN SAJA; owner/operator → 403 (role middleware).
+// Prefix 'admin/invoice-pdf' sengaja beda dari slug resource Filament ('invoice-fee').
+Route::middleware(['auth', 'verified', 'no-store', 'role:super_admin'])
+    ->prefix('admin/invoice-pdf')
+    ->name('admin.invoice-pdf.')
+    ->group(function () {
+        Route::get('/owner/{owner}/{period}', [\App\Http\Controllers\Admin\AppFeeInvoiceController::class, 'forOwnerPeriod'])
+            ->whereNumber('owner')
+            ->where('period', '\d{4}-\d{2}')
+            ->name('owner-period');
+        Route::get('/{invoice}', [\App\Http\Controllers\Admin\AppFeeInvoiceController::class, 'show'])
+            ->whereNumber('invoice')
+            ->name('show');
+    });
+
 // no-store eksplisit (sabuk pengaman): Livewire sudah set no-store untuk halaman
 // berkomponen, ini menegaskan niat + jaga kalau struktur view berubah.
 Route::view('profile', 'profile')

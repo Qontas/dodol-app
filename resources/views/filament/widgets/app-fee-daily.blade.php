@@ -26,6 +26,22 @@
                         @endforeach
                     </x-filament::input.select>
                 </x-filament::input.wrapper>
+
+                {{-- Invoice (BRIEF invoice fee): hanya saat SATU owner dipilih. Terbit kalau ada,
+                     kalau belum → draft (diputuskan controller). Fee 0 → tombol nonaktif + info. --}}
+                @if ($invoiceDownload)
+                    @if ($invoiceDownload['enabled'])
+                        <x-filament::button tag="a" :href="$invoiceDownload['url']" size="sm" color="gray" icon="heroicon-o-arrow-down-tray">
+                            Unduh Invoice
+                        </x-filament::button>
+                    @else
+                        <x-filament::button size="sm" color="gray" icon="heroicon-o-arrow-down-tray" disabled
+                            title="Fee owner ini di bulan itu Rp 0 — tidak perlu invoice">
+                            Unduh Invoice
+                        </x-filament::button>
+                        <span class="text-xs text-gray-500 dark:text-gray-400">Fee Rp 0 — tidak perlu invoice.</span>
+                    @endif
+                @endif
             </div>
         </x-slot>
 

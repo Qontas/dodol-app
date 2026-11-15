@@ -67,7 +67,7 @@ class AppFeeCalculator
         return $out;
     }
 
-    /** @return array<int, array{date: string, owner_id: int, owner_name: string, mika_kena_fee: int, fee: float}> */
+    /** @return array<int, array{date: string, owner_id: int, owner_name: string, mika_kena_fee: int, fee: float, min_rate: float, max_rate: float}> */
     public static function summaryByOwnerAndDate(int $year, int $month): array
     {
         $monthStart = \Illuminate\Support\Carbon::create($year, $month, 1)->startOfMonth();
@@ -76,7 +76,7 @@ class AppFeeCalculator
             ->join('users as o', 'o.id', '=', 'f.owner_id')
             ->whereBetween('f.fee_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
             ->groupBy('f.fee_date', 'f.owner_id', 'o.name')
-            ->selectRaw('f.fee_date, f.owner_id, o.name as owner_name, SUM(f.qty_delivered) as mika_kena_fee, SUM(f.qty_delivered * f.rate) as fee')
+            ->selectRaw('f.fee_date, f.owner_id, o.name as owner_name, SUM(f.qty_delivered) as mika_kena_fee, SUM(f.qty_delivered * f.rate) as fee, MIN(f.rate) as min_rate, MAX(f.rate) as max_rate')
             ->orderBy('f.fee_date')->orderBy('o.name')->get();
 
         return $rows->map(fn ($row) => [
@@ -85,6 +85,10 @@ class AppFeeCalculator
             'owner_name' => $row->owner_name,
             'mika_kena_fee' => (int) $row->mika_kena_fee,
             'fee' => (float) $row->fee,
+            // Metadata tarif aktual (bukan rata-rata fee/mika): dua tarif berbeda
+            // dalam satu hari bisa punya rata-rata sama dengan hari lain.
+            'min_rate' => (float) $row->min_rate,
+            'max_rate' => (float) $row->max_rate,
         ])->all();
     }
 

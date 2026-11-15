@@ -78,6 +78,7 @@ class AdminPanelProvider extends PanelProvider
             // Pengadaan) hidup di owner panel /owner-panel, bukan di sini.
             ->resources([
                 UserResource::class,
+                \App\Filament\Resources\AppFeeInvoiceResource::class,
             ])
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([

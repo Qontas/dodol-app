@@ -1002,6 +1002,22 @@ Batch query (tanpa N+1): 1 query batch per-tanggal (sama pola `AppFeeCalculator:
 
 ---
 
+#### B8.7 Super Admin — "Invoice Fee" (invoice fee aplikasi PDF per owner per bulan)
+
+**Baru 15 Nov 2026.** Navigasi: panel Admin → menu **"Invoice Fee"** (`app/Filament/Resources/AppFeeInvoiceResource.php`, slug `invoice-fee`) dan **"Pengaturan Invoice"** (`app/Filament/Pages/InvoiceSettingsPage.php`, slug `pengaturan-invoice`). **Super admin SAJA** (`canAccess()`; owner/operator → menu tersembunyi, URL 403). Fee/invoice tak muncul di panel owner/operator.
+
+**Daftar:** kolom Periode, Owner, Nomor, Mika, Total (Rp), Status (badge: Terbit/Lunas/Dibatalkan/**Lewat jatuh tempo** — yang terakhir tampilan saja, bukan status DB), Jatuh Tempo. Filter: Owner, Periode, Status. Aksi baris: **Unduh PDF**, **Tandai Lunas** (tanggal bayar ≤ hari ini + catatan opsional), **Batal Lunas**, **Batalkan** (alasan wajib), **Terbitkan Ulang** (hanya invoice void tanpa invoice aktif; nomor baru). Tombol header: **Buat / Unduh Draft** (pilih owner + bulan; kalau sudah terbit → mengunduh yang terbit), **Terbitkan Invoice** (hanya bulan yang sudah lewat), **Pengaturan Invoice**.
+
+**Pengaturan Invoice:** Nama penerbit (default "Cemilan Qontas"), Alamat, No. WA, Email, Nama bank, No. rekening, Atas nama, Jatuh tempo (hari, 1–90, default 7), Catatan kaki. Tersimpan di tabel `settings` (key `app_fee_invoice_settings`); invoice terbit menyalin (snapshot) nilainya.
+
+**Widget "Rincian Fee Aplikasi Harian" (B8.6):** tombol **"Unduh Invoice"** muncul hanya saat SATU owner dipilih & bulan tidak di masa depan; terbit kalau ada, kalau belum → draft; nonaktif kalau fee owner di bulan itu Rp 0.
+
+**PDF (A4 potret, dompdf, `resources/views/exports/app-fee-invoice-pdf.blade.php`):** kop logo + "INVOICE" + nomor/tanggal terbit/jatuh tempo/status; blok Dari & Ditagihkan kepada; Periode "1–30 November 2026"; tabel Tanggal | Mika kena fee | Fee (Rp) (header berulang, "Hal x/y"); "Tarif Rp N/mika" bila seragam; total besar + terbilang; kotak pembayaran; catatan kaki. Cap: LUNAS (+tanggal), DIBATALKAN, watermark DRAFT. Nama file: `Invoice CQ-INV-202611-001 KualiStories November 2026.pdf` (draft: `Invoice DRAFT KualiStories November 2026.pdf`), force download. Route: `/admin/invoice-pdf/{invoice}` & `/admin/invoice-pdf/owner/{owner}/{period}` (`role:super_admin`).
+
+Aturan: satu invoice aktif per owner+periode; angka dari `AppFeeCalculator::summaryByOwnerAndDate()`; invoice terbit tidak berubah walau data/pengaturan berubah. Lihat `NEXT_SESSION.md` (brief 15 Nov 2026).
+
+---
+
 ### B9. Settings (PALING PENTING — cek paling teliti)
 
 Halaman Settings owner: `GET /owner/settings`, `PUT /owner/settings/update`

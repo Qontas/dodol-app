@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\User;
 use App\Support\AppFeeCalculator;
+use App\Support\AppFeeInvoiceService;
 use Filament\Widgets\Widget;
 
 /**
@@ -116,10 +117,23 @@ class AppFeeDailyWidget extends Widget
             'fee' => (float) $rows->sum('fee'),
         ];
 
+        // Tombol "Unduh Invoice" — hanya kalau 1 owner dipilih & bulan valid/tidak di masa depan.
+        // Snapshot terbit tetap bisa diunduh walau data live sudah diarsip (fee kini 0).
+        // Tambahan satu query hanya saat 1 owner dipilih, bukan per baris tanggal.
+        $invoiceDownload = null;
+        if (static::canView() && $this->ownerId !== 0 && AppFeeInvoiceService::validPeriod($this->month)
+            && AppFeeInvoiceService::periodNotFuture($this->month)) {
+            $invoiceDownload = [
+                'enabled' => $total['fee'] > 0 || AppFeeInvoiceService::activeFor($this->ownerId, $this->month) !== null,
+                'url' => route('admin.invoice-pdf.owner-period', ['owner' => $this->ownerId, 'period' => $this->month]),
+            ];
+        }
+
         return [
             'rows' => $rows,
             'total' => $total,
             'owners' => $owners,
+            'invoiceDownload' => $invoiceDownload,
         ];
     }
 }

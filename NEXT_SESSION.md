@@ -1,5 +1,30 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 12 November 2026*
+*Sesi terakhir: 15 November 2026*
+
+## 🔴 BRIEF 15 NOV 2026: INVOICE FEE APLIKASI (PDF) PER OWNER PER BULAN — SUPER ADMIN ONLY — SELESAI LOKAL, ADA MIGRASI → **JANGAN PUSH SEBELUM OWNER BACKUP DB PRODUKSI**
+
+Branch `feat/admin-app-fee-invoices`. Tidak ada akses prod. **Full suite 780 PASS / 3476 assertions, 2 skipped** di MySQL 9.4 (747 baseline + 33 test baru `tests/Feature/Admin/AppFeeInvoiceTest.php`). Dua test race opt-in yang skipped di suite biasa sudah dijalankan TERPISAH dan **2 PASS**. Warning deprecation PHPUnit doc-comment lama tetap ada. Pint semua file PHP baru PASS; `git diff --check` PASS.
+
+**Migrasi:** `2026_11_15_000001_create_app_fee_invoices_table.php` (tabel baru `app_fee_invoices`, tanpa generated column/unique-index untuk "satu aktif" — dijaga di aplikasi). Diuji di MySQL 9.4 (127.0.0.1:3399, DB baru `cq_mig94_20261115175211`): `migrate:fresh` → `rollback --step=1` (tabel hilang) → `migrate` (tabel kembali), semua DONE. Full suite juga dijalankan di MySQL 9.4. mysqld 9.4 SENGAJA dibiarkan menyala (owner yang menutup).
+
+**Keputusan owner:** nomor `CQ-INV-YYYYMM-NNN` memakai bulan **PERIODE tagihan** (bukan bulan terbit); NNN urut per periode lintas owner; nomor void tidak dipakai ulang.
+
+**Arsitektur:**
+- Angka: `AppFeeInvoiceService::compute()` → `AppFeeCalculator::summaryByOwnerAndDate()` (fungsi yang SAMA dgn widget "Rincian Fee Aplikasi Harian"; tak ada rumus baru). Hari 0 mika dibuang.
+- Terbit: hanya bulan yang sudah lewat (zona waktu app, `today()`); transaksi + `lockForUpdate` baris owner; snapshot `lines` + `issuer` + `billed_to` → PDF tak berubah walau trip diarsip/pengaturan diubah (test). Satu invoice aktif (issued/paid) per owner+periode. Fee Rp 0 → ditolak. Void wajib alasan (termasuk invoice lunas; riwayat bayar tetap disimpan); terbit ulang → nomor baru. "Lewat jatuh tempo" = tampilan (`isOverdue()`), bukan status DB.
+- Pengaturan penerbit: satu baris JSON di tabel `settings` key `app_fee_invoice_settings` (`App\Support\InvoiceSettings`), halaman `/admin/pengaturan-invoice`.
+- PDF: dompdf (engine sama dgn Laporan Periode/Trip) → logo PAKAI PNG (`public/images/brand/cq-logo-utama.png`). View `resources/views/exports/app-fee-invoice-pdf.blade.php`; "Hal x/y" digambar via canvas `page_text`. Draft = watermark "DRAFT — SEMENTARA", tanpa nomor, dihitung live, tak disimpan.
+- UI: menu "Invoice Fee" (`AppFeeInvoiceResource`, slug `invoice-fee`) + header "Buat / Unduh Draft", "Terbitkan Invoice", "Pengaturan Invoice"; aksi baris Unduh PDF / Tandai Lunas / Batal Lunas / Batalkan / Terbitkan Ulang. Widget "Rincian Fee Aplikasi Harian": tombol "Unduh Invoice" muncul saat 1 owner dipilih (nonaktif kalau fee 0).
+- Route PDF: `/admin/invoice-pdf/{invoice}` & `/admin/invoice-pdf/owner/{owner}/{period}` (middleware `role:super_admin` → owner/operator 403).
+- Keamanan: panel `/admin` bisa dimasuki owner (`owner,super_admin`), jadi resource & page memakai `canAccess()` super-admin-only + `abort_unless` di `mount()`. Test: owner & operator 403 di semua URL, Livewire forbidden, tak ada nomor/"Invoice Fee" bocor di halaman owner.
+
+**Aset logo:** 8 file dari `cemilan-qontas-brand.zip` di `public/images/brand/` (`cq-logo-utama|ikon|horizontal|stempel` × `.svg/.png`). Semua PNG terverifikasi bisa dibuka.
+
+**Render PDF contoh:** 4 PDF (draft/terbit/lunas/dibatalkan, data contoh, masing-masing 2 hal) + PNG di `C:\Users\Qontas\AppData\Local\Temp\cq-render\out-175359\`. Render Windows.Data.Pdf lokal, tanpa upload. Cap awal menutupi penerima → sudah dipindahkan ke blok sendiri; watermark diperkecil agar tidak terpotong. Header tabel berulang + `Hal 1/2`, `Hal 2/2`. Font subsetting aktif: PDF sekitar 55 KB, bukan 1,3 MB. Render ulang: `render-samples.php` di folder `cq-render` (via `php artisan tinker --execute`).
+
+**Penguatan verifikasi:** fee0 dengan mika>0 menonaktifkan unduh/terbit (modal + widget + controller), snapshot tetap bisa diunduh walau SEMUA trip diarsip. `boot()` guard super admin pada setiap request Livewire (test role turun sesudah mount →403). Label tarif seragam memakai metadata MIN/MAX tarif aktual dari query AppFeeCalculator, bukan rata-rata harian. Test race opt-in `AppFeeInvoiceConcurrencyTest` + worker terpisah, 2 PASS di MySQL 9.4: same-owner hanya 1 aktif; cross-owner dipaksa memilih nomor001 bersamaan →001/002 (jalur retry benar-benar diuji). Jalankan TERPISAH di DB disposable `*_test_db`, `RUN_INVOICE_CONCURRENCY=1`; default full suite melewatinya agar tidak menghapus fixture test lain.
+
+**TODO owner sebelum pakai:** isi Pengaturan Invoice (alamat, WA, email, bank, rekening, atas nama) di `/admin/pengaturan-invoice`; belum ada data rekening di kode.
 
 ## 🟢 HOTFIX 12 NOV 2026: JUAL CASH CEPAT INPUT ≠ TOTAL — SELESAI LOKAL, JANGAN PUSH
 
