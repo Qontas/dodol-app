@@ -1,6 +1,10 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 16 November 2026*
 
+## FIX EXCEL LAPORAN KEDAI 16 NOV 2026 — freeze pane + judul A1 (tanpa migrasi, commit lokal, JANGAN PUSH)
+
+Branch `fix/kiosk-insight-excel-panes`. (1) **Freeze pane:** `freezePane($sel, $sel)` kini menulis `topLeftCell` = sel freeze (B7, atau C7 di Daftar Kedai +Foto) sehingga pane bawah/kanan tidak mulai dari baris 1 (baris judul/header 1–6 tidak lagi tampil dobel). Berlaku untuk keempat sheet (Ringkasan, Perlu Tindakan, Daftar Kedai, Penjelasan). Sel aktif awal juga di sel freeze: `setSelectedCell()` WAJIB dipanggil TERAKHIR di `AfterSheet`, karena `Worksheet::getStyle()` memindahkan seleksi aktif ke sel yang distyle (sebelumnya activeCell bocor ke C7/C8 = sel label). (2) **Judul A1** digabung `A1:{kolom terakhir}1` tanpa wrap (hanya A1; baris area/data tidak di-merge, filter aman). Dulu A1 lebar 19 + wrap → "LAPORAN KEDAI — Daftar Kedai" terpotong "LAPOR…" di Excel. Test membaca XML sheet hasil tulis (`pane topLeftCell/activePane/state`, `selection bottomRight activeCell/sqref`) untuk 4 sheet × foto/tanpa × satu/semua owner, plus merge A1. Full suite sekali, MySQL9.4:3399: **865 PASS, 2 SKIP (invoice race opt-in), 0 FAIL, 5117 assertions, 303,98s**. **Belum dibuka di aplikasi Excel sungguhan dari mesin ini** — bukti = XML hasil tulis + reader PhpSpreadsheet.
+
 ## KOREKSI LABEL 16 NOV 2026 — BS terpisah, permintaan tersensor, dropdown (tanpa migrasi, JANGAN PUSH)
 
 Branch `fix/kiosk-insight-labels`. Tidak ada akses prod. `% BS` = hanya kedaluwarsa/rusak ÷ biji konsinyasi ditagih; kolom lama diganti `Sisa Dibawa Pulang (%)` (hanya segar, informasi). Bermasalah hanya BS≥10% atau piutang≥30hari; Lambat laku<60%. Ambang env/config: `KIOSK_INSIGHTS_BS_PCT=10`, `KIOSK_INSIGHTS_SLOW_PCT=60`, `KIOSK_INSIGHTS_DEBT_DAYS=30`; env eksplisit tetap menang (prod bila pernah set25/50 harus ubah nilainya). Penjelasan Excel/PDF diperbarui. Data belum cukup tanpa saran BS/jatah dan tanpa prioritas BS; piutang/kunjungi tetap boleh.

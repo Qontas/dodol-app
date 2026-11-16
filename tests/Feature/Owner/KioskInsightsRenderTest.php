@@ -104,6 +104,56 @@ class KioskInsightsRenderTest extends TestCase
         $book->disconnectWorksheets();
     }
 
+    public function test_saved_workbook_panes_start_and_select_at_the_freeze_cell(): void
+    {
+        $titles = ['Ringkasan', 'Perlu Tindakan', 'Daftar Kedai', 'Penjelasan'];
+        foreach ([false, true] as $photos) {
+            foreach ([false, true] as $allOwners) {
+                $data = $this->data([$this->row()]);
+                $data['all_owners'] = $allOwners;
+                $path = $this->temporaryFile('xlsx');
+                file_put_contents($path, Excel::raw(new KioskInsightsExport($data, $photos), ExcelFormat::XLSX));
+                Cell::setValueBinder(new DefaultValueBinder);
+                $zip = new \ZipArchive;
+                $this->assertTrue($zip->open($path));
+                foreach ($titles as $index => $title) {
+                    $expected = $photos && $title === 'Daftar Kedai' ? 'C7' : 'B7';
+                    $xml = simplexml_load_string($zip->getFromName('xl/worksheets/sheet'.($index + 1).'.xml'));
+                    $view = $xml->sheetViews->sheetView;
+                    $pane = $view->pane->attributes();
+                    $label = $title.($photos ? ' +foto' : '').($allOwners ? ' semua-owner' : '');
+                    $this->assertSame('frozen', (string) $pane['state'], $label);
+                    $this->assertSame('6', (string) $pane['ySplit'], $label);
+                    // Pane bawah/kanan harus mulai TEPAT di sel freeze, bukan A1 (yang menampilkan baris 1–6 dobel).
+                    $this->assertSame($expected, (string) $pane['topLeftCell'], 'topLeftCell '.$label);
+                    $this->assertSame('bottomRight', (string) $pane['activePane'], $label);
+                    // Sel aktif awal di pane aktif juga di sel freeze.
+                    $active = collect($view->selection)->first(fn ($s) => (string) $s['pane'] === 'bottomRight');
+                    $this->assertNotNull($active, 'selection bottomRight '.$label);
+                    $this->assertSame($expected, (string) $active['activeCell'], 'activeCell '.$label);
+                    $this->assertSame($expected, (string) $active['sqref'], 'sqref '.$label);
+                }
+                $zip->close();
+            }
+        }
+    }
+
+    public function test_saved_workbook_titles_are_complete_and_span_the_visible_columns(): void
+    {
+        foreach ([false, true] as $photos) {
+            foreach ([[], [$this->row()]] as $rows) {
+                $book = $this->workbook($this->data($rows), $photos);
+                foreach ($book->getAllSheets() as $sheet) {
+                    $this->assertSame('LAPORAN KEDAI — '.$sheet->getTitle(), $sheet->getCell('A1')->getValue());
+                    $range = 'A1:'.$sheet->getHighestColumn().'1';
+                    $this->assertSame([$range => $range], $sheet->getMergeCells(), $sheet->getTitle());
+                    $this->assertFalse($sheet->getStyle('A1')->getAlignment()->getWrapText());
+                }
+                $book->disconnectWorksheets();
+            }
+        }
+    }
+
     /** @return list<string> judul kolom baris header (baris 6) sheet tertentu. */
     private function headings(Spreadsheet $book, string $sheet): array
     {
@@ -182,7 +232,7 @@ class KioskInsightsRenderTest extends TestCase
         // Subjudul area: satu sel teks, bergaya (tebal + warna), tanpa merge.
         $this->assertTrue($sheet->getStyle('A7')->getFont()->getBold());
         $this->assertSame('E9DCC6', $sheet->getStyle('A7')->getFill()->getStartColor()->getRGB());
-        $this->assertSame([], $sheet->getMergeCells());
+        $this->assertSame(['A1:'.$sheet->getHighestColumn().'1'], array_values($sheet->getMergeCells()), 'Hanya judul A1 yang digabung; baris area dan data tidak.');
         $book->disconnectWorksheets();
     }
 

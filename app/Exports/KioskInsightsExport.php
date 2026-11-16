@@ -367,6 +367,10 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
             $sheet->getStyle('A1:'.$endColumn.$lastRow)->getFont()->setName('Calibri')->setSize(11)->getColor()->setRGB('3F2414');
             $sheet->getStyle('A1:'.$endColumn.$lastRow)->getAlignment()->setVertical(Alignment::VERTICAL_TOP)->setWrapText(true);
             $sheet->getStyle('A1')->getFont()->setSize(18)->setBold(true);
+            // Judul tidak boleh terpotong oleh lebar kolom A: gabungkan hanya A1 sampai kolom terakhir yang terlihat,
+            // tanpa wrap. Baris area/data TIDAK digabung (filter tetap aman).
+            $sheet->mergeCells('A1:'.$endColumn.'1');
+            $sheet->getStyle('A1')->getAlignment()->setWrapText(false)->setVertical(Alignment::VERTICAL_CENTER);
             $sheet->getRowDimension(1)->setRowHeight(30);
             $sheet->getDefaultColumnDimension()->setWidth(18);
             $sheet->getColumnDimension('A')->setWidth(19);
@@ -416,7 +420,10 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
             }
             // Bekukan header + kolom identitas utama: [Foto +] Nama Kedai tetap terlihat saat menggulir ke kanan.
             $frozenColumns = count(array_intersect(array_slice($this->columnKeys, 0, 2), ['__photo', 'name']));
-            $sheet->freezePane($records ? Coordinate::stringFromColumnIndex($frozenColumns + 1).'7' : 'B7');
+            $freezeCell = $records ? Coordinate::stringFromColumnIndex($frozenColumns + 1).'7' : 'B7';
+            // topLeftCell eksplisit = sel freeze (pane bawah/kanan mulai di sana, bukan A1 sehingga baris 1–6 tidak
+            // tampil dobel) dan sel aktif/seleksi awal juga di sel itu, bukan A1 yang berada di pane beku.
+            $sheet->freezePane($freezeCell, $freezeCell);
             if ($records) {
                 $sheet->setAutoFilter('A6:'.$endColumn.max(6, $lastRow));
             }
@@ -434,6 +441,9 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
                 $sheet->getStyle($cell)->getFont()->setBold(true);
             }
             $sheet->getPageSetup()->setRowsToRepeatAtTopByStartAndEnd(6, 6)->setFitToWidth(1)->setFitToHeight(0);
+            // HARUS terakhir: Worksheet::getStyle() memindahkan seleksi aktif ke sel yang distyle (mis. sel label),
+            // sehingga sel aktif awal bocor ke C7/C8 alih-alih sel freeze.
+            $sheet->setSelectedCell($freezeCell);
         }];
     }
 }
