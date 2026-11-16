@@ -18,7 +18,6 @@ use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
-use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
 
@@ -52,6 +51,8 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
     private array $links = [];
 
     private array $photos = [];
+
+    private array $labelCells = [];
 
     public function __construct(private array $data, private string $sheetTitle, private bool $withPhotos) {}
 
@@ -104,8 +105,8 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
             'sell_through_pct' => ['Sell-through', 'pct', 'Persentase biji terjual dari titipan yang sudah diselesaikan; hanya konsinyasi.'],
             'weekly_sales' => ['Laju Biji / Minggu', 'decimal', 'Laju tertimbang durasi siklus titip yang selesai, termasuk siklus terjual nol; bukan rerata persentase.'],
             'return_bs_pct' => ['Retur / BS', 'pct', 'Persentase seluruh retur (segar + kedaluwarsa) dari biji titipan siklus konsinyasi selesai.'],
-            'revenue_total' => ['Omset Periode', 'rp', 'Uang diterima dalam periode, bukan nilai stok titipan.'],
-            'revenue_30' => ['Omset 30 Hari', 'rp', 'Uang diterima 30 hari terakhir sampai tanggal acuan.'],
+            'revenue_total' => ['Omset Total', 'rp', 'amount_paid settlement pada trip penagih selesai sepanjang riwayat. Pembayaran berikutnya memperbarui nilai periode trip asal; bukan arus kas tanggal bayar.'],
+            'revenue_30' => ['Omset 30 Hari', 'rp', 'amount_paid pada trip penagih bertanggal dalam 30 hari terakhir; bukan tanggal pembayaran cicilan.'],
             'avg_revenue_per_visit' => ['Omset / Kunjungan', 'rp', 'Rata-rata uang diterima per kunjungan.'],
             'sold_out_count' => ['Siklus Habis', 'int', 'Jumlah siklus konsinyasi yang habis terjual.'],
             'settled_count' => ['Siklus Selesai', 'int', 'Jumlah settlement; termasuk settlement dengan pembayaran masih tertunda.'],
@@ -126,7 +127,7 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
 
     public function array(): array
     {
-        $this->sectionRows = $this->recordRows = $this->formats = $this->links = $this->photos = [];
+        $this->sectionRows = $this->recordRows = $this->formats = $this->links = $this->photos = $this->labelCells = [];
         $period = ($this->data['period_start'] ?? null) ? $this->data['period_start'].' s.d. '.$this->data['as_of'] : 'Seluruh riwayat s.d. '.$this->data['as_of'];
         $this->rows = [
             ['LAPORAN KEDAI — '.$this->sheetTitle],
@@ -238,6 +239,9 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
                 }
                 $column = Coordinate::stringFromColumnIndex(count($row) + 1);
                 $cell = $column.$rowNumber;
+                if ($key === 'label') {
+                    $this->labelCells[$cell] = $r['label_key'] ?? 'insufficient';
+                }
                 if ($value !== null) {
                     $value = match ($type) {
                         'int' => (int) $value,
@@ -297,6 +301,7 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
             'Label' => 'Lambat: sell-through di bawah '.($r['slow_sell_through_pct'] ?? 50).'%. Laris: sell-through sedikitnya '.($r['fast_sell_through_pct'] ?? 80).'% dan laju mencapai persentil '.($r['fast_percentile'] ?? 75).'. Retur BS sedikitnya '.($r['problem_bs_pct'] ?? 25).'% atau piutang berumur '.($r['debt_age_days'] ?? 30).' hari perlu perhatian. Label akhir mengikuti prioritas aturan; Tidak aktif (status nonaktif atau kunjungan lewat ambang '.($r['inactive_days'] ?? 30).' hari) dan Data belum cukup tidak menilai laju.',
             'Kunjungan' => 'Trip sentinel/titipan awal tetap masuk stok, tetapi bukan kunjungan nyata. Saran kunjungan memakai ambang '.($r['revisit_days'] ?? 14).' hari.',
             'Titipan vs piutang' => 'Titipan belum selesai adalah stok, bukan tagihan. Piutang adalah uang yang sudah ditagih tetapi belum dibayar. Jangan menjumlahkan keduanya sebagai omset.',
+            'Omset' => 'Jumlah amount_paid settlement mengikuti tanggal trip penagih nyata yang selesai, sama dengan laporan periode. Cicilan memperbarui settlement lama, sehingga bukan laporan arus kas berdasarkan tanggal bayar. Trip/kedai walk-in tidak masuk laporan per kedai ini.',
             'Saran' => 'Saran bukan keputusan otomatis. Target jatah dari laju biji per hari × rerata jarak kunjungan ÷ isi mika, dibulatkan; kenaikan dibatasi maksimum '.($r['max_quota_increase'] ?? 2).' mika dan tidak dipaksa naik. Kedai sehat tanpa saran tidak masuk Perlu Tindakan. Periksa keadaan kedai sebelum bertindak.',
             'Filter Excel' => 'Daftar Kedai berisi subjudul AREA. Untuk filter/pivot murni, pilih Jenis Baris = DATA. Kolom Usaha dan Area selalu diulang pada setiap kedai; subjudul tidak berisi angka.',
             'Keamanan' => 'Semua teks disimpan sebagai teks literal, bukan formula. Hanya tautan HTTPS Google Maps yang aktif; foto hanya thumbnail JPEG lokal, tanpa unduh jaringan saat render.',
@@ -341,8 +346,20 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
                 $sheet->getStyle($range)->getFont()->setBold(true)->getColor()->setRGB($row === 6 ? 'FFFFFF' : '3F2414');
                 $sheet->getRowDimension($row)->setRowHeight($row === 6 ? 34 : 28);
             }
-            foreach ($this->formats as $cell => $format) {
-                $sheet->getStyle($cell)->getNumberFormat()->setFormatCode($format);
+            $records = in_array($this->sheetTitle, ['Daftar Kedai', 'Perlu Tindakan'], true);
+            if ($records) {
+                // Apply one format per column, not ~15,000 style mutations for 450 kiosks.
+                $columnFormats = [];
+                foreach ($this->formats as $cell => $format) {
+                    $columnFormats[preg_replace('/[0-9]/', '', $cell)] = $format;
+                }
+                foreach ($columnFormats as $column => $format) {
+                    $sheet->getStyle($column.'7:'.$column.max(7, $lastRow))->getNumberFormat()->setFormatCode($format);
+                }
+            } else {
+                foreach ($this->formats as $cell => $format) {
+                    $sheet->getStyle($cell)->getNumberFormat()->setFormatCode($format);
+                }
             }
             foreach ($this->links as $cell => $url) {
                 $sheet->getCell($cell)->getHyperlink()->setUrl($url);
@@ -350,10 +367,6 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
             }
             foreach ($this->recordRows as $i => $row) {
                 $sheet->getRowDimension($row)->setRowHeight($this->sheetTitle === 'Daftar Kedai' && $this->withPhotos ? 45 : 42);
-                if ($i % 2 === 1) {
-                    $sheet->getStyle('A'.$row.':'.$endColumn.$row)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FAF7F2');
-                }
-                $sheet->getStyle('A'.$row.':'.$endColumn.$row)->getBorders()->getBottom()->setBorderStyle(Border::BORDER_HAIR)->getColor()->setRGB('D9CFC2');
             }
             $records = in_array($this->sheetTitle, ['Daftar Kedai', 'Perlu Tindakan'], true);
             $sheet->freezePane($records ? 'D7' : 'B7');
@@ -373,6 +386,11 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
                 for ($row = 7; $row <= $lastRow; $row++) {
                     $sheet->getRowDimension($row)->setRowHeight(52);
                 }
+            }
+            $statusFills = ['fast' => 'E4F0E8', 'stable' => 'E7EEF3', 'slow' => 'FFF1D8', 'problem' => 'F8E3E0', 'inactive' => 'EAE7E3', 'insufficient' => 'F1EBF6'];
+            foreach ($this->labelCells as $cell => $key) {
+                $sheet->getStyle($cell)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($statusFills[$key] ?? 'F5ECDD');
+                $sheet->getStyle($cell)->getFont()->setBold(true);
             }
             $sheet->getPageSetup()->setRowsToRepeatAtTopByStartAndEnd(6, 6)->setFitToWidth(1)->setFitToHeight(0);
         }];

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AppFeeInvoiceController;
 use App\Http\Controllers\KioskPhotoController;
 use App\Http\Controllers\Owner\MonthlyReportController;
 use App\Http\Controllers\Owner\PeriodReportController;
@@ -8,6 +9,13 @@ use App\Http\Controllers\Owner\TripExportController;
 use App\Http\Controllers\Owner\TripHistoryController;
 use App\Http\Controllers\OwnerDashboardController;
 use App\Http\Controllers\OwnerSettingsController;
+use App\Livewire\Operator\ActiveTrip;
+use App\Livewire\Operator\CreateKiosk;
+use App\Livewire\Operator\Dashboard;
+use App\Livewire\Operator\Profile;
+use App\Livewire\Operator\StartTrip;
+use App\Livewire\Owner\KioskInsightDownloads;
+use App\Support\KioskInsightExport;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -122,11 +130,21 @@ Route::middleware(['auth', 'verified', 'no-store', 'role:operator', 'auto-close-
     ->prefix('operator')
     ->name('operator.')
     ->group(function () {
-        Route::get('/dashboard', \App\Livewire\Operator\Dashboard::class)->name('dashboard');
-        Route::get('/trip/start', \App\Livewire\Operator\StartTrip::class)->name('trip.start');
-        Route::get('/trip/{tripId}', \App\Livewire\Operator\ActiveTrip::class)->name('trip.active');
-        Route::get('/kiosks/create', \App\Livewire\Operator\CreateKiosk::class)->name('kiosks.create');
-        Route::get('/profile', \App\Livewire\Operator\Profile::class)->name('profile');
+        Route::get('/dashboard', Dashboard::class)->name('dashboard');
+        Route::get('/trip/start', StartTrip::class)->name('trip.start');
+        Route::get('/trip/{tripId}', ActiveTrip::class)->name('trip.active');
+        Route::get('/kiosks/create', CreateKiosk::class)->name('kiosks.create');
+        Route::get('/profile', Profile::class)->name('profile');
+    });
+
+// Read-only exports deliberately omit auto-close middleware: generating a report must not mutate trips.
+Route::middleware(['auth', 'verified', 'no-store', 'role:owner,super_admin'])
+    ->prefix('kiosk-insights')
+    ->name('kiosk-insights.')
+    ->group(function () {
+        Route::get('/', KioskInsightDownloads::class)->name('index');
+        Route::get('/{export}/download', fn (string $export) => KioskInsightExport::download($export))
+            ->whereUuid('export')->name('download');
     });
 
 // Invoice fee aplikasi (PDF) — SUPER ADMIN SAJA; owner/operator → 403 (role middleware).
@@ -135,11 +153,11 @@ Route::middleware(['auth', 'verified', 'no-store', 'role:super_admin'])
     ->prefix('admin/invoice-pdf')
     ->name('admin.invoice-pdf.')
     ->group(function () {
-        Route::get('/owner/{owner}/{period}', [\App\Http\Controllers\Admin\AppFeeInvoiceController::class, 'forOwnerPeriod'])
+        Route::get('/owner/{owner}/{period}', [AppFeeInvoiceController::class, 'forOwnerPeriod'])
             ->whereNumber('owner')
             ->where('period', '\d{4}-\d{2}')
             ->name('owner-period');
-        Route::get('/{invoice}', [\App\Http\Controllers\Admin\AppFeeInvoiceController::class, 'show'])
+        Route::get('/{invoice}', [AppFeeInvoiceController::class, 'show'])
             ->whereNumber('invoice')
             ->name('show');
     });
