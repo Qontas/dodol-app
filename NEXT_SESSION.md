@@ -1,5 +1,21 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 15 November 2026*
+*Sesi terakhir: 16 November 2026*
+
+## 🟢 BRIEF 16 NOV 2026: LAPORAN KEDAI (EXCEL + PDF) PER OWNER — SELESAI LOKAL, TANPA MIGRASI, JANGAN PUSH SEBELUM DIREVIEW
+
+Branch `feat/kiosk-insights-export`. Tidak ada akses prod. **Tidak ada migrasi** — fitur read-only terhadap data bisnis. Dependensi baru `setasign/fpdi` + `setasign/fpdf` (menggabungkan PDF per bagian) → `composer install --no-dev` di Docker otomatis.
+
+**Keputusan owner (AskUserQuestion):** performa/saran jatah hanya konsinyasi (cash tetap masuk omset & penjualan total); minimal 3 tagihan = settlement yang stoknya sudah dirinci, meski belum lunas; laju = 7 × SUM(biji laku) ÷ SUM(maks(hari siklus,1)) termasuk siklus 0; stok sentinel (migration + owner_placed) tetap titipan berjalan, trip sentinel bukan kunjungan.
+
+**Proses panjang (tanpa queue worker):** Dockerfile/railway.toml/start command tak menjalankan `queue:work` maupun scheduler; `QUEUE_CONNECTION=database` hanya default. Dipilih **state machine lewat polling Livewire** (`wire:poll.1s`) di `App\Support\KioskInsightExport`: `start` mengambil snapshot angka sekali → tiap tick memproses ≤8 foto/≤8 detik, lalu PDF per bagian (≤18 kedai) → gabung FPDI + "Hal x/y". Progres di `storage/app/private/kiosk-insight-exports/{uuid}/state.json` (privat, hanya pembuat, kedaluwarsa 24 jam; lock file-store antar worker Octane). Tak ada request >±8 detik (Octane `max_execution_time`=30). Redeploy Railway bisa menghapus file sementara → buat ulang. Pembersihan: oportunistik saat export + `php artisan kiosks:insight-prune`.
+
+**Kode:** `KioskInsights` (metrik bulk, 14 query konstan), `config/kiosk_insights.php` (+`KIOSK_INSIGHTS_*` di `.env.example`), `kiosks:insight-profile --owner=N` (read-only, sebaran + persentil), `KioskInsightThumbnail` (JPEG 160px, cache `thumbs/kiosk-insights/` disk media + salinan lokal), `KioskInsightsExport` (4 sheet), `KioskInsightsPdf` + view, UI `/kiosk-insights` (tombol di Manajemen Kios; owner = usahanya sendiri, super admin pilih owner/semua, operator 403).
+
+**Definisi penting:** omset = `amount_paid` settlement dari kunjungan aktif trip penagih nyata selesai (sama dgn TripAggregator/Laporan Periode, BUKAN arus kas per tanggal bayar). Retur/BS = (segar+kedaluwarsa)÷biji titipan ditagih. Label: Tidak aktif > Data belum cukup > Bermasalah > Laris > Lambat > Stabil.
+
+**Hasil (dataset perf 450 kedai, MySQL 9.4):** profil metrik 478 ms/13 query; Excel 143,9 KB/2,5 dtk; Excel+foto 889 KB/7,4 dtk (58 tick, maks 2,1 dtk/request); PDF 81 hal 1,77 MB/10 dtk. Sampel ada di `storage/perf/kiosk-insights/` (gitignored). Browser Chrome `verify-browser/kiosk-insights.cjs` 9/9 PASS. Skrip lokal: `scripts/kiosk-insights-perf.php` (hanya DB `*_perf_db` port 3399), `scripts/render-kiosk-insights.ps1`.
+
+**Belum dikerjakan:** uji foto R2 sungguhan (disk lokal dummy saja; timeout S3 diset 2/4 dtk tanpa retry), dan `PerfDatasetSeeder` kini 450 kios untuk owner A.
 
 ## 🔴 BRIEF 15 NOV 2026: INVOICE FEE APLIKASI (PDF) PER OWNER PER BULAN — SUPER ADMIN ONLY — SELESAI LOKAL, ADA MIGRASI → **JANGAN PUSH SEBELUM OWNER BACKUP DB PRODUKSI**
 
