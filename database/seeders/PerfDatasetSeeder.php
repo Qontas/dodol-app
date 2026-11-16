@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\DB;
  *   DB_DATABASE=cemilan_qontas_perf_db php artisan db:seed --class=PerfDatasetSeeder --force
  *
  * Isi (acak tapi deterministik, mt_srand tetap):
- *   - 3 owner: A = 300 kios / 6 area / 3 operator / 2 trip per hari,
+ *   - 3 owner: A = 450 kios / 6 area / 3 operator / 2 trip per hari,
  *              B = 80 kios / 2 area / 1 operator, C = 20 kios / 1 operator.
  *   - 60 hari trip selesai; tiap kunjungan = 1 delivery baru + pelunasan titipan
  *     sebelumnya di kios itu (settlement). Titipan terakhir tiap kios dibiarkan pending.
@@ -61,7 +61,7 @@ class PerfDatasetSeeder extends Seeder
             ]);
 
             $specs = [
-                'A' => ['kios' => 300, 'areas' => 6, 'ops' => 3, 'tripsPerDay' => 2, 'visits' => 25],
+                'A' => ['kios' => 450, 'areas' => 6, 'ops' => 3, 'tripsPerDay' => 2, 'visits' => 25],
                 'B' => ['kios' => 80, 'areas' => 2, 'ops' => 1, 'tripsPerDay' => 1, 'visits' => 18],
                 'C' => ['kios' => 20, 'areas' => 1, 'ops' => 1, 'tripsPerDay' => 1, 'visits' => 8],
             ];
@@ -80,7 +80,7 @@ class PerfDatasetSeeder extends Seeder
 
         $owner = User::create([
             'name' => "Perf Owner {$key}", 'email' => "perf.owner.{$lower}@perf.test", 'password' => $hash,
-            'role' => 'owner', 'hpp_per_mika' => self::COST, 'harga_mika' => self::PRICE,
+            'role' => 'owner', 'business_name' => "Perf Usaha {$key}", 'hpp_per_mika' => self::COST, 'harga_mika' => self::PRICE,
             'komisi_per_mika' => 1000, 'app_fee_per_pack' => 500, 'is_active' => true,
             'email_verified_at' => $now,
         ]);
