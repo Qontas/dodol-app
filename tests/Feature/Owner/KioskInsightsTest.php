@@ -69,7 +69,8 @@ class KioskInsightsTest extends TestCase
         $this->assertSame(90, $row['settled_units']);
         $this->assertSame(50.0, $row['sell_through_pct']);
         $this->assertSame(round(7 * 45 / 22, 2), $row['weekly_sales']);
-        $this->assertSame(50.0, $row['return_bs_pct']);
+        $this->assertSame(50.0, $row['fresh_return_pct']);
+        $this->assertSame(0.0, $row['bs_pct']);
         $this->assertSame('2026-10-01', KioskInsights::build($f['owner']->id, Carbon::parse('2026-11-16'))['period_start']);
         $this->assertSame(24000.0, $row['receivable']);
         $this->assertSame(39, $row['receivable_age_days']);
@@ -109,6 +110,8 @@ class KioskInsightsTest extends TestCase
         $this->assertSame(30, $row['sold_units']);
         $this->assertSame(24000.0, $row['revenue_total']);
         $this->assertSame(1, $row['settled_count']);
+        $this->assertSame(1, $row['recent_settled_count']);
+        $this->assertSame(1, $row['recent_sold_out_count']);
     }
 
     public function test_sentinel_stocks_are_included_but_not_visits_and_use_real_cycle_dates(): void
@@ -166,6 +169,76 @@ class KioskInsightsTest extends TestCase
         $this->assertSame('slow', $rows->firstWhere('id', $b['kiosk']->id)['label_key']);
     }
 
+    public function test_fresh_returns_are_not_bs_and_low_sell_through_can_be_slow(): void
+    {
+        $f = $this->fixture();
+        foreach ([['2026-10-01', '2026-10-08'], ['2026-10-09', '2026-10-16'], ['2026-10-17', '2026-10-24']] as [$start, $end]) {
+            $this->settled($f, $start, $end, 15, [], ['qty_returned_fresh' => 14, 'qty_returned_expired' => 1]);
+        }
+        $row = $this->row($f);
+        $this->assertSame(50.0, $row['sell_through_pct']);
+        $this->assertSame(46.67, $row['fresh_return_pct']);
+        $this->assertSame(3.33, $row['bs_pct']);
+        $this->assertSame('slow', $row['label_key']);
+        $this->assertStringNotContainsString('Cek BS', implode(' ', $row['suggestions']));
+        config(['kiosk_insights.slow_sell_through_pct' => 50]);
+        $this->assertSame('stable', $this->row($f)['label_key']);
+        config(['kiosk_insights.problem_bs_pct' => 3]);
+        $this->assertSame('problem', $this->row($f)['label_key']);
+    }
+
+    public function test_problem_is_only_expired_bs_at_threshold_or_old_receivable(): void
+    {
+        $f = $this->fixture();
+        $first = $this->settled($f, '2026-10-01', '2026-10-08', 27, [], ['qty_returned_fresh' => 0, 'qty_returned_expired' => 3]);
+        $this->settled($f, '2026-10-09', '2026-10-16', 27, [], ['qty_returned_fresh' => 0, 'qty_returned_expired' => 3]);
+        $this->settled($f, '2026-10-17', '2026-10-24', 27, [], ['qty_returned_fresh' => 0, 'qty_returned_expired' => 3]);
+        $row = $this->row($f);
+        $this->assertSame(10.0, $row['bs_pct']);
+        $this->assertSame('problem', $row['label_key']);
+        $this->assertContains('Cek BS (10,0%).', $row['suggestions']);
+        config(['kiosk_insights.problem_bs_pct' => 11]);
+        $this->assertSame('fast', $this->row($f)['label_key']);
+        $first['settlement']->update(['amount_paid' => 0]);
+        $this->assertSame('problem', $this->row($f)['label_key']);
+        config(['kiosk_insights.debt_age_days' => 40]);
+        $this->assertSame('fast', $this->row($f)['label_key']);
+    }
+
+    public function test_two_of_last_three_sold_out_gets_increase_without_fast_rank_or_demand_headroom(): void
+    {
+        $f = $this->fixture();
+        $this->settled($f, '2026-10-01', '2026-10-08', 30);
+        $this->settled($f, '2026-10-09', '2026-10-16', 15);
+        $this->settled($f, '2026-10-17', '2026-10-24', 30);
+        config(['kiosk_insights.fast_percentile' => 101]); // stable, not Laris; no percentile gate
+        $row = $this->row($f);
+        $this->assertSame('stable', $row['label_key']);
+        $this->assertSame(2, $row['recent_sold_out_count']);
+        $this->assertStringContainsString('Naikkan jatah ke 3 mika (sering habis;', implode(' ', $row['suggestions']));
+        $this->assertSame(2, $f['kiosk']->fresh()->default_qty_mika);
+        config(['kiosk_insights.max_quota_increase' => 0]);
+        $this->assertStringNotContainsString('Naikkan', implode(' ', $this->row($f)['suggestions']));
+        config(['kiosk_insights.max_quota_increase' => 2]);
+        // Lifetime has 2 sold-out cycles, but only 1 of the last three now: no stale increase.
+        $this->settled($f, '2026-10-25', '2026-11-01', 15);
+        $this->assertSame(1, $this->row($f)['recent_sold_out_count']);
+        $this->assertStringNotContainsString('Naikkan', implode(' ', $this->row($f)['suggestions']));
+    }
+
+    public function test_sold_out_uses_95_percent_boundary_and_never_recommends_with_insufficient_history(): void
+    {
+        $f = $this->fixture();
+        $this->settled($f, '2026-10-01', '2026-10-08', 57, ['qty_delivered' => 4]); // 95%
+        $this->settled($f, '2026-10-09', '2026-10-16', 57, ['qty_delivered' => 4]);
+        $this->assertSame('insufficient', $this->row($f)['label_key']);
+        $this->assertStringNotContainsString('Naikkan', implode(' ', $this->row($f)['suggestions']));
+        $this->settled($f, '2026-10-17', '2026-10-24', 56, ['qty_delivered' => 4]); // below 95%
+        $row = $this->row($f);
+        $this->assertSame(2, $row['recent_sold_out_count']);
+        $this->assertStringContainsString('sering habis', implode(' ', $row['suggestions']));
+    }
+
     public function test_bulk_query_count_constant_with_450_kiosks_and_builder_does_not_write(): void
     {
         $f = $this->fixture();
@@ -204,7 +277,7 @@ class KioskInsightsTest extends TestCase
         $this->assertSame(2, $f['kiosk']->fresh()->default_qty_mika);
     }
 
-    public function test_insufficient_precedes_problem_but_retains_debt_bs_revisit_suggestions_and_inactive_wins(): void
+    public function test_insufficient_precedes_problem_retains_operational_suggestions_but_no_performance_and_inactive_wins(): void
     {
         $f = $this->fixture();
         $this->settled($f, '2026-10-01', '2026-10-08', 0, [], ['qty_returned_fresh' => 0, 'qty_returned_expired' => 30, 'amount_due' => 10000, 'amount_paid' => 0]);
@@ -212,7 +285,9 @@ class KioskInsightsTest extends TestCase
         $this->assertSame('insufficient', $row['label_key']);
         $text = implode(' ', $row['suggestions']);
         $this->assertStringContainsString('piutang', $text);
-        $this->assertStringContainsString('Cek retur/BS (100,0%)', $text);
+        $this->assertEquals(100.0, $row['bs_pct']);
+        $this->assertStringNotContainsString('Cek BS', $text);
+        $this->assertStringNotContainsString('Cek retur', $text);
         $this->assertStringContainsString('Kunjungi — sudah 39 hari', $text);
         $this->assertStringNotContainsString('Turunkan jatah', $text);
         $this->assertStringNotContainsString('Naikkan jatah', $text);
@@ -330,7 +405,7 @@ class KioskInsightsTest extends TestCase
             $rules = require config_path('kiosk_insights.php');
             $this->assertSame(4, $rules['min_settlements']);
             $this->assertIsFloat($rules['slow_sell_through_pct']);
-            $this->assertIsFloat($rules['frequent_sold_out_ratio']);
+            $this->assertIsFloat($rules['problem_bs_pct']);
         } finally {
             if ($old === null) {
                 unset($_ENV['KIOSK_INSIGHTS_MIN_SETTLEMENTS']);

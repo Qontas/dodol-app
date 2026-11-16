@@ -1,6 +1,16 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 16 November 2026*
 
+## KOREKSI LABEL 16 NOV 2026 — BS terpisah, permintaan tersensor, dropdown (tanpa migrasi, JANGAN PUSH)
+
+Branch `fix/kiosk-insight-labels`. Tidak ada akses prod. `% BS` = hanya kedaluwarsa/rusak ÷ biji konsinyasi ditagih; kolom lama diganti `Sisa Dibawa Pulang (%)` (hanya segar, informasi). Bermasalah hanya BS≥10% atau piutang≥30hari; Lambat laku<60%. Ambang env/config: `KIOSK_INSIGHTS_BS_PCT=10`, `KIOSK_INSIGHTS_SLOW_PCT=60`, `KIOSK_INSIGHTS_DEBT_DAYS=30`; env eksplisit tetap menang (prod bila pernah set25/50 harus ubah nilainya). Penjelasan Excel/PDF diperbarui. Data belum cukup tanpa saran BS/jatah dan tanpa prioritas BS; piutang/kunjungi tetap boleh.
+
+Saran naik jatah: laku≥95% pada ≥2 dari 3 tagihan terakhir (unik delivery, hanya kolektor nyata selesai/nonarsip/kunjungan aktif, urut tanggal+waktu penagihan lalu deliveryID); minimal+1 walau estimasi sama karena permintaan tersensor. Estimasi lama boleh memberi sampai+2, tunduk max_quota_increase; tidak perlu label Laris/persentil tinggi, tidak untuk kedai bermasalah/nonaktif. Config `KIOSK_INSIGHTS_SOLD_OUT_RATIO` lama dihapus (aturan sekarang 2/3 terbaru). Query tetap bulk14/konstan.
+
+Profil `kiosks:insight-profile --owner=2 --as-of=2026-11-16`, MySQL9.4:3399 `cq_kiosk_insights_perf_db`, **dataset sintetis lokal, BUKAN416 kedai prod**: 450 kedai,14query,632ms. Label Stabil300/Laris85/Data belum cukup21/Tidak aktif44/Lambat0/Bermasalah0. Dari412 kedai bermetrik, %BS p0/p25/p50/p75/p90/p100 semuanya0; %laku66,67/80,67/83,47/86,22/89,04/98,67. Tidak ada laku<60 atau BS≥10 pada dataset ini; Lambat/BS/piutang dibuktikan fixture regresi, bukan memanipulasi data lokal.
+
+Dropdown Owner (satu-satunya select pada komponen bersama) foreground/background option/optgroup eksplisit light/dark + color-scheme. Delegated browser Edge PASS:17,85:1 light,13,35:1 dark, keyboard pilihan owner lolos,0pageerror; preferensi OS sengaja berlawanan tema panel. Harness `.claude/skills/verify-browser/kiosk-insight-select-contrast.cjs`; screenshot terverifikasi di worktree `agent-a652036c7ddd30786` pada folder shots/kiosk-insight-select-contrast. OS popup headless tidak selalu tertangkap, listbox native sementara dipakai untuk inspeksi piksel. Build/Pint/Blade/diff-check PASS. **Full suite dijalankan SEKALI** dengan `DB_PORT=3399 RUN_PHOTO_BENCHMARK=1 php artisan test`, MySQL9.4.0: **863 PASS, 2 SKIP, 0 FAIL, 4963 assertions, 465,59s**. Dua skip = invoice race opt-in, warning doc-comment PHPUnit lama tetap ada. Test fokus sebelumnya34PASS/1FAIL hanya strict int100 vs float100.0 pada assertion baru (diperbaiki); full suite final hijau. Lima test baru + assertion cakupan duplikat/arsip/koreksi/running, BS/fresh, batas10%/30hari,2/3 terbaru/95%,data kurang,format Excel. Tidak ada migrasi/push.
+
 ## HOTFIX 16 NOV 2026 — foto R2, pemulihan polling, panel admin, stderr (tanpa migrasi)
 
 Branch `fix/kiosk-insight-photo-prod`; **BELUM PUSH**. Commit kode `77166ae` (foto/probe/recovery/panel + test), `5321c90` (stderr Railway + test); commit dokumentasi menyusul keduanya. Bukti prod: fatal 30 dtk di `CurlMultiHandler.php:169` saat foto sekitar 7/400. Tidak ada akses prod pada sesi ini.
@@ -31,7 +41,7 @@ Branch `feat/kiosk-insights-export`. Tidak ada akses prod. **Tidak ada migrasi**
 
 **Kode:** `KioskInsights` (metrik bulk, 14 query konstan), `config/kiosk_insights.php` (+`KIOSK_INSIGHTS_*` di `.env.example`), `kiosks:insight-profile --owner=N` (read-only, sebaran + persentil), `KioskInsightThumbnail` (JPEG 160px, cache `thumbs/kiosk-insights/` disk media + salinan lokal), `KioskInsightsExport` (4 sheet), `KioskInsightsPdf` + view, UI `/kiosk-insights` (tombol di Manajemen Kios; owner = usahanya sendiri, super admin pilih owner/semua, operator 403).
 
-**Definisi penting:** omset = `amount_paid` settlement dari kunjungan aktif trip penagih nyata selesai (sama dgn TripAggregator/Laporan Periode, BUKAN arus kas per tanggal bayar). Retur/BS = (segar+kedaluwarsa)÷biji titipan ditagih. Label: Tidak aktif > Data belum cukup > Bermasalah > Laris > Lambat > Stabil.
+**Definisi penting (dikoreksi brief label 16 Nov, lihat entry terbaru):** omset = `amount_paid` settlement dari kunjungan aktif trip penagih nyata selesai (sama dgn TripAggregator/Laporan Periode, BUKAN arus kas per tanggal bayar). % BS = kedaluwarsa/rusak saja÷biji titipan ditagih; Sisa Dibawa Pulang (%) = retur segar saja÷basis sama, bukan pemicu masalah. Label: Tidak aktif > Data belum cukup > Bermasalah > Laris > Lambat > Stabil.
 
 **Hasil (dataset perf 450 kedai, MySQL 9.4):** profil metrik 478 ms/13 query; Excel 143,9 KB/2,5 dtk; Excel+foto 889 KB/7,4 dtk (58 tick, maks 2,1 dtk/request); PDF 81 hal 1,77 MB/10 dtk. Sampel ada di `storage/perf/kiosk-insights/` (gitignored). Browser Chrome `verify-browser/kiosk-insights.cjs` 9/9 PASS. Skrip lokal: `scripts/kiosk-insights-perf.php` (hanya DB `*_perf_db` port 3399), `scripts/render-kiosk-insights.ps1`.
 

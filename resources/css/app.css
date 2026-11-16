@@ -12,6 +12,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Native options do not reliably inherit the select's painted background.
+   Keep this shared report control readable in both the owner and Filament panels. */
+.kiosk-insight-select,
+.kiosk-insight-select option,
+.kiosk-insight-select optgroup {
+    color-scheme: light;
+    color: #0f172a;
+    background-color: #ffffff;
+}
+
+.dark .kiosk-insight-select,
+.dark .kiosk-insight-select option,
+.dark .kiosk-insight-select optgroup {
+    color-scheme: dark;
+    color: #f1f5f9;
+    background-color: #1e293b;
+}
+
 /* Sembunyikan elemen ber-x-cloak sampai Alpine selesai init. Tanpa aturan ini
    dropdown akun & backdrop sidebar tampil sekejap (seolah "terbuka") saat load. */
 [x-cloak] {

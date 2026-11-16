@@ -8,7 +8,7 @@
         @if (auth()->user()->isSuperAdmin())
             <div>
                 <label for="report-owner" class="block font-medium text-slate-800">Owner</label>
-                <select id="report-owner" wire:model="ownerId" class="mt-1 w-full rounded-md border-slate-300">
+                <select id="report-owner" wire:model="ownerId" class="kiosk-insight-select mt-1 w-full rounded-md border-slate-300">
                     <option value="">Semua owner</option>
                     @foreach ($owners as $owner)
                         <option value="{{ $owner->id }}">{{ $owner->business_name ?: $owner->name }}</option>

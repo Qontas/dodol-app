@@ -56,6 +56,8 @@ class KiosksInsightProfile extends Command
             'peak_memory_bytes' => memory_get_peak_usage(true),
             'settlements_per_kiosk' => $distribution($rows->pluck('settled_count')->all()),
             'sell_through_pct' => $distribution($rows->pluck('sell_through_pct')->filter(fn ($v) => $v !== null)->all()),
+            'bs_pct' => $distribution($rows->pluck('bs_pct')->filter(fn ($v) => $v !== null)->all()),
+            'fresh_return_pct' => $distribution($rows->pluck('fresh_return_pct')->filter(fn ($v) => $v !== null)->all()),
             'visit_gap_days' => $distribution($rows->pluck('avg_visit_gap_days')->filter(fn ($v) => $v !== null)->all()),
             'weekly_sales_units' => $distribution($rows->pluck('weekly_sales')->filter(fn ($v) => $v !== null)->all()),
             'owner_relative_rate_percentile' => $distribution($rows->pluck('rate_percentile')->filter(fn ($v) => $v !== null)->all()),

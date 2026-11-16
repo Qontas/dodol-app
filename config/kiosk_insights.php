@@ -5,10 +5,10 @@ return [
     // akan menggeser tanggal bisnis (today(), trip_date), sedangkan laporan hanya butuh jam yang terbaca.
     'timezone' => env('KIOSK_INSIGHTS_TIMEZONE', 'Asia/Jakarta'),
     'min_settlements' => (int) env('KIOSK_INSIGHTS_MIN_SETTLEMENTS', 3),
-    'slow_sell_through_pct' => (float) env('KIOSK_INSIGHTS_SLOW_PCT', 50),
+    'slow_sell_through_pct' => (float) env('KIOSK_INSIGHTS_SLOW_PCT', 60),
     'fast_sell_through_pct' => (float) env('KIOSK_INSIGHTS_FAST_PCT', 80),
     'fast_percentile' => (float) env('KIOSK_INSIGHTS_FAST_PERCENTILE', 75),
-    'problem_bs_pct' => (float) env('KIOSK_INSIGHTS_BS_PCT', 25),
+    'problem_bs_pct' => (float) env('KIOSK_INSIGHTS_BS_PCT', 10),
     'debt_age_days' => (int) env('KIOSK_INSIGHTS_DEBT_DAYS', 30),
     'inactive_days' => (int) env('KIOSK_INSIGHTS_INACTIVE_DAYS', 30),
     // Saran "Kunjungi": picu bila hari sejak kunjungan >= max(revisit_min_days, revisit_gap_multiplier × rerata jarak
@@ -17,7 +17,6 @@ return [
     'revisit_min_days' => (int) env('KIOSK_INSIGHTS_REVISIT_MIN_DAYS', 10),
     'revisit_gap_multiplier' => (float) env('KIOSK_INSIGHTS_REVISIT_GAP_MULTIPLIER', 1.5),
     'revisit_min_gaps' => (int) env('KIOSK_INSIGHTS_REVISIT_MIN_GAPS', 3),
-    'frequent_sold_out_ratio' => (float) env('KIOSK_INSIGHTS_SOLD_OUT_RATIO', 0.5),
     'max_quota_increase' => (int) env('KIOSK_INSIGHTS_MAX_QUOTA_INCREASE', 2),
     // Detik. Inner deadline <=8.5s leaves ~1.5s for request/state IO (target polling ~10s).
     // Settings are clamped DOWN in KioskInsightThumbnail: max10 parallel transfers to bounded temp
@@ -48,7 +47,7 @@ return [
         'visits' => 'Pasangan unik trip/kedai dari kunjungan aktif atau delivery tanpa kunjungan pada trip nyata; sentinel migrasi bukan kunjungan. Walk-in tidak dilaporkan sebagai kedai.',
         'revisit' => 'Saran "Kunjungi" muncul bila hari sejak kunjungan terakhir minimal sebesar maksimum(revisit_min_days, revisit_gap_multiplier × rerata jarak kunjungan kedai itu). Kedai yang riwayat jaraknya kurang dari revisit_min_gaps jarak memakai ambang tetap revisit_days.',
         'labels' => 'Satu label: nonaktif > data belum cukup > bermasalah > laris > lambat > stabil. Persentil laju relatif sesama kedai konsinyasi yang cukup data dalam usaha yang sama.',
-        'suggestions' => 'Saran saja, tidak mengubah jatah/data. Estimasi jatah = bulatkan(laju biji/minggu ÷ 7 × rata-rata jarak kunjungan ÷ isi mika saat ini), minimum 1. Kenaikan dibatasi ambang max_quota_increase (default +2), hanya jika sering habis dan % laku tinggi; penurunan hanya jika % laku rendah. Tidak ada saran jatah saat data kurang, jeda kunjungan belum terukur, atau kedai tidak aktif. Prioritas tindakan: piutang lama → lama tidak dikunjungi → retur/BS tinggi → jatah.',
-        'returns' => 'Retur/BS = (biji retur segar + biji retur kedaluwarsa) ÷ biji titipan konsinyasi yang sudah ditagih ×100%.',
+        'suggestions' => 'Saran saja, tidak mengubah jatah/data. Data belum cukup tidak mendapat saran BS/jatah, tetapi piutang/kunjungi tetap boleh. Habis = laku ≥95% pada minimal 2 dari 3 tagihan konsinyasi terakhir: permintaan tersensor, tawarkan minimal +1 mika; estimasi laju × jarak boleh menaikkan sampai +2, dibatasi max_quota_increase. Tidak menaikkan kedai bermasalah/nonaktif. Penurunan hanya jika laku rendah dan jeda terukur. Prioritas: piutang lama → lama tidak dikunjungi → BS tinggi → jatah.',
+        'returns' => '% BS = kedaluwarsa/rusak saja ÷ biji titipan ditagih ×100%. Sisa Dibawa Pulang (%) = retur segar saja ÷ basis sama; informasi, bukan kerugian atau pemicu label.',
     ],
 ];

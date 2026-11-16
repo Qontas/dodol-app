@@ -42,7 +42,7 @@ class KioskInsights
             ->whereNull('kv.corrected_at')->whereNotNull('kv.settled_delivery_id')->whereNull('ct.deleted_at')->whereNotNull('ct.ended_at')
             ->where('ct.trip_date', '<=', $date)->where('kv.visited_at', '<=', $asOf)->whereIn('kv.kiosk_id', $ids)
             ->where('op.email', 'not like', User::SYSTEM_OPERATOR_EMAIL_PREFIX.'%')
-            ->groupBy('kv.settled_delivery_id')->selectRaw('kv.settled_delivery_id, MIN(ct.trip_date) as collection_date');
+            ->groupBy('kv.settled_delivery_id')->selectRaw('kv.settled_delivery_id, MIN(ct.trip_date) as collection_date, MIN(kv.visited_at) as collection_at');
         $debt = DB::table('settlements as s')->join('deliveries as d', 'd.id', '=', 's.delivery_id')
             ->joinSub(clone $collected, 'c', 'c.settled_delivery_id', '=', 'd.id')
             ->whereIn('d.kiosk_id', $ids)->where('s.status', 'pending')->where('s.visit_date', '<=', $date)
@@ -57,9 +57,18 @@ class KioskInsights
                 SUM(CASE WHEN d.delivery_type = 'consignment' THEN 1 ELSE 0 END) as settled_count,
                 SUM(CASE WHEN d.delivery_type = 'consignment' THEN s.qty_sold ELSE 0 END) as consignment_sold,
                 SUM(CASE WHEN d.delivery_type = 'consignment' THEN d.qty_delivered * COALESCE(d.units_per_pack_snapshot, 15) ELSE 0 END) as settled_units,
-                SUM(CASE WHEN d.delivery_type = 'consignment' THEN s.qty_returned_fresh + s.qty_returned_expired ELSE 0 END) as bs,
-                SUM(CASE WHEN d.delivery_type = 'consignment' AND s.qty_returned_fresh = 0 AND s.qty_returned_expired = 0 THEN 1 ELSE 0 END) as sold_out,
+                SUM(CASE WHEN d.delivery_type = 'consignment' THEN s.qty_returned_fresh ELSE 0 END) as fresh_returns,
+                SUM(CASE WHEN d.delivery_type = 'consignment' THEN s.qty_returned_expired ELSE 0 END) as bs,
+                SUM(CASE WHEN d.delivery_type = 'consignment' AND s.qty_sold >= 0.95 * d.qty_delivered * COALESCE(d.units_per_pack_snapshot, 15) AND d.qty_delivered > 0 THEN 1 ELSE 0 END) as sold_out,
                 SUM(CASE WHEN d.delivery_type = 'consignment' THEN GREATEST(DATEDIFF(s.visit_date, $cycleDate), 1) ELSE 0 END) as cycle_days", [$since])->get()->keyBy('kiosk_id');
+        // Rank eligible, distinct consignment settlements, not visits or lifetime sold-out totals.
+        $ranked = DB::table('deliveries as d')->joinSub(clone $collected, 'c', 'c.settled_delivery_id', '=', 'd.id')
+            ->join('settlements as s', 's.delivery_id', '=', 'd.id')
+            ->whereIn('d.kiosk_id', $ids)->where('d.delivery_type', 'consignment')->where('s.visit_date', '<=', $date)
+            ->selectRaw('d.kiosk_id, CASE WHEN d.qty_delivered > 0 AND s.qty_sold >= 0.95 * d.qty_delivered * COALESCE(d.units_per_pack_snapshot, 15) THEN 1 ELSE 0 END as sold_out,
+                ROW_NUMBER() OVER (PARTITION BY d.kiosk_id ORDER BY c.collection_date DESC, c.collection_at DESC, d.id DESC) as rn');
+        $recent = DB::query()->fromSub($ranked, 'r')->where('rn', '<=', 3)->groupBy('kiosk_id')
+            ->selectRaw('kiosk_id, COUNT(*) as count, SUM(sold_out) as sold_out')->get()->keyBy('kiosk_id');
         $delivered = DB::table('deliveries as d')->join('trips as t', 't.id', '=', 'd.trip_id')
             ->whereIn('d.kiosk_id', $ids)->whereNull('t.deleted_at')->where('d.created_at', '<=', $asOf)
             ->groupBy('d.kiosk_id')->selectRaw('d.kiosk_id, SUM(d.qty_delivered) as packs')->pluck('packs', 'kiosk_id');
@@ -120,10 +129,12 @@ class KioskInsights
                 'delivered_packs' => (int) ($delivered[$id] ?? 0), 'sold_units' => (int) ($s?->sold ?? 0), 'cash_sold_units' => (int) ($s?->cash_sold ?? 0),
                 'sell_through_pct' => $consignment && $settledUnits > 0 ? min(100, round(100 * $sold / $settledUnits, 2)) : null,
                 'weekly_sales' => $consignment && ($s?->cycle_days ?? 0) > 0 ? round(7 * $sold / $s->cycle_days, 2) : null,
-                'return_bs_pct' => $consignment && $settledUnits > 0 ? min(100, round(100 * $s->bs / $settledUnits, 2)) : null,
+                'fresh_return_pct' => $consignment && $settledUnits > 0 ? min(100, round(100 * $s->fresh_returns / $settledUnits, 2)) : null,
+                'bs_pct' => $consignment && $settledUnits > 0 ? min(100, round(100 * $s->bs / $settledUnits, 2)) : null,
                 'revenue_total' => (float) ($s?->revenue ?? 0), 'revenue_30' => (float) ($s?->revenue_30 ?? 0),
                 'avg_revenue_per_visit' => $v->count() ? round((float) ($s?->revenue ?? 0) / $v->count(), 2) : 0,
                 'sold_out_count' => (int) ($s?->sold_out ?? 0), 'settled_count' => $settled,
+                'recent_settled_count' => (int) ($recent[$id]->count ?? 0), 'recent_sold_out_count' => (int) ($recent[$id]->sold_out ?? 0),
                 'consignment_sold_units' => $sold, 'settled_units' => $settledUnits,
                 'pending_packs' => (int) ($stock[$id]->packs ?? 0), 'pending_value' => (float) ($stock[$id]->value ?? 0),
                 'pending_age_days' => isset($stockAges[$id]) ? self::age($stockAges[$id]->oldest, $asOf) : null,
@@ -183,7 +194,7 @@ class KioskInsights
     private static function classify(array &$row, array $rules): void
     {
         $enough = $row['type'] === 'Konsinyasi' && $row['settled_count'] >= $rules['min_settlements'];
-        $problem = ($row['return_bs_pct'] ?? 0) >= $rules['problem_bs_pct'] || ($row['receivable'] > 0 && $row['receivable_age_days'] >= $rules['debt_age_days']);
+        $problem = ($row['bs_pct'] ?? 0) >= $rules['problem_bs_pct'] || ($row['receivable'] > 0 && $row['receivable_age_days'] >= $rules['debt_age_days']);
         $fast = $enough && $row['sell_through_pct'] >= $rules['fast_sell_through_pct'] && $row['rate_percentile'] >= $rules['fast_percentile'];
         $inactive = ! $row['is_active'] || ($row['days_since_visit'] !== null && $row['days_since_visit'] > $rules['inactive_days']);
         $key = $inactive ? 'inactive' : (! $enough ? 'insufficient' : ($problem ? 'problem' : ($fast ? 'fast' : ($row['sell_through_pct'] < $rules['slow_sell_through_pct'] ? 'slow' : 'stable'))));
@@ -198,7 +209,7 @@ class KioskInsights
         $needsVisit = $row['days_since_visit'] === null || $row['days_since_visit'] >= $revisitAfter;
         $row['priority'] = $row['receivable'] > 0 && $row['receivable_age_days'] >= $rules['debt_age_days'] ? 1
             : ($needsVisit ? 2
-                : (($row['return_bs_pct'] ?? 0) >= $rules['problem_bs_pct'] ? 3 : 4));
+                : ($enough && ($row['bs_pct'] ?? 0) >= $rules['problem_bs_pct'] ? 3 : 4));
         $suggestions = [];
         if (! $row['is_active']) {
             $suggestions[] = 'Konfirmasi status kedai nonaktif sebelum pengiriman berikutnya.';
@@ -211,21 +222,25 @@ class KioskInsights
                 ? 'Kunjungi — belum ada kunjungan nyata tercatat.'
                 : 'Kunjungi — sudah '.$row['days_since_visit'].' hari'.($rhythm ? ' (biasanya tiap '.(int) round($row['avg_visit_gap_days']).' hari)' : '').'.';
         }
-        if (($row['return_bs_pct'] ?? 0) >= $rules['problem_bs_pct']) {
-            $suggestions[] = 'Cek retur/BS ('.number_format($row['return_bs_pct'], 1, ',', '.').'%).';
+        if ($enough && ($row['bs_pct'] ?? 0) >= $rules['problem_bs_pct']) {
+            $suggestions[] = 'Cek BS ('.number_format($row['bs_pct'], 1, ',', '.').'%).';
         }
         if ($row['days_since_visit'] !== null && $row['days_since_visit'] >= $rules['inactive_days']) {
             $suggestions[] = 'Konfirmasi apakah kedai masih beroperasi; lama tidak dikunjungi bukan bukti penjualan nol.';
         }
-        if ($enough && ! $inactive && $row['default_qty_mika'] > 0 && $row['avg_visit_gap_days'] !== null && $row['avg_visit_gap_days'] > 0) {
+        if ($enough && ! $inactive && $row['default_qty_mika'] > 0) {
             $current = (int) $row['default_qty_mika'];
-            $estimated = max(1, (int) round($row['weekly_sales'] / 7 * $row['avg_visit_gap_days'] / $row['units_per_pack']));
-            if ($fast && ! $problem && $rules['frequent_sold_out_ratio'] <= $row['sold_out_count'] / max(1, $row['settled_count'])) {
-                $target = min($current + max(0, $rules['max_quota_increase']), $estimated);
+            $estimated = $row['avg_visit_gap_days'] !== null && $row['avg_visit_gap_days'] > 0
+                ? max(1, (int) round($row['weekly_sales'] / 7 * $row['avg_visit_gap_days'] / $row['units_per_pack'])) : null;
+            $oftenSoldOut = $row['recent_settled_count'] === 3 && $row['recent_sold_out_count'] >= 2;
+            if ($oftenSoldOut && ! $problem) {
+                // Habis means demand is censored: observed sales are a lower bound, not a demand ceiling.
+                // Keep the old estimate/cap, but offer at least +1 even when rounding equals current quota.
+                $target = min($current + min(2, max(0, $rules['max_quota_increase'])), max($current + 1, $estimated ?? $current));
                 if ($target > $current) {
-                    $suggestions[] = 'Naikkan jatah ke '.$target.' mika (rekomendasi; jatah saat ini '.$current.').';
+                    $suggestions[] = 'Naikkan jatah ke '.$target.' mika (sering habis; rekomendasi, jatah saat ini '.$current.').';
                 }
-            } elseif ($row['sell_through_pct'] < $rules['slow_sell_through_pct'] && $estimated < $current) {
+            } elseif (! $oftenSoldOut && $row['sell_through_pct'] < $rules['slow_sell_through_pct'] && $estimated !== null && $estimated < $current) {
                 $suggestions[] = 'Turunkan jatah ke '.$estimated.' mika (rekomendasi; jatah saat ini '.$current.').';
             }
         }

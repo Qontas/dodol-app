@@ -122,7 +122,7 @@ class KioskInsightsRenderTest extends TestCase
             'Stok Titipan (mika)', 'Nilai Titipan', 'Piutang', 'Umur Piutang (hari)', 'Kunjungan Terakhir', 'Operator Terakhir',
             'Hari Sejak Kunjungan'], array_slice($headings, 0, 14));
         // Lalu identitas, lalu metrik detail.
-        $this->assertLessThan(array_search('Retur / BS', $headings, true), array_search('Pemilik Kedai', $headings, true));
+        $this->assertLessThan(array_search('Sisa Dibawa Pulang (%)', $headings, true), array_search('Pemilik Kedai', $headings, true));
         $this->assertLessThan(array_search('Operator Terbanyak', $headings, true), array_search('Alamat', $headings, true));
         foreach (['Jenis Baris', 'ID Kedai', 'ID Owner', 'Kode Label', 'Prioritas', 'Status Foto', 'Biji Laku Konsinyasi',
             'Biji Titipan Selesai', 'Usaha', 'Sell-through'] as $removed) {
@@ -131,6 +131,25 @@ class KioskInsightsRenderTest extends TestCase
         foreach ($this->headings($book, 'Perlu Tindakan') as $heading) {
             $this->assertNotContains($heading, ['Jenis Baris', 'ID Kedai', 'Prioritas', 'Kode Label']);
         }
+        $book->disconnectWorksheets();
+    }
+
+    public function test_bs_and_fresh_returns_have_separate_numeric_columns_and_explanations(): void
+    {
+        $book = $this->workbook($this->data([$this->row(['bs_pct' => 10, 'fresh_return_pct' => 40])]));
+        foreach (['Daftar Kedai' => 8, 'Perlu Tindakan' => 7] as $name => $row) {
+            $sheet = $book->getSheetByName($name);
+            $headings = $this->headings($book, $name);
+            $this->assertNotContains('Retur / BS', $headings);
+            foreach (['% BS' => 0.1, 'Sisa Dibawa Pulang (%)' => 0.4] as $heading => $value) {
+                $cell = Coordinate::stringFromColumnIndex(array_search($heading, $headings, true) + 1).$row;
+                $this->assertEquals($value, $sheet->getCell($cell)->getValue());
+                $this->assertSame('0.0%', $sheet->getStyle($cell)->getNumberFormat()->getFormatCode());
+            }
+        }
+        $text = json_encode($book->getSheetByName('Penjelasan')->toArray(), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('KIOSK_INSIGHTS_BS_PCT', $text);
+        $this->assertStringContainsString('permintaan tersensor', $text);
         $book->disconnectWorksheets();
     }
 
