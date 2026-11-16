@@ -86,7 +86,9 @@ class KioskInsights
             if (! $tier || (int) $tier->product_variant_id !== (int) $variant?->id || (int) $tier->owner_id !== (int) $owner->id) {
                 $tier = $variant?->defaultPriceTier;
             }
-            $priceLabel = ($tier?->name ?? $variant?->name ?? 'Standar').' — Rp '.number_format($price, 0, ',', '.').'/mika · Rp '.number_format($price / $units, 2, ',', '.').'/biji';
+            $perUnit = $price / $units;
+            $priceLabel = ($tier?->name ?? $variant?->name ?? 'Standar').' — Rp '.number_format($price, 0, ',', '.').'/mika · Rp '
+                .number_format($perUnit, $perUnit == floor($perUnit) ? 0 : 2, ',', '.').'/biji';
             $s = $sales->get($id);
             $v = $visits->get($id, collect());
             $last = $v->last();
@@ -187,8 +189,15 @@ class KioskInsights
         $key = $inactive ? 'inactive' : (! $enough ? 'insufficient' : ($problem ? 'problem' : ($fast ? 'fast' : ($row['sell_through_pct'] < $rules['slow_sell_through_pct'] ? 'slow' : 'stable'))));
         $row['label_key'] = $key;
         $row['label'] = $rules['labels'][$key];
+        // Ambang kunjungan relatif ke ritme kedai itu; tanpa cukup riwayat jarak → ambang tetap.
+        // Jumlah jarak = jumlah kunjungan − 1 (avg_visit_gap_days dihitung dari jarak antar kunjungan berurutan).
+        $rhythm = $row['avg_visit_gap_days'] !== null && ($row['visit_count'] - 1) >= $rules['revisit_min_gaps'] && $row['avg_visit_gap_days'] > 0;
+        $revisitAfter = $rhythm
+            ? max($rules['revisit_min_days'], $rules['revisit_gap_multiplier'] * $row['avg_visit_gap_days'])
+            : $rules['revisit_days'];
+        $needsVisit = $row['days_since_visit'] === null || $row['days_since_visit'] >= $revisitAfter;
         $row['priority'] = $row['receivable'] > 0 && $row['receivable_age_days'] >= $rules['debt_age_days'] ? 1
-            : (($row['days_since_visit'] === null || $row['days_since_visit'] >= $rules['revisit_days']) ? 2
+            : ($needsVisit ? 2
                 : (($row['return_bs_pct'] ?? 0) >= $rules['problem_bs_pct'] ? 3 : 4));
         $suggestions = [];
         if (! $row['is_active']) {
@@ -197,8 +206,10 @@ class KioskInsights
         if ($row['receivable'] > 0) {
             $suggestions[] = 'Tagih piutang Rp '.number_format($row['receivable'], 0, ',', '.').' (umur '.$row['receivable_age_days'].' hari).';
         }
-        if ($row['days_since_visit'] === null || $row['days_since_visit'] >= $rules['revisit_days']) {
-            $suggestions[] = $row['days_since_visit'] === null ? 'Kunjungi — belum ada kunjungan nyata tercatat.' : 'Kunjungi — sudah '.$row['days_since_visit'].' hari.';
+        if ($needsVisit) {
+            $suggestions[] = $row['days_since_visit'] === null
+                ? 'Kunjungi — belum ada kunjungan nyata tercatat.'
+                : 'Kunjungi — sudah '.$row['days_since_visit'].' hari'.($rhythm ? ' (biasanya tiap '.(int) round($row['avg_visit_gap_days']).' hari)' : '').'.';
         }
         if (($row['return_bs_pct'] ?? 0) >= $rules['problem_bs_pct']) {
             $suggestions[] = 'Cek retur/BS ('.number_format($row['return_bs_pct'], 1, ',', '.').'%).';

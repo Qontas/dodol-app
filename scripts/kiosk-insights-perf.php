@@ -1,16 +1,21 @@
 <?php
 
-/** Local-only reproducible export benchmark. No production or real media access. */
-require __DIR__.'/../vendor/autoload.php';
-$app = require __DIR__.'/../bootstrap/app.php';
-$app->make(Kernel::class)->bootstrap();
-
 use App\Models\User;
 use App\Support\KioskInsightExport;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+
+/**
+ * Local-only reproducible export benchmark. No production or real media access.
+ *
+ * Semua `use` HARUS di atas kode: `use` hanya berlaku untuk kode SESUDAH deklarasinya, jadi `Kernel::class`
+ * yang dipakai sebelum `use Kernel` hanya menjadi string "Kernel" dan gagal di-resolve oleh container.
+ */
+require __DIR__.'/../vendor/autoload.php';
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
 
 if (! app()->environment('local', 'testing') || ! str_ends_with(DB::connection()->getDatabaseName(), '_perf_db') || (int) config('database.connections.mysql.port') !== 3399) {
     throw new RuntimeException('Only local MySQL3399 *_perf_db allowed.');

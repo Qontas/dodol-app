@@ -17,6 +17,11 @@ Branch `feat/kiosk-insights-export`. Tidak ada akses prod. **Tidak ada migrasi**
 
 **Belum dikerjakan:** uji foto R2 sungguhan (disk lokal dummy saja; timeout S3 diset 2/4 dtk tanpa retry), dan `PerfDatasetSeeder` kini 450 kios untuk owner A.
 
+**Poles setelah review contoh (16 Nov 2026, tanpa migrasi, rumus metrik tidak berubah kecuali saran "Kunjungi"):** 10 butir — urutan kolom Excel berorientasi pembaca + kolom teknis dihapus + mika bulat; "% Laku"; top-10 mengecualikan Tidak aktif/Data belum cukup; waktu `16 Nov 2026, 18:18 WIB`; harga/biji tanpa desimal bila bulat; "Cara membaca" digabung ke halaman ringkasan PDF; kartu PDF tanpa pemisah menggantung. Detail di `docs/UI_INVENTORY.md`.
+- **Satu-satunya perubahan logika (butir 10):** saran "Kunjungi" kini relatif ke ritme kedai — picu bila hari sejak kunjungan ≥ max(10, 1,5 × rerata jarak kunjungan kedai itu); riwayat < 3 jarak → ambang tetap 14 hari. Tiga ambang baru di `config/kiosk_insights.php` + `.env.example`. Prioritas "Perlu Tindakan" ikut memakai ambang relatif ini.
+- **Zona waktu:** `APP_TIMEZONE` tetap `UTC` (tidak diubah — mengubahnya menggeser `today()`/`trip_date` seluruh aplikasi). Jam di laporan memakai config baru `KIOSK_INSIGHTS_TIMEZONE` (default `Asia/Jakarta`), via `IdDate::waktu()`.
+- **Bug skrip benchmark ditemukan & diperbaiki:** `use` setelah kode membuat `Kernel::class` menjadi string "Kernel" (Pint memindahkan `use` ke bawah) → skrip gagal bootstrap. `use` kini di paling atas.
+
 ## 🔴 BRIEF 15 NOV 2026: INVOICE FEE APLIKASI (PDF) PER OWNER PER BULAN — SUPER ADMIN ONLY — SELESAI LOKAL, ADA MIGRASI → **JANGAN PUSH SEBELUM OWNER BACKUP DB PRODUKSI**
 
 Branch `feat/admin-app-fee-invoices`. Tidak ada akses prod. **Full suite 780 PASS / 3476 assertions, 2 skipped** di MySQL 9.4 (747 baseline + 33 test baru `tests/Feature/Admin/AppFeeInvoiceTest.php`). Dua test race opt-in yang skipped di suite biasa sudah dijalankan TERPISAH dan **2 PASS**. Warning deprecation PHPUnit doc-comment lama tetap ada. Pint semua file PHP baru PASS; `git diff --check` PASS.

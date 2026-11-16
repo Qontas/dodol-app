@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Carbon;
+
 /** Presentation-only totals shared by the workbook and the PDF; never queries the database. */
 class KioskInsightsSummary
 {
@@ -32,8 +34,11 @@ class KioskInsightsSummary
         }
 
         $minimum = max(1, (int) ($data['rules']['min_settlements'] ?? 3));
+        // Daftar paling laris / paling lambat laku hanya membandingkan kedai yang benar-benar dinilai:
+        // label "Tidak aktif" dan "Data belum cukup" tidak ikut peringkat.
         $eligible = array_values(array_filter($rows, fn (array $r): bool => ($r['type'] ?? '') === 'Konsinyasi'
-            && ($r['settled_count'] ?? 0) >= $minimum && ($r['weekly_sales'] ?? null) !== null));
+            && ($r['settled_count'] ?? 0) >= $minimum && ($r['weekly_sales'] ?? null) !== null
+            && ! in_array($r['label_key'] ?? '', ['inactive', 'insufficient'], true)));
         $sort = static function (array $a, array $b): int {
             return ((float) $b['weekly_sales'] <=> (float) $a['weekly_sales'])
                 ?: strnatcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''))
@@ -51,6 +56,24 @@ class KioskInsightsSummary
         return ['totals' => $totals, 'labels' => $labels, 'areas' => array_values($areas),
             'avg_sell_through_pct' => $percentages ? array_sum($percentages) / count($percentages) : null,
             'top10' => array_slice($eligible, 0, 10), 'slow10' => array_slice($slow, 0, 10), 'eligible_count' => count($eligible)];
+    }
+
+    /**
+     * Tanggal acuan, waktu dibuat, dan periode dalam format Indonesia — SATU sumber untuk Excel dan PDF.
+     *
+     * @return array{as_of: string, generated: string, period: string}
+     */
+    public static function meta(array $data): array
+    {
+        $asOf = Carbon::parse($data['as_of'] ?? now()->toDateString());
+        $start = ($data['period_start'] ?? null) ? Carbon::parse($data['period_start']) : null;
+        $timezone = $data['rules']['timezone'] ?? config('kiosk_insights.timezone', 'Asia/Jakarta');
+
+        return [
+            'as_of' => IdDate::tanggalSingkat($asOf),
+            'generated' => IdDate::waktu($data['generated_at'] ?? now(), $timezone),
+            'period' => ($start ? IdDate::tanggalSingkat($start) : 'Seluruh riwayat').' – '.IdDate::tanggalSingkat($asOf),
+        ];
     }
 
     /** HTTPS maps links only; never execute spreadsheet formulas or arbitrary URL schemes. */

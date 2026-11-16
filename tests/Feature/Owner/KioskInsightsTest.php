@@ -223,6 +223,92 @@ class KioskInsightsTest extends TestCase
         $this->assertSame('inactive', $this->row($f)['label_key']);
     }
 
+    /**
+     * Kunjungan (penagihan) pada tanggal-tanggal $visitDates. Trip sumber tiap kunjungan dibuat 1 hari sebelum
+     * trip penagih supaya tidak bentrok dengan trip penagih lain (unik per owner+tanggal+nomor) — hanya tanggal
+     * kunjungan yang memengaruhi jarak/hari-sejak-kunjungan; siklus 1 hari tidak mengganggu aturan yang diuji.
+     */
+    private function visitsOn(array $f, array $visitDates): void
+    {
+        foreach ($visitDates as $date) {
+            $made = $this->settled($f, Carbon::parse($date)->subDay()->toDateString(), $date, 30);
+            // Pengiriman nyata tertaut ke kunjungannya. Tanpa tautan ini metrik (sengaja) menghitungnya sebagai
+            // "kunjungan tanpa kunjungan" di trip sumber, dan jarak antar kunjungan jadi palsu.
+            $made['delivery']->update(['kiosk_visit_id' => $made['visit']->id]);
+        }
+    }
+
+    /** 4 kunjungan tiap 7 hari berakhir pada $lastVisit → rerata jarak 7 hari, 3 jarak (cukup riwayat). */
+    private function weeklyRhythm(array $f, string $lastVisit): void
+    {
+        $end = Carbon::parse($lastVisit);
+        $this->visitsOn($f, array_map(fn (int $d): string => $end->copy()->subDays($d)->toDateString(), [21, 14, 7, 0]));
+    }
+
+    public function test_revisit_suggestion_is_relative_to_the_kiosks_own_rhythm(): void
+    {
+        $f = $this->fixture();
+        $this->weeklyRhythm($f, '2026-11-05'); // asOf 2026-11-16 → 11 hari sejak kunjungan; biasanya tiap 7 hari
+        $row = $this->row($f);
+        $this->assertSame(11, $row['days_since_visit']);
+        $this->assertSame(7.0, (float) $row['avg_visit_gap_days']);
+        // ambang = max(10, 1,5 × 7 = 10,5) = 10,5 → 11 >= 10,5 → disarankan walau < ambang tetap 14 hari.
+        $this->assertContains('Kunjungi — sudah 11 hari (biasanya tiap 7 hari).', $row['suggestions']);
+        $this->assertSame(2, $row['priority']);
+    }
+
+    public function test_revisit_not_suggested_before_relative_threshold_and_min_floor_applies(): void
+    {
+        $f = $this->fixture();
+        $this->weeklyRhythm($f, '2026-11-08'); // 8 hari sejak kunjungan; ambang max(10, 10,5) = 10,5
+        $this->assertSame(8, $this->row($f)['days_since_visit']);
+        $this->assertStringNotContainsString('Kunjungi', implode(' ', $this->row($f)['suggestions']));
+        // Ambang minimal 10 hari menahan kedai ber-ritme sangat rapat: multiplier kecil tak boleh menurunkan di bawah 10.
+        config(['kiosk_insights.revisit_gap_multiplier' => 0.5]);
+        $this->assertStringNotContainsString('Kunjungi', implode(' ', $this->row($f)['suggestions']), '0,5×7=3,5 < lantai 10; 8 hari belum cukup.');
+        config(['kiosk_insights.revisit_min_days' => 8]);
+        $this->assertStringContainsString('Kunjungi — sudah 8 hari (biasanya tiap 7 hari).', implode(' ', $this->row($f)['suggestions']));
+    }
+
+    public function test_slow_rhythm_kiosk_is_not_nagged_at_the_fixed_threshold(): void
+    {
+        // Ritme tiap 21 hari: kunjungan 18 Agu, 8 Sep, 29 Sep, 27 Okt → 4 kunjungan, jarak 21/21/28 (rerata ±23,3).
+        // asOf 16 Nov → 20 hari sejak kunjungan: ≥ ambang tetap 14, tetapi < 1,5 × 23,3 = 35.
+        $f = $this->fixture();
+        $this->visitsOn($f, ['2026-08-18', '2026-09-08', '2026-09-29', '2026-10-27']);
+        $row = $this->row($f);
+        $this->assertSame(20, $row['days_since_visit']);
+        $this->assertGreaterThanOrEqual(14, $row['days_since_visit'], 'Sudah melewati ambang tetap 14 hari…');
+        $this->assertGreaterThan(17, (float) $row['avg_visit_gap_days'], '…tetapi ritmenya jarang (rerata jarak > 17 hari).');
+        $this->assertStringNotContainsString('Kunjungi', implode(' ', $row['suggestions']), 'Ambang relatif ≥ 1,5 × rerata jarak, bukan 14 hari tetap.');
+    }
+
+    public function test_short_history_uses_fixed_threshold_without_rhythm_text(): void
+    {
+        $f = $this->fixture();
+        // Hanya 2 kunjungan → 1 jarak (< revisit_min_gaps = 3) → ambang tetap 14 hari, tanpa "(biasanya …)".
+        $this->visitsOn($f, ['2026-10-08', '2026-10-15']);
+        $row = $this->row($f);
+        $this->assertSame(32, $row['days_since_visit'], '15 Okt → 16 Nov = 32 hari ≥ ambang tetap 14.');
+        $this->assertContains('Kunjungi — sudah 32 hari.', $row['suggestions']);
+        foreach ($row['suggestions'] as $s) {
+            $this->assertStringNotContainsString('biasanya', $s);
+        }
+        // Di bawah ambang tetap: tidak disarankan.
+        config(['kiosk_insights.revisit_days' => 60]);
+        $this->assertStringNotContainsString('Kunjungi', implode(' ', $this->row($f)['suggestions']));
+    }
+
+    public function test_price_label_drops_decimals_when_per_unit_price_is_whole(): void
+    {
+        $f = $this->fixture(); // 12000 / 15 biji = 800 tepat
+        $this->assertStringContainsString('Rp 800/biji', $this->row($f)['price_label']);
+        $this->assertStringNotContainsString('800,00', $this->row($f)['price_label']);
+        $f['variant']->update(['sale_price_per_pack' => 12500, 'units_per_pack' => 15]);
+        $f['variant']->defaultPriceTier?->update(['sale_price_per_pack' => 12500]);
+        $this->assertStringContainsString('Rp 833,33/biji', $this->row($f)['price_label']);
+    }
+
     public function test_revenue_and_sold_match_trip_aggregator_for_same_completed_collectors(): void
     {
         $f = $this->fixture();

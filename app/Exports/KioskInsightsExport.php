@@ -54,6 +54,12 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
 
     private array $labelCells = [];
 
+    /** Baris subjudul area (bukan data kedai): bergaya, tanpa merge sel, tanpa wrap. */
+    private array $areaRows = [];
+
+    /** Kunci kolom per posisi kolom (A=0) pada sheet daftar, untuk lebar & format. */
+    private array $columnKeys = [];
+
     public function __construct(private array $data, private string $sheetTitle, private bool $withPhotos) {}
 
     public function title(): string
@@ -72,68 +78,88 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
         return parent::bindValue($cell, $value);
     }
 
-    /** [heading, type, plain-language definition] in stable export order. */
+    /**
+     * [heading, type, plain-language definition, lebar kolom] — URUTAN = urutan kolom di sheet "Daftar Kedai",
+     * disusun untuk pembaca: apa kedainya, bagaimana kondisinya, apa yang harus dilakukan, baru data pendukung.
+     * "Perlu Tindakan" memakai urutan yang sama dengan subset kolom (lihat ACTION_COLUMNS).
+     * Tipe 'mika' & 'days' = bilangan bulat. Kolom teknis (ID, kode label, prioritas, status foto) sengaja tidak ada.
+     */
     public static function columns(): array
     {
         return [
-            'id' => ['ID Kedai', 'int', 'Identitas unik kedai.'],
-            'owner_id' => ['ID Owner', 'int', 'Identitas pemilik usaha.'],
-            'business_name' => ['Usaha', 'text', 'Usaha pemilik kedai; bukan pemilik warung.'],
-            'area' => ['Area', 'text', 'Kelompok area kedai.'],
-            'name' => ['Nama Kedai', 'text', 'Nama kedai saat laporan dibuat.'],
-            'owner_name' => ['Pemilik Kedai', 'text', 'Nama kontak pemilik kedai.'],
-            'phone' => ['Telepon', 'text', 'Teks agar nol di depan dan tanda + tetap utuh.'],
-            'address' => ['Alamat', 'text', 'Alamat kedai.'],
-            'maps_url' => ['Google Maps', 'text', 'Hanya tautan HTTPS Google Maps yang dapat diklik.'],
-            'type' => ['Tipe', 'text', 'Konsinyasi, Cash, atau Booking.'],
-            'price_label' => ['Daftar Harga', 'text', 'Nama daftar harga saat ini.'],
-            'price_per_pack' => ['Harga / Mika', 'rp', 'Harga per mika saat ini; bukan harga historis transaksi.'],
-            'units_per_pack' => ['Biji / Mika', 'int', 'Isi per mika saat ini.'],
-            'default_qty_mika' => ['Jatah Mika', 'int', 'Jatah titip saat ini.'],
-            'is_active' => ['Aktif', 'bool', 'Ya atau Tidak pada saat laporan dibuat.'],
-            'first_titip_date' => ['Titip Pertama', 'date', 'Tanggal titipan pertama.'],
-            'notes' => ['Catatan', 'text', 'Catatan kedai.'],
-            'frequent_operator' => ['Operator Terbanyak', 'text', 'Operator yang paling sering berkunjung.'],
-            'visit_count' => ['Kunjungan', 'int', 'Kunjungan nyata dalam periode; trip sentinel bukan kunjungan.'],
-            'visits_30' => ['Kunjungan 30 Hari', 'int', 'Kunjungan dalam 30 hari terakhir sampai tanggal acuan.'],
-            'last_visit_at' => ['Kunjungan Terakhir', 'date', 'Tanggal kunjungan terakhir sampai tanggal acuan.'],
-            'last_operator' => ['Operator Terakhir', 'text', 'Operator kunjungan terakhir.'],
-            'days_since_visit' => ['Hari Sejak Kunjungan', 'decimal', 'Jarak hari dari tanggal acuan; kosong jika belum pernah dikunjungi.'],
-            'avg_visit_gap_days' => ['Rerata Jarak (Hari)', 'decimal', 'Rata-rata jarak hari antar kunjungan.'],
-            'delivered_packs' => ['Mika Diantar', 'decimal', 'Jumlah mika diantar dalam periode.'],
-            'sold_units' => ['Biji Terjual', 'decimal', 'Jumlah biji terjual dalam periode.'],
-            'sell_through_pct' => ['Sell-through', 'pct', 'Persentase biji terjual dari titipan yang sudah diselesaikan; hanya konsinyasi.'],
-            'weekly_sales' => ['Laju Biji / Minggu', 'decimal', 'Laju tertimbang durasi siklus titip yang selesai, termasuk siklus terjual nol; bukan rerata persentase.'],
-            'return_bs_pct' => ['Retur / BS', 'pct', 'Persentase seluruh retur (segar + kedaluwarsa) dari biji titipan siklus konsinyasi selesai.'],
-            'revenue_total' => ['Omset Total', 'rp', 'amount_paid settlement pada trip penagih selesai sepanjang riwayat. Pembayaran berikutnya memperbarui nilai periode trip asal; bukan arus kas tanggal bayar.'],
-            'revenue_30' => ['Omset 30 Hari', 'rp', 'amount_paid pada trip penagih bertanggal dalam 30 hari terakhir; bukan tanggal pembayaran cicilan.'],
-            'avg_revenue_per_visit' => ['Omset / Kunjungan', 'rp', 'Rata-rata uang diterima per kunjungan.'],
-            'sold_out_count' => ['Siklus Habis', 'int', 'Jumlah siklus konsinyasi yang habis terjual.'],
-            'settled_count' => ['Siklus Selesai', 'int', 'Jumlah settlement; termasuk settlement dengan pembayaran masih tertunda.'],
-            'consignment_sold_units' => ['Biji Laku Konsinyasi', 'decimal', 'Biji terjual dari siklus konsinyasi selesai.'],
-            'settled_units' => ['Biji Titipan Selesai', 'decimal', 'Biji titipan pada siklus konsinyasi selesai.'],
-            'pending_packs' => ['Stok Titipan (Mika)', 'decimal', 'Stok titipan belum diselesaikan saat ini; termasuk titipan awal/sentinel. Bukan piutang.'],
-            'pending_value' => ['Nilai Titipan', 'rp', 'Nilai stok titipan belum diselesaikan saat ini. Bukan uang yang sudah ditagih.'],
-            'pending_age_days' => ['Umur Titipan (Hari)', 'decimal', 'Umur titipan tertua yang belum diselesaikan saat ini.'],
-            'receivable' => ['Piutang', 'rp', 'Tagihan yang sudah timbul tetapi belum dibayar saat ini; terpisah dari stok titipan.'],
-            'receivable_age_days' => ['Umur Piutang (Hari)', 'decimal', 'Umur piutang tertua yang masih terbuka saat ini.'],
-            'label' => ['Label', 'text', 'Label performa sesuai aturan di sheet Penjelasan.'],
-            'label_key' => ['Kode Label', 'text', 'Kode stabil untuk filter/pivot.'],
-            'suggestions' => ['Saran Tindakan', 'list', 'Saran operasional, bukan perubahan jatah otomatis.'],
-            'priority' => ['Prioritas', 'int', 'Angka lebih kecil didahulukan.'],
-            'photo_status' => ['Status Foto', 'text', 'Tidak ada foto / Foto gagal dimuat / ok.'],
+            // 1. Apa & bagaimana kondisinya
+            'name' => ['Nama Kedai', 'text', 'Nama kedai saat laporan dibuat.', 28],
+            'business_name' => ['Usaha', 'text', 'Usaha pemilik kedai (hanya tampil pada laporan semua owner).', 22],
+            'area' => ['Area', 'text', 'Kelompok area kedai.', 14],
+            'label' => ['Label', 'text', 'Label performa sesuai aturan di bagian "Aturan Aktif".', 16],
+            'suggestions' => ['Saran Tindakan', 'list', 'Saran operasional, bukan perubahan jatah otomatis. Baris tanpa saran tidak masuk "Perlu Tindakan".', 46],
+            'sell_through_pct' => ['% Laku', 'pct', 'Persentase biji terjual dari titipan yang sudah diselesaikan; hanya konsinyasi.', 10],
+            'weekly_sales' => ['Laju Jual (biji/minggu)', 'decimal', 'Laju tertimbang durasi siklus titip yang selesai, termasuk siklus terjual nol; bukan rerata persentase.', 13],
+            'pending_packs' => ['Stok Titipan (mika)', 'mika', 'Stok titipan belum diselesaikan saat ini; termasuk titipan awal/sentinel. Bukan piutang.', 12],
+            'pending_value' => ['Nilai Titipan', 'rp', 'Nilai stok titipan belum diselesaikan saat ini. Bukan uang yang sudah ditagih.', 15],
+            'receivable' => ['Piutang', 'rp', 'Tagihan yang sudah timbul tetapi belum dibayar saat ini; terpisah dari stok titipan.', 14],
+            'receivable_age_days' => ['Umur Piutang (hari)', 'days', 'Umur piutang tertua yang masih terbuka saat ini.', 11],
+            'last_visit_at' => ['Kunjungan Terakhir', 'date', 'Tanggal kunjungan terakhir sampai tanggal acuan.', 15],
+            'last_operator' => ['Operator Terakhir', 'text', 'Operator kunjungan terakhir.', 16],
+            'days_since_visit' => ['Hari Sejak Kunjungan', 'days', 'Jarak hari dari tanggal acuan; kosong jika belum pernah dikunjungi.', 11],
+            // 2. Identitas
+            'owner_name' => ['Pemilik Kedai', 'text', 'Nama kontak pemilik kedai.', 20],
+            'phone' => ['Telepon', 'text', 'Teks agar nol di depan dan tanda + tetap utuh.', 16],
+            'address' => ['Alamat', 'text', 'Alamat kedai.', 40],
+            'maps_url' => ['Google Maps', 'text', 'Hanya tautan HTTPS Google Maps yang dapat diklik.', 18],
+            'type' => ['Tipe', 'text', 'Konsinyasi, Cash, atau Booking.', 12],
+            'price_label' => ['Daftar Harga', 'text', 'Nama daftar harga saat ini beserta harga per mika dan per biji.', 36],
+            'price_per_pack' => ['Harga / Mika', 'rp', 'Harga per mika saat ini; bukan harga historis transaksi.', 13],
+            'units_per_pack' => ['Biji / Mika', 'int', 'Isi per mika saat ini.', 9],
+            'default_qty_mika' => ['Jatah Titipan (mika)', 'mika', 'Jatah titip saat ini.', 10],
+            'is_active' => ['Aktif', 'bool', 'Ya atau Tidak pada saat laporan dibuat.', 8],
+            'first_titip_date' => ['Titip Pertama', 'date', 'Tanggal titipan pertama.', 14],
+            'notes' => ['Catatan', 'text', 'Catatan kedai.', 30],
+            'frequent_operator' => ['Operator Terbanyak', 'text', 'Operator yang paling sering berkunjung.', 16],
+            // 3. Metrik detail
+            'visit_count' => ['Kunjungan', 'int', 'Kunjungan nyata dalam periode; trip sentinel bukan kunjungan.', 11],
+            'visits_30' => ['Kunjungan 30 Hari', 'int', 'Kunjungan dalam 30 hari terakhir sampai tanggal acuan.', 11],
+            'avg_visit_gap_days' => ['Rerata Jarak Kunjungan (hari)', 'decimal', 'Rata-rata jarak hari antar kunjungan. Dipakai untuk menilai kapan kedai perlu dikunjungi lagi.', 13],
+            'delivered_packs' => ['Mika Diantar', 'mika', 'Jumlah mika diantar dalam periode.', 11],
+            'sold_units' => ['Biji Terjual', 'decimal', 'Jumlah biji terjual dalam periode (termasuk cash).', 11],
+            'return_bs_pct' => ['Retur / BS', 'pct', 'Persentase seluruh retur (segar + kedaluwarsa) dari biji titipan siklus konsinyasi selesai.', 10],
+            'revenue_total' => ['Omset Total', 'rp', 'amount_paid settlement pada trip penagih selesai sepanjang riwayat. Pembayaran berikutnya memperbarui nilai periode trip asal; bukan arus kas tanggal bayar.', 15],
+            'revenue_30' => ['Omset 30 Hari', 'rp', 'amount_paid pada trip penagih bertanggal dalam 30 hari terakhir; bukan tanggal pembayaran cicilan.', 15],
+            'avg_revenue_per_visit' => ['Omset / Kunjungan', 'rp', 'Rata-rata uang diterima per kunjungan.', 15],
+            'sold_out_count' => ['Siklus Habis', 'int', 'Jumlah siklus konsinyasi yang habis terjual.', 10],
+            'settled_count' => ['Siklus Selesai', 'int', 'Jumlah settlement; termasuk settlement dengan pembayaran masih tertunda.', 10],
+            'pending_age_days' => ['Umur Titipan (hari)', 'days', 'Umur titipan tertua yang belum diselesaikan saat ini.', 11],
         ];
+    }
+
+    /** Subset kolom sheet "Perlu Tindakan" (urutan mengikuti columns()). */
+    private const ACTION_COLUMNS = [
+        'name', 'business_name', 'area', 'label', 'suggestions', 'sell_through_pct', 'weekly_sales', 'pending_packs',
+        'pending_value', 'receivable', 'receivable_age_days', 'last_visit_at', 'last_operator', 'days_since_visit',
+        'owner_name', 'phone', 'type', 'return_bs_pct', 'settled_count', 'pending_age_days',
+    ];
+
+    /** Kolom yang benar-benar tampil: kolom Usaha hanya pada laporan semua owner. */
+    private function layout(bool $catalog): array
+    {
+        $columns = $catalog ? self::columns() : array_intersect_key(self::columns(), array_flip(self::ACTION_COLUMNS));
+        if (! ($this->data['all_owners'] ?? false)) {
+            unset($columns['business_name']);
+        }
+
+        return $columns;
     }
 
     public function array(): array
     {
-        $this->sectionRows = $this->recordRows = $this->formats = $this->links = $this->photos = $this->labelCells = [];
-        $period = ($this->data['period_start'] ?? null) ? $this->data['period_start'].' s.d. '.$this->data['as_of'] : 'Seluruh riwayat s.d. '.$this->data['as_of'];
+        $this->sectionRows = $this->areaRows = $this->recordRows = $this->formats = $this->links = $this->photos = $this->labelCells = [];
+        $this->columnKeys = [];
+        $meta = KioskInsightsSummary::meta($this->data);
         $this->rows = [
             ['LAPORAN KEDAI — '.$this->sheetTitle],
             ['Usaha', ($this->data['all_owners'] ?? false) ? 'Semua owner' : ($this->data['business_name'] ?? '')],
-            ['Tanggal acuan', $this->data['as_of'] ?? '', 'Dibuat', $this->data['generated_at'] ?? ''],
-            ['Periode', $period],
+            ['Tanggal acuan', $meta['as_of'], 'Dibuat', $meta['generated']],
+            ['Periode', $meta['period']],
             [null],
         ];
         if ($this->sheetTitle === 'Ringkasan') {
@@ -162,9 +188,11 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
             $this->rows[] = [$label, $s['totals'][$key], in_array($key, ['pending_packs', 'pending_value', 'receivable']) ? 'Posisi saat laporan dibuat; bukan periode historis' : 'Sampai tanggal acuan'];
             if (in_array($key, ['revenue_30', 'pending_value', 'receivable'])) {
                 $this->formats['B'.count($this->rows)] = '"Rp" #,##0';
+            } elseif (in_array($key, ['kiosks', 'active', 'pending_packs'])) {
+                $this->formats['B'.count($this->rows)] = '#,##0'; // bilangan bulat, tanpa desimal
             }
         }
-        $this->rows[] = ['Rerata sell-through', $s['avg_sell_through_pct'] === null ? null : $s['avg_sell_through_pct'] / 100, 'Rerata persentase kedai konsinyasi yang memiliki data; bukan laju penjualan tertimbang.'];
+        $this->rows[] = ['Rerata % laku', $s['avg_sell_through_pct'] === null ? null : $s['avg_sell_through_pct'] / 100, 'Rerata persentase kedai konsinyasi yang memiliki data; bukan laju penjualan tertimbang.'];
         $this->formats['B'.count($this->rows)] = '0.0%';
         $this->rows[] = [null];
         $this->section(['Usaha', 'Area', 'Kedai', 'Aktif', 'Omset 30 Hari', 'Nilai Titipan', 'Piutang']);
@@ -180,10 +208,10 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
         foreach ($s['labels'] as $key => $count) {
             $this->rows[] = [$labels[$key] ?? $key, $count];
         }
-        foreach (['top10' => '10 Kedai Tercepat', 'slow10' => '10 Kedai Terlambat'] as $key => $title) {
+        foreach (['top10' => '10 Kedai Paling Laris', 'slow10' => '10 Kedai Paling Lambat Laku'] as $key => $title) {
             $this->rows[] = [null];
-            $this->section([$title, 'Hanya konsinyasi dengan sedikitnya '.($this->data['rules']['min_settlements'] ?? 3).' siklus selesai; urut laju biji/minggu.']);
-            $this->section(['Usaha', 'Area', 'Kedai', 'Biji / Minggu', 'Sell-through', 'Siklus Selesai', 'Label']);
+            $this->section([$title, 'Hanya konsinyasi dengan sedikitnya '.($this->data['rules']['min_settlements'] ?? 3).' siklus selesai, tidak termasuk label Tidak aktif dan Data belum cukup; urut laju biji/minggu.']);
+            $this->section(['Usaha', 'Area', 'Kedai', 'Biji / Minggu', '% Laku', 'Siklus Selesai', 'Label']);
             foreach ($s[$key] as $r) {
                 $this->rows[] = [$r['business_name'], $r['area'], $r['name'], $r['weekly_sales'], isset($r['sell_through_pct']) ? $r['sell_through_pct'] / 100 : null, $r['settled_count'], $r['label']];
                 $this->formats['D'.count($this->rows)] = '#,##0.0';
@@ -198,18 +226,16 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
     private function records(): void
     {
         $catalog = $this->sheetTitle === 'Daftar Kedai';
-        $columns = $catalog ? self::columns() : array_intersect_key(self::columns(), array_flip([
-            'id', 'business_name', 'area', 'name', 'phone', 'type', 'last_visit_at', 'days_since_visit', 'sell_through_pct',
-            'weekly_sales', 'return_bs_pct', 'settled_count', 'pending_packs', 'pending_value', 'pending_age_days',
-            'receivable', 'receivable_age_days', 'label', 'suggestions', 'priority',
-        ]));
-        $heading = ['Jenis Baris'];
-        if ($catalog && $this->withPhotos) {
-            $heading[] = 'Foto';
-        }
-        $this->section(array_merge($heading, array_column($columns, 0)));
+        $photos = $catalog && $this->withPhotos;
+        $columns = $this->layout($catalog);
+        // Foto selalu kolom pertama bila diminta; "Tidak ada foto" / "Foto gagal dimuat" ditulis di sel itu.
+        $this->columnKeys = array_merge($photos ? ['__photo'] : [], array_keys($columns));
+        $this->section(array_merge($photos ? ['Foto'] : [], array_column($columns, 0)));
+
         $records = $this->data['rows'] ?? [];
         if (! $catalog) {
+            // Urutan baris = prioritas tindakan (piutang lama → lama tak dikunjungi → retur/BS → jatah); angka
+            // prioritasnya sendiri tidak ditampilkan. Hanya kedai yang punya saran.
             $records = array_values(array_filter($records, fn (array $r): bool => ! empty($r['suggestions'])));
             usort($records, fn (array $a, array $b): int => (($a['priority'] ?? 999) <=> ($b['priority'] ?? 999))
                 ?: strnatcasecmp(($a['business_name'] ?? '').($a['area'] ?? '').($a['name'] ?? ''), ($b['business_name'] ?? '').($b['area'] ?? '').($b['name'] ?? '')));
@@ -218,25 +244,26 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
         foreach ($records as $r) {
             $group = json_encode([$r['owner_id'] ?? null, $r['area'] ?? '']);
             if ($catalog && $group !== $previous) {
-                // Explicit row type and NO merged cells in the filter range: filter DATA to obtain pure records.
-                $this->section(['AREA', ($r['business_name'] ?? '').' / '.(($r['area'] ?? '') ?: 'Tanpa area')]);
+                // Subjudul area: satu baris bergaya, TANPA merge sel (aman untuk filter). Teks di kolom paling kiri
+                // yang tidak ikut digeser; baris ini ditandai lewat gaya, bukan kolom teknis "Jenis Baris".
+                $title = ($this->data['all_owners'] ?? false) ? ($r['business_name'] ?? '').' — ' : '';
+                $label = $title.(($r['area'] ?? '') ?: 'Tanpa area');
+                $this->rows[] = array_merge($photos ? [''] : [], [$label]);
+                $this->areaRows[] = count($this->rows);
                 $previous = $group;
             }
-            $row = ['DATA'];
+            $row = [];
             $rowNumber = count($this->rows) + 1;
-            if ($catalog && $this->withPhotos) {
-                $row[] = '';
+            if ($photos) {
                 if ($path = KioskInsightsSummary::thumbnail($r)) {
                     $this->photos[$rowNumber] = $path;
+                    $row[] = '';
                 } else {
-                    $row[1] = KioskInsightsSummary::photoStatus($r);
+                    $row[] = KioskInsightsSummary::photoStatus($r);
                 }
             }
             foreach ($columns as $key => [, $type]) {
                 $value = $r[$key] ?? null;
-                if ($key === 'photo_status') {
-                    $value = KioskInsightsSummary::photoStatus($r);
-                }
                 $column = Coordinate::stringFromColumnIndex(count($row) + 1);
                 $cell = $column.$rowNumber;
                 if ($key === 'label') {
@@ -244,7 +271,7 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
                 }
                 if ($value !== null) {
                     $value = match ($type) {
-                        'int' => (int) $value,
+                        'int', 'mika', 'days' => (int) round((float) $value),
                         'rp', 'decimal' => (float) $value,
                         'pct' => (float) $value / 100,
                         'bool' => $value ? 'Ya' : 'Tidak',
@@ -254,7 +281,8 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
                     };
                 }
                 $format = match ($type) {
-                    'rp' => '"Rp" #,##0', 'decimal' => '#,##0.0', 'pct' => '0.0%', 'date' => '[$-421]dd mmm yyyy', default => null,
+                    'rp' => '"Rp" #,##0', 'decimal' => '#,##0.0', 'pct' => '0.0%', 'mika', 'days' => '#,##0',
+                    'date' => '[$-421]dd mmm yyyy', default => null,
                 };
                 if ($format) {
                     $this->formats[$cell] = $format;
@@ -282,8 +310,7 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
         }
         $this->rows[] = [null];
         $this->section(['Kolom', 'Arti']);
-        $this->rows[] = ['Jenis Baris', 'DATA = satu kedai; AREA = subjudul, bukan kedai. Filter DATA sebelum menghitung/pivot. Semua angka mentah tetap numerik, bukan teks Rupiah.'];
-        $this->rows[] = ['Foto', 'Opsional, thumbnail lokal 60 piksel; foto rusak tidak menggagalkan laporan.'];
+        $this->rows[] = ['Foto', 'Opsional (Export Excel + Foto): thumbnail lokal 60 piksel. Kedai tanpa foto tertulis "Tidak ada foto"; foto yang gagal dimuat tertulis "Foto gagal dimuat" dan tidak menggagalkan laporan.'];
         foreach (self::columns() as [$heading, , $definition]) {
             $this->rows[] = [$heading, $definition];
         }
@@ -295,15 +322,17 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
 
         return [
             'Cakupan' => 'Identitas, harga, jatah, status aktif, stok titipan dan piutang adalah posisi saat laporan dibuat. Riwayat penjualan/kunjungan mengikuti periode laporan dan tanggal acuan.',
-            'Performa' => 'Hanya kedai Konsinyasi. Cash dan Booking tidak dibandingkan memakai sell-through atau laju konsinyasi. Kolom kosong berarti tidak berlaku atau belum ada data; nol berarti nilai nol yang diketahui.',
+            'Performa' => 'Hanya kedai Konsinyasi. Cash dan Booking tidak dibandingkan memakai % laku atau laju konsinyasi. Kolom kosong berarti tidak berlaku atau belum ada data; nol berarti nilai nol yang diketahui.',
+            '% Laku' => 'Biji terjual ÷ biji yang dititipkan pada titipan yang sudah ditagih, dalam persen. Hanya kedai konsinyasi.',
             'Data minimum' => 'Sedikitnya '.($r['min_settlements'] ?? 3).' siklus selesai. Settlement dengan pembayaran tertunda tetap dihitung; titipan belum diselesaikan tidak masuk basis performa.',
-            'Laju penjualan' => 'Biji per minggu dihitung dari siklus titipan selesai, ditimbang berdasarkan durasinya. Siklus terjual nol tetap dihitung. Top 10 / terlambat 10 diurutkan menurut laju ini, bukan omset.',
-            'Label' => 'Lambat: sell-through di bawah '.($r['slow_sell_through_pct'] ?? 50).'%. Laris: sell-through sedikitnya '.($r['fast_sell_through_pct'] ?? 80).'% dan laju mencapai persentil '.($r['fast_percentile'] ?? 75).'. Retur BS sedikitnya '.($r['problem_bs_pct'] ?? 25).'% atau piutang berumur '.($r['debt_age_days'] ?? 30).' hari perlu perhatian. Label akhir mengikuti prioritas aturan; Tidak aktif (status nonaktif atau kunjungan lewat ambang '.($r['inactive_days'] ?? 30).' hari) dan Data belum cukup tidak menilai laju.',
-            'Kunjungan' => 'Trip sentinel/titipan awal tetap masuk stok, tetapi bukan kunjungan nyata. Saran kunjungan memakai ambang '.($r['revisit_days'] ?? 14).' hari.',
+            'Laju penjualan' => 'Biji per minggu dihitung dari siklus titipan selesai, ditimbang berdasarkan durasinya. Siklus terjual nol tetap dihitung. Daftar "10 kedai paling laris" dan "10 kedai paling lambat laku" diurutkan menurut laju ini, bukan omset, dan tidak menyertakan kedai berlabel Tidak aktif atau Data belum cukup.',
+            'Label' => 'Lambat: % laku di bawah '.($r['slow_sell_through_pct'] ?? 50).'%. Laris: % laku sedikitnya '.($r['fast_sell_through_pct'] ?? 80).'% dan laju mencapai persentil '.($r['fast_percentile'] ?? 75).'. Retur BS sedikitnya '.($r['problem_bs_pct'] ?? 25).'% atau piutang berumur '.($r['debt_age_days'] ?? 30).' hari perlu perhatian. Label akhir mengikuti prioritas aturan; Tidak aktif (status nonaktif atau kunjungan lewat ambang '.($r['inactive_days'] ?? 30).' hari) dan Data belum cukup tidak menilai laju.',
+            'Kunjungan' => 'Trip sentinel/titipan awal tetap masuk stok, tetapi bukan kunjungan nyata.',
+            'Saran "Kunjungi"' => 'Muncul bila hari sejak kunjungan terakhir sudah melewati maksimum dari '.($r['revisit_min_days'] ?? 10).' hari dan '.($r['revisit_gap_multiplier'] ?? 1.5).' × rata-rata jarak kunjungan kedai itu sendiri (kedai yang biasa dikunjungi tiap 7 hari diingatkan lebih cepat daripada kedai yang biasa tiap 21 hari). Kedai dengan riwayat kurang dari '.($r['revisit_min_gaps'] ?? 3).' jarak kunjungan memakai ambang tetap '.($r['revisit_days'] ?? 14).' hari.',
             'Titipan vs piutang' => 'Titipan belum selesai adalah stok, bukan tagihan. Piutang adalah uang yang sudah ditagih tetapi belum dibayar. Jangan menjumlahkan keduanya sebagai omset.',
             'Omset' => 'Jumlah amount_paid settlement mengikuti tanggal trip penagih nyata yang selesai, sama dengan laporan periode. Cicilan memperbarui settlement lama, sehingga bukan laporan arus kas berdasarkan tanggal bayar. Trip/kedai walk-in tidak masuk laporan per kedai ini.',
             'Saran' => 'Saran bukan keputusan otomatis. Target jatah dari laju biji per hari × rerata jarak kunjungan ÷ isi mika, dibulatkan; kenaikan dibatasi maksimum '.($r['max_quota_increase'] ?? 2).' mika dan tidak dipaksa naik. Kedai sehat tanpa saran tidak masuk Perlu Tindakan. Periksa keadaan kedai sebelum bertindak.',
-            'Filter Excel' => 'Daftar Kedai berisi subjudul AREA. Untuk filter/pivot murni, pilih Jenis Baris = DATA. Kolom Usaha dan Area selalu diulang pada setiap kedai; subjudul tidak berisi angka.',
+            'Filter Excel' => 'Daftar Kedai dikelompokkan per area dengan baris subjudul berwarna (bukan data kedai, tanpa angka). Kolom Area diulang pada setiap kedai, jadi filter/pivot cukup memakai kolom Area; abaikan baris subjudul. Urutan baris di "Perlu Tindakan" sudah mencerminkan prioritas: piutang lama, lama tidak dikunjungi, retur/BS tinggi, lalu jatah.',
             'Keamanan' => 'Semua teks disimpan sebagai teks literal, bukan formula. Hanya tautan HTTPS Google Maps yang aktif; foto hanya thumbnail JPEG lokal, tanpa unduh jaringan saat render.',
         ];
     }
@@ -317,7 +346,7 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
             $drawing->setPath($path);
             $drawing->setHeight(56);
             $drawing->setWidth(56);
-            $drawing->setCoordinates('B'.$row);
+            $drawing->setCoordinates('A'.$row); // kolom Foto = kolom pertama
             $drawing->setOffsetX(2);
             $drawing->setOffsetY(2);
             $drawings[] = $drawing;
@@ -340,13 +369,20 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
             $sheet->getDefaultColumnDimension()->setWidth(18);
             $sheet->getColumnDimension('A')->setWidth(19);
             $sheet->getColumnDimension('B')->setWidth($this->sheetTitle === 'Penjelasan' ? 105 : 30);
+            $records = in_array($this->sheetTitle, ['Daftar Kedai', 'Perlu Tindakan'], true);
+            if ($records) {
+                // Lebar per kolom dari definisi kolom (bukan tebakan per judul), supaya teks panjang terbungkus rapi.
+                $widths = collect(self::columns())->map(fn (array $c): int => $c[3])->all();
+                foreach ($this->columnKeys as $index => $key) {
+                    $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($index + 1))->setWidth($key === '__photo' ? 11 : ($widths[$key] ?? 14));
+                }
+            }
             foreach ($this->sectionRows as $row) {
                 $range = 'A'.$row.':'.$endColumn.$row;
                 $sheet->getStyle($range)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($row === 6 ? '3F2414' : 'F5ECDD');
                 $sheet->getStyle($range)->getFont()->setBold(true)->getColor()->setRGB($row === 6 ? 'FFFFFF' : '3F2414');
                 $sheet->getRowDimension($row)->setRowHeight($row === 6 ? 34 : 28);
             }
-            $records = in_array($this->sheetTitle, ['Daftar Kedai', 'Perlu Tindakan'], true);
             if ($records) {
                 // Apply one format per column, not ~15,000 style mutations for 450 kiosks.
                 $columnFormats = [];
@@ -368,19 +404,22 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
             foreach ($this->recordRows as $i => $row) {
                 $sheet->getRowDimension($row)->setRowHeight($this->sheetTitle === 'Daftar Kedai' && $this->withPhotos ? 45 : 42);
             }
-            $records = in_array($this->sheetTitle, ['Daftar Kedai', 'Perlu Tindakan'], true);
-            $sheet->freezePane($records ? 'D7' : 'B7');
+            // Subjudul area: baris bergaya (bukan data), tanpa wrap dan tanpa merge supaya filter tetap aman.
+            foreach ($this->areaRows as $row) {
+                $range = 'A'.$row.':'.$endColumn.$row;
+                $sheet->getStyle($range)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E9DCC6');
+                $sheet->getStyle($range)->getFont()->setBold(true)->setSize(12)->getColor()->setRGB('3F2414');
+                $sheet->getStyle($range)->getAlignment()->setWrapText(false)->setVertical(Alignment::VERTICAL_CENTER);
+                $sheet->getRowDimension($row)->setRowHeight(24);
+            }
+            // Bekukan header + kolom identitas utama: [Foto +] Nama Kedai tetap terlihat saat menggulir ke kanan.
+            $frozenColumns = count(array_intersect(array_slice($this->columnKeys, 0, 2), ['__photo', 'name']));
+            $sheet->freezePane($records ? Coordinate::stringFromColumnIndex($frozenColumns + 1).'7' : 'B7');
             if ($records) {
                 $sheet->setAutoFilter('A6:'.$endColumn.max(6, $lastRow));
-                foreach ($this->rows[5] as $index => $heading) {
-                    $col = Coordinate::stringFromColumnIndex($index + 1);
-                    if (in_array($heading, ['Alamat', 'Catatan', 'Saran Tindakan', 'Google Maps'])) {
-                        $sheet->getColumnDimension($col)->setWidth(42);
-                    }
-                }
             }
             if ($this->sheetTitle === 'Daftar Kedai' && $this->withPhotos) {
-                $sheet->getColumnDimension('B')->setWidth(8.57); // approximately 60 px at default Calibri 11.
+                $sheet->getColumnDimension('A')->setWidth(11); // ±80 px: thumbnail 56 px + margin.
             }
             if ($this->sheetTitle === 'Penjelasan') {
                 for ($row = 7; $row <= $lastRow; $row++) {

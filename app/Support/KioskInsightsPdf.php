@@ -60,6 +60,7 @@ class KioskInsightsPdf
             'data' => $data,
             // A caller can pass the full report summary when rendering only the first row batch.
             'summary' => $data['summary'] ?? KioskInsightsSummary::summarize($data),
+            'meta' => KioskInsightsSummary::meta($data),
             'includeSummary' => $includeSummary,
             'catalogPages' => $pages,
             'logo' => public_path('images/brand/cq-logo-utama.png'),
