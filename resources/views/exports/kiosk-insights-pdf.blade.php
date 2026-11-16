@@ -94,8 +94,8 @@
             <td><div class="muted">Rerata % laku</div><div class="value">{{ $pct($summary['avg_sell_through_pct']) }}</div></td>
         </tr>
         <tr>
-            <td><div class="muted">Stok titipan sekarang</div><div class="value">{{ $int($summary['totals']['pending_packs']) }} mika</div></td>
-            <td><div class="muted">Nilai titipan sekarang</div><div class="value">{{ $rp($summary['totals']['pending_value']) }}</div></td>
+            <td><div class="muted">Mika di kedai sekarang</div><div class="value">{{ $int($summary['totals']['pending_packs']) }} mika</div></td>
+            <td><div class="muted">Nilai mika di kedai</div><div class="value">{{ $rp($summary['totals']['pending_value']) }}</div></td>
             <td><div class="muted">Piutang sekarang</div><div class="value">{{ $rp($summary['totals']['receivable']) }}</div></td>
         </tr>
     </table>
@@ -105,13 +105,13 @@
         @endforeach
     </div>
     {{-- Satu catatan "cara membaca" di halaman ringkasan (dulu terpisah di akhir sehingga memakan satu halaman hampir kosong). --}}
-    <div class="note"><b>Cara membaca.</b> Titipan belum selesai adalah stok, bukan piutang. Stok, piutang, harga, jatah dan identitas adalah posisi saat laporan dibuat; omset dan kunjungan mengikuti periode. Kolom kosong bukan nol. Penilaian (% laku, laju, label, saran) hanya untuk kedai Konsinyasi dan menghitung titipan yang sudah ditagih, termasuk yang pembayarannya belum lunas; laju ditimbang durasi siklus dan siklus terjual nol ikut dihitung. Titipan awal/sentinel masuk stok, bukan kunjungan. % BS hanya kedaluwarsa/rusak; Sisa Dibawa Pulang (%) hanya retur segar, bukan kerugian atau pemicu label. Ambang: data minimum {{ $data['rules']['min_settlements'] ?? 3 }} siklus; lambat jika % laku &lt;{{ $data['rules']['slow_sell_through_pct'] ?? 60 }}%; laris jika % laku minimal {{ $data['rules']['fast_sell_through_pct'] ?? 80 }}% dan laju di persentil minimal {{ $data['rules']['fast_percentile'] ?? 75 }}; bermasalah hanya jika % BS minimal {{ $data['rules']['problem_bs_pct'] ?? 10 }}% atau piutang berumur minimal {{ $data['rules']['debt_age_days'] ?? 30 }} hari; tidak aktif jika nonaktif atau tidak dikunjungi >{{ $data['rules']['inactive_days'] ?? 30 }} hari. Saran "Kunjungi" muncul bila hari sejak kunjungan melewati maksimum {{ $data['rules']['revisit_min_days'] ?? 10 }} hari dan {{ $data['rules']['revisit_gap_multiplier'] ?? 1.5 }}× jarak kunjungan biasa kedai itu (riwayat pendek: {{ $data['rules']['revisit_days'] ?? 14 }} hari). Data belum cukup tidak mendapat saran BS/jatah. Habis (laku ≥95%) pada ≥2 dari 3 tagihan terakhir: saran minimal +1 mika (maks +2 sesuai batas), karena permintaan tersensor. Saran bukan perubahan jatah otomatis.</div>
+    <div class="note"><b>Cara membaca.</b> Mika di kedai (titipan belum ditagih) adalah stok, bukan piutang. Stok, piutang, harga, jatah dan identitas adalah posisi saat laporan dibuat; omset dan kunjungan mengikuti periode. Kolom kosong bukan nol. Penilaian (% laku, laju, label, saran) hanya untuk kedai Konsinyasi dan menghitung titipan yang sudah ditagih, termasuk yang pembayarannya belum lunas; laju ditimbang durasi siklus dan siklus terjual nol ikut dihitung. Titipan awal/sentinel masuk stok, bukan kunjungan. % BS hanya kedaluwarsa/rusak; Sisa Dibawa Pulang (%) hanya retur segar, bukan kerugian atau pemicu label. Ambang: data minimum {{ $data['rules']['min_settlements'] ?? 3 }} siklus; lambat jika % laku &lt;{{ $data['rules']['slow_sell_through_pct'] ?? 60 }}%; laris jika % laku minimal {{ $data['rules']['fast_sell_through_pct'] ?? 80 }}% dan laju di persentil minimal {{ $data['rules']['fast_percentile'] ?? 75 }}; bermasalah hanya jika % BS minimal {{ $data['rules']['problem_bs_pct'] ?? 10 }}% atau piutang berumur minimal {{ $data['rules']['debt_age_days'] ?? 30 }} hari; tidak aktif jika nonaktif atau tidak dikunjungi >{{ $data['rules']['inactive_days'] ?? 30 }} hari. Saran "Kunjungi" muncul bila hari sejak kunjungan melewati maksimum {{ $data['rules']['revisit_min_days'] ?? 10 }} hari dan {{ $data['rules']['revisit_gap_multiplier'] ?? 1.5 }}× jarak kunjungan biasa kedai itu (riwayat pendek: {{ $data['rules']['revisit_days'] ?? 14 }} hari). Data belum cukup tidak mendapat saran BS/jatah. Habis (laku ≥95%) pada ≥2 dari 3 tagihan terakhir: saran minimal +1 mika (maks +2 sesuai batas), karena permintaan tersensor. Saran bukan perubahan jatah otomatis.</div>
     <h2>Ringkasan per area</h2>
-    <table class="data"><thead><tr><th style="width: 35%">{{ $allOwners ? 'Usaha / Area' : 'Area' }}</th><th>Kedai / aktif</th><th class="right">Omset 30 hari</th><th class="right">Nilai titipan</th><th class="right">Piutang</th></tr></thead><tbody>
+    <table class="data"><thead><tr><th style="width: 28%">{{ $allOwners ? 'Usaha / Area' : 'Area' }}</th><th>Kedai / aktif</th><th class="right">Omset 30 hari</th><th class="right">Mika di kedai</th><th class="right">Nilai mika di kedai</th><th class="right">Piutang</th></tr></thead><tbody>
         @forelse ($summary['areas'] as $area)
-            <tr><td>@if ($allOwners){{ $clip($area['business_name'], 60) }}<br>@endif<b>{{ $clip($area['area'], 60) }}</b></td><td>{{ $area['kiosks'] }} / {{ $area['active'] }}</td><td class="right">{{ $rp($area['revenue_30']) }}</td><td class="right">{{ $rp($area['pending_value']) }}</td><td class="right">{{ $rp($area['receivable']) }}</td></tr>
+            <tr><td>@if ($allOwners){{ $clip($area['business_name'], 60) }}<br>@endif<b>{{ $clip($area['area'], 60) }}</b></td><td>{{ $area['kiosks'] }} / {{ $area['active'] }}</td><td class="right">{{ $rp($area['revenue_30']) }}</td><td class="right">{{ $int($area['pending_packs']) }}</td><td class="right">{{ $rp($area['pending_value']) }}</td><td class="right">{{ $rp($area['receivable']) }}</td></tr>
         @empty
-            <tr><td colspan="5">Belum ada kedai dalam cakupan laporan.</td></tr>
+            <tr><td colspan="6">Belum ada kedai dalam cakupan laporan.</td></tr>
         @endforelse
     </tbody></table>
     @foreach (['top10' => '10 kedai paling laris', 'slow10' => '10 kedai paling lambat laku'] as $key => $heading)
@@ -158,7 +158,7 @@
                     <tr><td>Kunjungan terakhir</td><td>{{ $joinParts([$date($r['last_visit_at'] ?? null), $clip($r['last_operator'] ?? '', 25)]) }}</td></tr>
                     <tr><td>Laju / % Laku</td><td>{{ ($r['weekly_sales'] ?? null) === null ? '—' : $num($r['weekly_sales']).' biji/mgg' }} · {{ $pct($r['sell_through_pct'] ?? null) }}</td></tr>
                     <tr><td>% BS / Sisa segar</td><td>{{ $pct($r['bs_pct'] ?? null) }} / {{ $pct($r['fresh_return_pct'] ?? null) }} dibawa pulang</td></tr>
-                    <tr><td>Titipan</td><td>{{ $joinParts([$int($r['pending_packs'] ?? 0).' mika', ($r['pending_age_days'] ?? null) === null ? '' : $int($r['pending_age_days']).' hari']) }}</td></tr>
+                    <tr><td>Mika di kedai</td><td>{{ $joinParts([$int($r['pending_packs'] ?? 0).' mika', ($r['pending_age_days'] ?? null) === null ? '' : $int($r['pending_age_days']).' hari']) }}</td></tr>
                     <tr><td>Piutang</td><td>{{ $hasReceivable ? $joinParts([$rp($r['receivable']), ($r['receivable_age_days'] ?? null) === null ? '' : $int($r['receivable_age_days']).' hari']) : 'Tidak ada' }}</td></tr>
                 </table>
                 <div class="suggest"><b>Saran:</b> {{ $clip(implode(' · ', $r['suggestions'] ?? []) ?: 'Belum ada saran khusus.', 175) }}</div>

@@ -25,10 +25,10 @@ class KioskInsightsSummary
             // An area with the same name in two businesses is still two separate groups.
             $key = json_encode([$row['owner_id'] ?? null, $row['area'] ?? '']);
             $areas[$key] ??= ['owner_id' => $row['owner_id'] ?? null, 'business_name' => $row['business_name'] ?? '',
-                'area' => ($row['area'] ?? '') ?: 'Tanpa area', 'kiosks' => 0, 'active' => 0, 'revenue_30' => 0, 'pending_value' => 0, 'receivable' => 0];
+                'area' => ($row['area'] ?? '') ?: 'Tanpa area', 'kiosks' => 0, 'active' => 0, 'revenue_30' => 0, 'pending_packs' => 0, 'pending_value' => 0, 'receivable' => 0];
             $areas[$key]['kiosks']++;
             $areas[$key]['active'] += (int) ($row['is_active'] ?? false);
-            foreach (['revenue_30', 'pending_value', 'receivable'] as $field) {
+            foreach (['revenue_30', 'pending_packs', 'pending_value', 'receivable'] as $field) {
                 $areas[$key][$field] += (float) ($row[$field] ?? 0);
             }
         }

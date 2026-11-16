@@ -97,7 +97,9 @@ class KioskInsightsRenderTest extends TestCase
         $this->assertSame(DataType::TYPE_NUMERIC, $catalog->getCell($column('Harga / Mika').'8')->getDataType());
         $this->assertEquals(0.812, $catalog->getCell($column('% Laku').'8')->getValue());
         $this->assertIsNumeric($catalog->getCell($column('Titip Pertama').'8')->getValue());
+        // URL bukan HTTPS Google Maps → tetap teks literal, tanpa hyperlink.
         $this->assertSame('', $catalog->getCell($column('Google Maps').'8')->getHyperlink()->getUrl());
+        $this->assertSame('javascript:alert(1)', $catalog->getCell($column('Google Maps').'8')->getValue());
         $this->assertSame('B7', $catalog->getFreezePane(), 'Header + kolom Nama Kedai (tanpa foto) beku.');
         $this->assertStringStartsWith('A6:', $catalog->getAutoFilter()->getRange());
         $this->assertCount(0, $catalog->getDrawingCollection());
@@ -167,13 +169,16 @@ class KioskInsightsRenderTest extends TestCase
         $book = $this->workbook($this->data([$this->row()]), true);
         $headings = $this->headings($book, 'Daftar Kedai');
 
-        // Urutan pembaca: Foto, Nama, Area, Label, Saran, % Laku, Laju, Stok, Nilai, Piutang, Umur, Kunjungan terakhir…
-        $this->assertSame(['Foto', 'Nama Kedai', 'Area', 'Label', 'Saran Tindakan', '% Laku', 'Laju Jual (biji/minggu)',
-            'Stok Titipan (mika)', 'Nilai Titipan', 'Piutang', 'Umur Piutang (hari)', 'Kunjungan Terakhir', 'Operator Terakhir',
-            'Hari Sejak Kunjungan'], array_slice($headings, 0, 14));
-        // Lalu identitas, lalu metrik detail.
+        // Urutan pembaca: Foto, Nama, Area, Google Maps, Alamat, Label, Saran, % Laku, Laju, Mika di Kedai, Nilai, Piutang…
+        $this->assertSame(['Foto', 'Nama Kedai', 'Area', 'Google Maps', 'Alamat', 'Label', 'Saran Tindakan', '% Laku',
+            'Laju Jual (biji/minggu)', 'Mika di Kedai Sekarang', 'Nilai Mika di Kedai', 'Piutang', 'Umur Piutang (hari)',
+            'Kunjungan Terakhir', 'Operator Terakhir', 'Hari Sejak Kunjungan'], array_slice($headings, 0, 16));
+        // Lalu identitas (Pemilik, Telepon), lalu metrik detail.
         $this->assertLessThan(array_search('Sisa Dibawa Pulang (%)', $headings, true), array_search('Pemilik Kedai', $headings, true));
-        $this->assertLessThan(array_search('Operator Terbanyak', $headings, true), array_search('Alamat', $headings, true));
+        $this->assertNotContains('Stok Titipan (mika)', $headings);
+        $this->assertNotContains('Nilai Titipan', $headings);
+        $actions = $this->headings($book, 'Perlu Tindakan');
+        $this->assertSame(['Nama Kedai', 'Area', 'Google Maps', 'Alamat', 'Label'], array_slice($actions, 0, 5), 'Perlu Tindakan memakai urutan yang sama.');
         foreach (['Jenis Baris', 'ID Kedai', 'ID Owner', 'Kode Label', 'Prioritas', 'Status Foto', 'Biji Laku Konsinyasi',
             'Biji Titipan Selesai', 'Usaha', 'Sell-through'] as $removed) {
             $this->assertNotContains($removed, $headings, "Kolom '{$removed}' tidak boleh ada pada mode satu owner.");
@@ -182,6 +187,227 @@ class KioskInsightsRenderTest extends TestCase
             $this->assertNotContains($heading, ['Jenis Baris', 'ID Kedai', 'Prioritas', 'Kode Label']);
         }
         $book->disconnectWorksheets();
+    }
+
+    /** @return array<int, array<int, mixed>> baris sheet (A..kolom terakhir) mulai baris 7 sebagai matriks 1-indexed per baris. */
+    private function bodyRows(Spreadsheet $book, string $sheet): array
+    {
+        $ws = $book->getSheetByName($sheet);
+        $out = [];
+        for ($r = 7; $r <= $ws->getHighestRow(); $r++) {
+            $out[$r] = $ws->rangeToArray('A'.$r.':'.$ws->getHighestColumn().$r)[0];
+        }
+
+        return $out;
+    }
+
+    public function test_mika_di_kedai_labels_replace_old_stock_wording_everywhere(): void
+    {
+        $data = $this->data([$this->row(['pending_packs' => 5, 'pending_value' => 80000])]);
+        $book = $this->workbook($data);
+        $json = json_encode($book->getSheetByName('Ringkasan')->toArray(), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('Mika di kedai sekarang', $json);
+        $this->assertStringContainsString('Nilai mika di kedai', $json);
+        $this->assertStringContainsString('Mika di Kedai', $json, 'Kolom per area di Ringkasan');
+        foreach (['Ringkasan', 'Perlu Tindakan', 'Daftar Kedai', 'Penjelasan'] as $name) {
+            $text = json_encode($book->getSheetByName($name)->toArray(), JSON_UNESCAPED_UNICODE);
+            $this->assertStringNotContainsString('Stok titipan', $text, $name);
+            $this->assertStringNotContainsString('Stok Titipan', $text, $name);
+            $this->assertStringNotContainsString('Nilai Titipan', $text, $name);
+            $this->assertStringNotContainsString('Nilai stok titipan', $text, $name);
+        }
+        $book->disconnectWorksheets();
+    }
+
+    public function test_summary_area_table_has_mika_di_kedai_per_area_matching_row_sums(): void
+    {
+        $rows = [
+            $this->row(['id' => 1, 'area' => 'Utara', 'pending_packs' => 3, 'pending_value' => 48000]),
+            $this->row(['id' => 2, 'area' => 'Utara', 'pending_packs' => 4, 'pending_value' => 64000]),
+            $this->row(['id' => 3, 'area' => 'Selatan', 'pending_packs' => 10, 'pending_value' => 160000]),
+        ];
+        $summary = KioskInsightsSummary::summarize($this->data($rows));
+        $areas = array_column($summary['areas'], null, 'area');
+        $this->assertSame(7.0, (float) $areas['Utara']['pending_packs']);
+        $this->assertSame(112000.0, (float) $areas['Utara']['pending_value']);
+        $this->assertSame(10.0, (float) $areas['Selatan']['pending_packs']);
+        $this->assertSame(17.0, (float) $summary['totals']['pending_packs']);
+
+        $book = $this->workbook($this->data($rows));
+        $sheet = $book->getSheetByName('Ringkasan');
+        $header = null;
+        foreach ($sheet->toArray() as $i => $line) {
+            if (($line[1] ?? null) === 'Area' && ($line[5] ?? null) === 'Mika di Kedai') {
+                $header = $i;
+                break;
+            }
+        }
+        $this->assertNotNull($header, 'Header ringkasan per area memuat kolom "Mika di Kedai".');
+        $this->assertSame(['Usaha', 'Area', 'Kedai', 'Aktif', 'Omset 30 Hari', 'Mika di Kedai', 'Nilai Mika di Kedai', 'Piutang'],
+            array_slice($sheet->toArray()[$header], 0, 8));
+        $byArea = [];
+        foreach ([1, 2] as $offset) {
+            $row = $header + $offset + 1; // toArray() 0-indexed → nomor baris sheet
+            $byArea[(string) $sheet->getCell('B'.$row)->getValue()] = [(int) $sheet->getCell('F'.$row)->getValue(), (float) $sheet->getCell('G'.$row)->getValue()];
+        }
+        $this->assertSame([7, 112000.0], $byArea['Utara']);
+        $this->assertSame([10, 160000.0], $byArea['Selatan']);
+        $book->disconnectWorksheets();
+    }
+
+    public function test_catalog_has_area_subtotals_and_bold_total_outside_the_filter_range(): void
+    {
+        $rows = [
+            $this->row(['id' => 1, 'area' => 'Utara', 'name' => 'A1', 'pending_packs' => 3, 'pending_value' => 48000]),
+            $this->row(['id' => 2, 'area' => 'Utara', 'name' => 'A2', 'pending_packs' => 4, 'pending_value' => 64000]),
+            $this->row(['id' => 3, 'area' => 'Selatan', 'name' => 'S1', 'pending_packs' => 10, 'pending_value' => 160000]),
+        ];
+        $book = $this->workbook($this->data($rows));
+        $sheet = $book->getSheetByName('Daftar Kedai');
+        $headings = $this->headings($book, 'Daftar Kedai');
+        $packs = Coordinate::stringFromColumnIndex(array_search('Mika di Kedai Sekarang', $headings, true) + 1);
+        $value = Coordinate::stringFromColumnIndex(array_search('Nilai Mika di Kedai', $headings, true) + 1);
+
+        $subtotals = $totals = $kiosks = [];
+        foreach ($this->bodyRows($book, 'Daftar Kedai') as $r => $line) {
+            $label = (string) ($line[0] ?? '');
+            if (str_starts_with($label, 'SUBTOTAL')) {
+                $subtotals[$r] = $label;
+            } elseif (str_starts_with($label, 'TOTAL')) {
+                $totals[$r] = $label;
+            } elseif (in_array($label, ['A1', 'A2', 'S1'], true)) {
+                $kiosks[$r] = $label;
+            }
+        }
+        $this->assertCount(3, $kiosks);
+        $this->assertCount(2, $subtotals, 'Satu subtotal per area.');
+        $this->assertCount(1, $totals);
+
+        // Angka biasa, bukan formula.
+        foreach ([...array_keys($subtotals), ...array_keys($totals)] as $r) {
+            $this->assertNotSame(DataType::TYPE_FORMULA, $sheet->getCell($packs.$r)->getDataType());
+            $this->assertNotSame(DataType::TYPE_FORMULA, $sheet->getCell($value.$r)->getDataType());
+            $this->assertTrue($sheet->getStyle('A'.$r)->getFont()->getBold(), 'Baris jumlah tebal');
+        }
+        // Subtotal utara = 3+4 / 48.000+64.000; selatan = 10 / 160.000 — masing-masing sama dengan jumlah baris kedainya.
+        $bySub = [];
+        foreach ($subtotals as $r => $label) {
+            $bySub[(string) $sheet->getCell('B'.$r)->getValue()] = [(int) $sheet->getCell($packs.$r)->getValue(), (float) $sheet->getCell($value.$r)->getValue(), $label];
+        }
+        $this->assertSame([7, 112000.0, 'SUBTOTAL — 2 kedai'], $bySub['Utara']);
+        $this->assertSame([10, 160000.0, 'SUBTOTAL — 1 kedai'], $bySub['Selatan']);
+        $totalRow = array_key_first($totals);
+        $this->assertSame('TOTAL — 3 kedai', $totals[$totalRow]);
+        $this->assertSame(17, (int) $sheet->getCell($packs.$totalRow)->getValue());
+        $this->assertSame(272000.0, (float) $sheet->getCell($value.$totalRow)->getValue());
+        $this->assertSame(array_sum(array_map(fn ($r) => (int) $sheet->getCell($packs.$r)->getValue(), array_keys($kiosks))), (int) $sheet->getCell($packs.$totalRow)->getValue());
+        $this->assertSame('"Rp" #,##0', $sheet->getStyle($value.$totalRow)->getNumberFormat()->getFormatCode());
+        $this->assertSame('#,##0', $sheet->getStyle($packs.$totalRow)->getNumberFormat()->getFormatCode());
+
+        // TOTAL berada di bawah dan di luar rentang autofilter (ada baris pemisah kosong), jadi tak tersaring/terurut sebagai kedai.
+        preg_match('/^A6:([A-Z]+)(\d+)$/', $sheet->getAutoFilter()->getRange(), $m);
+        $filterEnd = (int) $m[2];
+        $this->assertGreaterThan($filterEnd, $totalRow);
+        $this->assertSame($totalRow, $sheet->getHighestRow(), 'TOTAL di paling bawah.');
+        $this->assertGreaterThan(max(array_keys($subtotals)), $totalRow);
+        $this->assertSame($filterEnd, max(array_keys($subtotals)), 'Subtotal terakhir menutup rentang filter.');
+        $book->disconnectWorksheets();
+    }
+
+    public function test_action_sheet_has_subtotals_block_and_total_outside_filter_and_empty_has_none(): void
+    {
+        $rows = [
+            $this->row(['id' => 1, 'area' => 'Utara', 'name' => 'A1', 'pending_packs' => 3, 'pending_value' => 48000, 'priority' => 2]),
+            $this->row(['id' => 2, 'area' => 'Selatan', 'name' => 'S1', 'pending_packs' => 10, 'pending_value' => 160000, 'priority' => 1]),
+            $this->row(['id' => 3, 'area' => 'Utara', 'name' => 'A2', 'pending_packs' => 4, 'pending_value' => 64000, 'priority' => 3]),
+            $this->row(['id' => 4, 'area' => 'Utara', 'name' => 'Tanpa Saran', 'pending_packs' => 99, 'pending_value' => 999999, 'suggestions' => []]),
+        ];
+        $book = $this->workbook($this->data($rows));
+        $sheet = $book->getSheetByName('Perlu Tindakan');
+        $headings = $this->headings($book, 'Perlu Tindakan');
+        $packs = Coordinate::stringFromColumnIndex(array_search('Mika di Kedai Sekarang', $headings, true) + 1);
+        $value = Coordinate::stringFromColumnIndex(array_search('Nilai Mika di Kedai', $headings, true) + 1);
+        $order = $subs = $total = [];
+        foreach ($this->bodyRows($book, 'Perlu Tindakan') as $r => $line) {
+            $label = (string) ($line[0] ?? '');
+            if (str_starts_with($label, 'SUBTOTAL')) {
+                $subs[$sheet->getCell('B'.$r)->getValue()] = [(int) $sheet->getCell($packs.$r)->getValue(), (float) $sheet->getCell($value.$r)->getValue()];
+            } elseif (str_starts_with($label, 'TOTAL')) {
+                $total = [$r, $label, (int) $sheet->getCell($packs.$r)->getValue(), (float) $sheet->getCell($value.$r)->getValue()];
+            } elseif (in_array($label, ['A1', 'A2', 'S1', 'Tanpa Saran'], true)) {
+                $order[$r] = $label;
+            }
+        }
+        // Urutan baris tetap prioritas; kedai tanpa saran tidak masuk daftar maupun jumlah.
+        $this->assertSame(['S1', 'A1', 'A2'], array_values($order));
+        $this->assertSame(['Selatan' => [10, 160000.0], 'Utara' => [7, 112000.0]], $subs);
+        $this->assertSame('TOTAL — 3 kedai', $total[1]);
+        $this->assertSame(17, $total[2]);
+        $this->assertSame(272000.0, $total[3]);
+        preg_match('/^A6:([A-Z]+)(\d+)$/', $sheet->getAutoFilter()->getRange(), $m);
+        $this->assertSame(max(array_keys($order)), (int) $m[2], 'Filter hanya mencakup baris kedai.');
+        $this->assertGreaterThan((int) $m[2], $total[0]);
+        $book->disconnectWorksheets();
+
+        // Tanpa kedai: tidak ada subtotal/total yang menyesatkan.
+        $empty = $this->workbook($this->data([]));
+        foreach (['Daftar Kedai', 'Perlu Tindakan'] as $name) {
+            $text = json_encode($empty->getSheetByName($name)->toArray(), JSON_UNESCAPED_UNICODE);
+            $this->assertStringNotContainsString('SUBTOTAL', $text, $name);
+            $this->assertStringNotContainsString('TOTAL —', $text, $name);
+        }
+        $empty->disconnectWorksheets();
+    }
+
+    public function test_maps_column_is_a_clickable_buka_maps_hyperlink_right_after_area(): void
+    {
+        $rows = [
+            $this->row(['id' => 1, 'name' => 'Ada Maps', 'maps_url' => 'https://maps.google.com/?q=1,2']),
+            $this->row(['id' => 2, 'name' => 'Tanpa Maps', 'maps_url' => null]),
+            $this->row(['id' => 3, 'name' => 'Maps Palsu', 'maps_url' => 'https://evil.test/maps']),
+        ];
+        $book = $this->workbook($this->data($rows));
+        foreach (['Daftar Kedai', 'Perlu Tindakan'] as $name) {
+            $sheet = $book->getSheetByName($name);
+            $headings = $this->headings($book, $name);
+            $this->assertSame(['Nama Kedai', 'Area', 'Google Maps', 'Alamat', 'Label'], array_slice($headings, 0, 5), $name);
+            $found = [];
+            foreach ($this->bodyRows($book, $name) as $r => $line) {
+                if (in_array($line[0], ['Ada Maps', 'Tanpa Maps', 'Maps Palsu'], true)) {
+                    // Simpan KOORDINAT, bukan objek Cell: sel yang dibaca lebih dulu terlepas dari worksheet (cache sel).
+                    $found[$line[0]] = 'C'.$r;
+                }
+            }
+            $this->assertSame('Buka Maps', $sheet->getCell($found['Ada Maps'])->getValue(), $name);
+            $this->assertSame('https://maps.google.com/?q=1,2', $sheet->getHyperlink($found['Ada Maps'])->getUrl(), $name);
+            $this->assertNotSame('none', $sheet->getStyle($found['Ada Maps'])->getFont()->getUnderline(), 'Tautan bergaris bawah.');
+            $this->assertNull($sheet->getCell($found['Tanpa Maps'])->getValue(), $name);
+            $this->assertFalse($sheet->getCell($found['Tanpa Maps'])->hasHyperlink());
+            $this->assertFalse($sheet->getCell($found['Maps Palsu'])->hasHyperlink(), 'URL non-Google tidak menjadi tautan aktif.');
+            $this->assertNotSame('Buka Maps', $sheet->getCell($found['Maps Palsu'])->getValue());
+        }
+        $book->disconnectWorksheets();
+    }
+
+    public function test_pdf_uses_new_labels_and_area_table_has_mika_di_kedai_column(): void
+    {
+        $data = $this->data([
+            $this->row(['id' => 1, 'area' => 'Utara', 'pending_packs' => 3, 'pending_value' => 48000]),
+            $this->row(['id' => 2, 'area' => 'Utara', 'pending_packs' => 4, 'pending_value' => 64000]),
+        ]);
+        $captured = [];
+        View::composer('exports.kiosk-insights-pdf', function ($view) use (&$captured): void {
+            $captured = $view->getData();
+        });
+        $data['summary_only'] = true;
+        KioskInsightsPdf::renderPart($data, true);
+        $html = view('exports.kiosk-insights-pdf', $captured)->render();
+        $this->assertStringContainsString('Mika di kedai sekarang', $html);
+        $this->assertStringContainsString('Nilai mika di kedai', $html);
+        $this->assertStringContainsString('<th class="right">Mika di kedai</th>', $html);
+        $this->assertStringNotContainsString('Stok titipan', $html);
+        $this->assertStringNotContainsString('Nilai titipan', $html);
+        $this->assertMatchesRegularExpression('~Utara.*?<td class="right">7</td>~s', $html, 'Mika di kedai per area = 3 + 4.');
     }
 
     public function test_bs_and_fresh_returns_have_separate_numeric_columns_and_explanations(): void
@@ -224,7 +450,7 @@ class KioskInsightsRenderTest extends TestCase
             'receivable_age_days' => 7.0, 'days_since_visit' => 1.0])]));
         $sheet = $book->getSheetByName('Daftar Kedai');
         $headings = $this->headings($book, 'Daftar Kedai');
-        foreach (['Jatah Titipan (mika)', 'Mika Diantar', 'Stok Titipan (mika)'] as $heading) {
+        foreach (['Jatah Titipan (mika)', 'Mika Diantar', 'Mika di Kedai Sekarang'] as $heading) {
             $cell = Coordinate::stringFromColumnIndex(array_search($heading, $headings, true) + 1).'8';
             $this->assertSame('#,##0', $sheet->getStyle($cell)->getNumberFormat()->getFormatCode(), $heading);
             $this->assertSame((int) $sheet->getCell($cell)->getValue(), $sheet->getCell($cell)->getValue(), $heading.' bulat');
