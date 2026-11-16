@@ -68,5 +68,8 @@ RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions sto
 # di-inject saat RUNTIME, tidak saat build. config:cache di build akan membekukan
 # creds KOSONG → app gagal konek DB. Maka semua cache + migrate dijalankan di CMD
 # setelah env tersedia. config/octane.php = DEFAULT (listener reset auth/session utuh).
+# Keep raw FrankenPHP stderr records visible. Without explicit --log-level Octane reformats/filters
+# records (including PHP stderr forwarded at Caddy info level). 'info' deliberately permits those
+# envelopes; it also adds server/access records. LOG_LEVEL still filters application messages.
 ENTRYPOINT []
-CMD ["sh", "-c", "php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache && php artisan migrate --force && (php artisan storage:link || true) && php artisan octane:frankenphp --host=0.0.0.0 --port=${PORT:-8000} --workers=auto --max-requests=500"]
+CMD ["sh", "-c", "php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache && php artisan migrate --force && (php artisan storage:link || true) && php artisan octane:frankenphp --host=0.0.0.0 --port=${PORT:-8000} --workers=auto --max-requests=500 --log-level=info"]

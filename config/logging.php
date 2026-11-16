@@ -54,7 +54,9 @@ return [
 
         'stack' => [
             'driver' => 'stack',
-            'channels' => explode(',', env('LOG_STACK', 'single')),
+            // Produksi (Railway): tulis ke file DAN stderr supaya error + SLOW_REQUEST muncul di Railway Deploy Logs
+            // tanpa perlu set variable. Lokal/test tetap hanya 'single'. Override: LOG_STACK=single (atau apa pun).
+            'channels' => explode(',', env('LOG_STACK', env('APP_ENV') === 'production' ? 'single,stderr' : 'single')),
             'ignore_exceptions' => false,
         ],
 
