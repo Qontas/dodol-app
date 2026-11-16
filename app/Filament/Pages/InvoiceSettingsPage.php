@@ -26,7 +26,7 @@ class InvoiceSettingsPage extends Page implements HasForms
 
     protected static ?string $slug = 'pengaturan-invoice';
 
-    protected static ?int $navigationSort = 6;
+    protected static ?int $navigationSort = 7;
 
     protected static string $view = 'filament.pages.invoice-settings';
 

@@ -15,7 +15,9 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use setasign\Fpdi\Fpdi;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 class KioskInsightDownloadsTest extends TestCase
@@ -55,10 +57,21 @@ class KioskInsightDownloadsTest extends TestCase
         $admin = User::factory()->create(['role' => 'super_admin', 'is_active' => true]);
         $operator = User::factory()->create(['role' => 'operator', 'owner_id' => $owner->id, 'is_active' => true]);
         $this->actingAs($owner)->get(route('kiosk-insights.index'))->assertOk()->assertSee('Export Excel + Foto');
-        $this->actingAs($admin)->get(route('kiosk-insights.index'))->assertOk()->assertSee('Semua owner');
+        $this->actingAs($admin)->get(route('kiosk-insights.index'))->assertRedirect(route('filament.admin.pages.laporan-kedai'));
+        $this->actingAs($admin)->get(route('filament.admin.pages.laporan-kedai'))->assertOk()->assertSee('Semua owner');
         $this->actingAs($operator)->get(route('kiosk-insights.index'))->assertForbidden();
         $this->actingAs($operator)->get(route('kiosk-insights.download', ['export' => (string) Str::uuid()]))->assertForbidden();
         Livewire::actingAs($operator)->test(KioskInsightDownloads::class)->assertForbidden();
+    }
+
+    public function test_reload_resumes_saved_export_for_creator_only(): void
+    {
+        $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $other = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+        $id = $this->report($owner);
+        $this->actingAs($owner)->get('/kiosk-insights?export='.$id)->assertOk()->assertSee('Unduh Laporan');
+        $this->actingAs($other)->get('/kiosk-insights?export='.$id)->assertNotFound();
+        $this->actingAs($owner)->get('/kiosk-insights?export=not-a-uuid')->assertNotFound();
     }
 
     public function test_only_creator_can_download_even_super_admin_cannot_take_another_creators_report(): void
@@ -132,6 +145,122 @@ class KioskInsightDownloadsTest extends TestCase
         $this->assertCount(1, Storage::disk('insight-test-media')->files('thumbs/kiosk-insights'));
         $this->assertSame($first['thumbnail_path'], KioskInsightThumbnail::prepare(['photo_path' => 'kiosks/dummy.jpg'])['thumbnail_path']);
         File::delete($first['thumbnail_path']);
+    }
+
+    /** Server S3 palsu yang MENGGANTUNG/MENETES; mengembalikan [process, port]. */
+    private function startSlowS3(string $mode): array
+    {
+        $probe = stream_socket_server('tcp://127.0.0.1:0');
+        $name = stream_socket_get_name($probe, false);
+        $port = (int) substr($name, strrpos($name, ':') + 1);
+        fclose($probe);
+        $process = new Process([PHP_BINARY, base_path('tests/Support/slow-s3-server.php'), (string) $port, $mode]);
+        $process->start();
+        $deadline = microtime(true) + 5;
+        while (! str_contains($process->getOutput(), 'ready') && microtime(true) < $deadline) {
+            usleep(50000);
+        }
+        $this->assertStringContainsString('ready', $process->getOutput());
+
+        return [$process, $port];
+    }
+
+    private function slowS3Config(int $port, array $photo): void
+    {
+        config([
+            'filesystems.disks.slow-s3' => ['driver' => 's3', 'key' => 'k', 'secret' => 's', 'region' => 'auto', 'bucket' => 'b',
+                'endpoint' => "http://127.0.0.1:$port", 'use_path_style_endpoint' => true, 'throw' => false, 'report' => false],
+            'app.media_disk' => 'slow-s3',
+            'kiosk_insights.photo' => $photo,
+        ]);
+        File::deleteDirectory(storage_path('app/private/kiosk-insight-thumbs'));
+    }
+
+    #[DataProvider('slowModes')]
+    public function test_slow_or_hanging_remote_photos_never_exceed_tick_budget_and_export_still_finishes(string $mode): void
+    {
+        [$server, $port] = $this->startSlowS3($mode);
+        try {
+            $this->slowS3Config($port, ['budget' => 4, 'concurrency' => 10, 'connect_timeout' => 1, 'thumb_timeout' => 1,
+                'source_timeout' => 1, 'put_timeout' => 1, 'max_source_bytes' => 5 * 1024 * 1024]);
+            $owner = User::factory()->create(['role' => 'owner', 'is_active' => true]);
+            $cluster = Cluster::factory()->create(['owner_id' => $owner->id]);
+            for ($i = 0; $i < 25; $i++) {
+                Kiosk::factory()->create(['cluster_id' => $cluster->id, 'photo_path' => 'kiosks/slow-'.$i.'.jpg']);
+            }
+            $this->actingAs($owner);
+            $id = KioskInsightExport::start('photos', $owner->id);
+            $this->ids[] = $id;
+            $budget = KioskInsightThumbnail::budgetSeconds(); // terburuk satu gelombang = 1+1+1+1 = 4 dtk
+            $this->assertSame(4.0, $budget);
+            $ticks = 0;
+            $slowest = 0.0;
+            do {
+                $t = microtime(true);
+                $progress = KioskInsightExport::tick($id);
+                $slowest = max($slowest, microtime(true) - $t);
+                $ticks++;
+            } while (! $progress['ready'] && ! $progress['failed'] && $ticks < 12);
+            // Tidak pernah melebihi anggaran (+ margin CPU/IO), jauh dari batas 30 dtk.
+            $this->assertLessThanOrEqual($budget + 1.5, $slowest, "tick terlama {$slowest}s");
+            $this->assertTrue($progress['ready'], json_encode($progress));
+            $this->assertGreaterThan(1, $ticks, 'foto lambat dibagi ke beberapa tick');
+            $book = IOFactory::load(KioskInsightExport::download($id)->getFile()->getPathname());
+            $values = json_encode($book->getSheetByName('Daftar Kedai')->toArray());
+            $this->assertSame(25, substr_count($values, 'Foto gagal dimuat'));
+            $book->disconnectWorksheets();
+        } finally {
+            $server->stop(0);
+        }
+    }
+
+    public static function slowModes(): array
+    {
+        return ['server menggantung total' => ['hang'], 'body menetes' => ['drip']];
+    }
+
+    public function test_remote_photos_are_fetched_in_parallel_not_one_after_another(): void
+    {
+        [$server, $port] = $this->startSlowS3('hang');
+        try {
+            $this->slowS3Config($port, ['budget' => 10, 'concurrency' => 10, 'connect_timeout' => 1, 'thumb_timeout' => 1,
+                'source_timeout' => 1, 'put_timeout' => 1, 'max_source_bytes' => 5 * 1024 * 1024]);
+            $rows = [];
+            for ($i = 0; $i < 10; $i++) {
+                $rows[$i] = ['photo_path' => 'kiosks/par-'.$i.'.jpg'];
+            }
+            $t = microtime(true);
+            $out = KioskInsightThumbnail::prepareBatch($rows);
+            $elapsed = microtime(true) - $t;
+            // Berurutan = 10 × (1+1) = 20 dtk; paralel ≈ 2 dtk.
+            $this->assertLessThan(4.5, $elapsed);
+            foreach ($out as $row) {
+                $this->assertSame('Foto gagal dimuat', $row['photo_status']);
+            }
+        } finally {
+            $server->stop(0);
+        }
+    }
+
+    public function test_failed_photo_is_retried_next_time_while_good_thumbnail_is_cached(): void
+    {
+        Storage::fake('insight-test-media');
+        config(['app.media_disk' => 'insight-test-media']);
+        File::deleteDirectory(storage_path('app/private/kiosk-insight-thumbs'));
+        $disk = Storage::disk('insight-test-media');
+        $image = imagecreatetruecolor(400, 300);
+        ob_start();
+        imagejpeg($image);
+        $disk->put('kiosks/ok.jpg', ob_get_clean());
+        $rows = [['photo_path' => 'kiosks/ok.jpg'], ['photo_path' => 'kiosks/late.jpg']];
+        $first = KioskInsightThumbnail::prepareBatch($rows);
+        $this->assertSame('ok', $first[0]['photo_status']);
+        $this->assertSame('Foto gagal dimuat', $first[1]['photo_status']);
+        $disk->put('kiosks/late.jpg', $disk->get('kiosks/ok.jpg'));
+        $second = KioskInsightThumbnail::prepareBatch($rows);
+        $this->assertSame('ok', $second[1]['photo_status']);
+        $this->assertSame($first[0]['thumbnail_path'], $second[0]['thumbnail_path']);
+        File::deleteDirectory(storage_path('app/private/kiosk-insight-thumbs'));
     }
 
     public function test_real_excel_generation_is_read_only_and_never_includes_other_owner(): void

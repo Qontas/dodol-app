@@ -6,6 +6,7 @@ use App\Exports\KioskInsightsExport;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
 use setasign\Fpdi\Fpdi;
@@ -77,26 +78,45 @@ class KioskInsightExport
         self::directory($id); // Validate before using an identifier as a lock key.
 
         // Explicit file-store lock works across Octane workers, even if CACHE_STORE=array.
-        return Cache::store('file')->lock('kiosk-insight-export-'.$id, 55)->get(function () use ($id) {
+        // TTL 30 dtk (bukan 55): fatal PHP (mis. batas eksekusi) tidak melepas lock, dan tombol "Lanjutkan"
+        // tidak boleh menunggu lock yatim lebih lama dari satu batas eksekusi.
+        $tickStarted = KioskInsightThumbnail::now();
+
+        return Cache::store('file')->lock('kiosk-insight-export-'.$id, 30)->get(function () use ($id, $tickStarted) {
             $state = self::state($id);
             if (in_array($state['stage'], ['ready', 'failed'], true)) {
                 return self::progress($state);
             }
             try {
                 if ($state['stage'] === 'photos') {
-                    $started = microtime(true);
                     $count = count($state['data']['rows']);
-                    // Up to eight fast/cached images. Stop starting work after 8 seconds;
-                    // each image performs at most four remote operations bounded to 4s each.
-                    // Worst-case last-image overrun stays under Octane's 30s request budget.
-                    $processedPhotos = 0;
-                    while ($state['cursor'] < $count && microtime(true) - $started < 8) {
-                        $index = $state['cursor'];
-                        if (! empty($state['data']['rows'][$index]['photo_path']) && ++$processedPhotos > 8) {
-                            break;
+                    // Includes time already spent loading state. Never bypass admission for a first wave;
+                    // phase deadlines share this monotonic clock, leaving headroom for saving state.
+                    $deadline = $tickStarted + KioskInsightThumbnail::budgetSeconds();
+                    $worst = KioskInsightThumbnail::worstCaseSeconds();
+                    $wave = KioskInsightThumbnail::settings()['concurrency'];
+                    while ($state['cursor'] < $count && $deadline - KioskInsightThumbnail::now() >= $worst) {
+                        $indexes = [];
+                        $cursor = $state['cursor'];
+                        // Baris tanpa foto murah: ikut lewat tanpa menghabiskan jatah gelombang.
+                        while ($cursor < $count && count($indexes) < $wave) {
+                            if (! empty($state['data']['rows'][$cursor]['photo_path'])) {
+                                $indexes[] = $cursor;
+                            } elseif ($state['data']['rows'][$cursor]['photo_status'] === 'pending') {
+                                $state['data']['rows'][$cursor]['photo_status'] = 'Tidak ada foto';
+                            }
+                            $cursor++;
                         }
-                        $state['data']['rows'][$index] = KioskInsightThumbnail::prepare($state['data']['rows'][$index]);
-                        $state['cursor']++;
+                        if ($indexes !== []) {
+                            $batch = [];
+                            foreach ($indexes as $index) {
+                                $batch[$index] = $state['data']['rows'][$index];
+                            }
+                            foreach (KioskInsightThumbnail::prepareBatch($batch, $deadline) as $index => $row) {
+                                $state['data']['rows'][$index] = $row;
+                            }
+                        }
+                        $state['cursor'] = $cursor;
                     }
                     $state['message'] = 'Menyiapkan foto '.$state['cursor'].'/'.$count.'…';
                     if ($state['cursor'] >= $count) {
@@ -144,6 +164,11 @@ class KioskInsightExport
                 unset($state['data']);
             }
             self::save($id, $state);
+            $elapsed = KioskInsightThumbnail::now() - $tickStarted;
+            if ($elapsed > KioskInsightThumbnail::budgetSeconds() + 3) {
+                // Terlihat di Railway Logs (stderr). Tanpa path/nama/ID bisnis.
+                Log::warning(sprintf('KIOSK_INSIGHT_TICK_SLOW stage=%s cursor=%d dur_ms=%d', $state['stage'], (int) ($state['cursor'] ?? 0), round($elapsed * 1000)));
+            }
 
             return self::progress($state);
         }) ?? ['stage' => 'busy', 'message' => 'Sedang memproses…', 'ready' => false, 'failed' => false];

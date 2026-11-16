@@ -19,6 +19,19 @@ return [
     'revisit_min_gaps' => (int) env('KIOSK_INSIGHTS_REVISIT_MIN_GAPS', 3),
     'frequent_sold_out_ratio' => (float) env('KIOSK_INSIGHTS_SOLD_OUT_RATIO', 0.5),
     'max_quota_increase' => (int) env('KIOSK_INSIGHTS_MAX_QUOTA_INCREASE', 2),
+    // Detik. Inner deadline <=8.5s leaves ~1.5s for request/state IO (target polling ~10s).
+    // Settings are clamped DOWN in KioskInsightThumbnail: max10 parallel transfers to bounded temp
+    // files, sequential GD decode <=4MP, plus 2s CPU reserve per wave. No first-wave bypass.
+    // CPU/filesystem IO cannot be preempted by PHP; these are conservative limits, not a hard timer.
+    'photo' => [
+        'budget' => (float) env('KIOSK_INSIGHTS_PHOTO_BUDGET', 8.5),
+        'concurrency' => (int) env('KIOSK_INSIGHTS_PHOTO_CONCURRENCY', 10),
+        'connect_timeout' => (float) env('KIOSK_INSIGHTS_PHOTO_CONNECT_TIMEOUT', 1),
+        'thumb_timeout' => (float) env('KIOSK_INSIGHTS_PHOTO_THUMB_TIMEOUT', 1.5),
+        'source_timeout' => (float) env('KIOSK_INSIGHTS_PHOTO_SOURCE_TIMEOUT', 3),
+        'put_timeout' => (float) env('KIOSK_INSIGHTS_PHOTO_PUT_TIMEOUT', 1),
+        'max_source_bytes' => (int) env('KIOSK_INSIGHTS_PHOTO_MAX_BYTES', 5 * 1024 * 1024),
+    ],
     'labels' => [
         'insufficient' => env('KIOSK_INSIGHTS_LABEL_INSUFFICIENT', 'Data belum cukup'),
         'fast' => env('KIOSK_INSIGHTS_LABEL_FAST', 'Laris'),

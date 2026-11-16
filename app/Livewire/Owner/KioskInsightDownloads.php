@@ -7,6 +7,12 @@ use App\Support\KioskInsightExport;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 
+/**
+ * Halaman "Unduh Laporan Kedai". Komponen SAMA dipakai dua tempat:
+ *  - owner: halaman penuh /kiosk-insights di layout panel owner;
+ *  - super admin: disematkan ke halaman Filament panel admin (/admin/laporan-kedai) dengan $embedded = true.
+ * Super admin yang membuka /kiosk-insights dialihkan ke panel admin (sidebar owner tidak untuk dia).
+ */
 class KioskInsightDownloads extends Component
 {
     public string $ownerId = '';
@@ -17,16 +23,48 @@ class KioskInsightDownloads extends Component
     #[Locked]
     public array $progress = [];
 
+    #[Locked]
+    public bool $embedded = false;
+
     public function boot(): void
     {
         KioskInsightExport::authorize();
     }
 
-    public function mount(): void
+    public function mount(bool $embedded = false)
     {
-        if (auth()->user()->isOwner()) {
+        $user = auth()->user();
+        if ($user->isSuperAdmin() && ! $embedded) {
+            $url = self::adminUrl();
+            if (request()->query('export')) {
+                $url .= '?'.http_build_query(['export' => (string) request()->query('export')]);
+            }
+
+            return $this->redirect($url, navigate: false);
+        }
+        $this->embedded = $embedded;
+        if ($user->isOwner()) {
             $this->ownerId = (string) auth()->id();
         }
+        // UUID in the URL is only a resume pointer, never authorization. status() checks creator,
+        // current role, tenant and expiry before disclosing even progress.
+        if (request()->query('export')) {
+            $this->exportId = (string) request()->query('export');
+            $this->progress = KioskInsightExport::status($this->exportId);
+        }
+    }
+
+    public static function adminUrl(): string
+    {
+        return route('filament.admin.pages.laporan-kedai');
+    }
+
+    /** Link kembali sesuai peran: owner → Manajemen Kios; super admin → Dashboard admin. */
+    public static function backLink(): array
+    {
+        return auth()->user()?->isSuperAdmin()
+            ? ['url' => route('filament.admin.pages.dashboard'), 'label' => '← Dashboard']
+            : ['url' => route('filament.owner.resources.kiosks.index'), 'label' => '← Manajemen Kios'];
     }
 
     public function generate(string $format): void
@@ -44,19 +82,27 @@ class KioskInsightDownloads extends Component
         }
     }
 
+    /** Satu langkah export. Dipanggil berulang oleh browser; juga tombol "Lanjutkan" setelah gangguan. */
     public function advance(): void
     {
         if ($this->exportId && ! ($this->progress['ready'] ?? false) && ! ($this->progress['failed'] ?? false)) {
-            $this->progress = KioskInsightExport::tick($this->exportId);
+            $next = KioskInsightExport::tick($this->exportId);
+            // Tick lain masih berjalan (atau baru saja terputus): pertahankan pesan terakhir, coba lagi nanti.
+            if (($next['stage'] ?? null) !== 'busy') {
+                $this->progress = $next;
+            }
         }
     }
 
     public function render()
     {
-        return view('livewire.owner.kiosk-insight-downloads', [
+        $view = view('livewire.owner.kiosk-insight-downloads', [
             'owners' => auth()->user()->isSuperAdmin()
                 ? User::where('role', 'owner')->orderBy('name')->get(['id', 'name', 'business_name'])
                 : collect(),
-        ])->extends('layouts.owner')->section('content');
+            'back' => self::backLink(),
+        ]);
+
+        return $this->embedded ? $view : $view->extends('layouts.owner')->section('content');
     }
 }
