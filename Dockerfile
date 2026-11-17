@@ -71,5 +71,7 @@ RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions sto
 # Keep raw FrankenPHP stderr records visible. Without explicit --log-level Octane reformats/filters
 # records (including PHP stderr forwarded at Caddy info level). 'info' deliberately permits those
 # envelopes; it also adds server/access records. LOG_LEVEL still filters application messages.
+# Bound worker/thread RAM independently of host CPU count. Production Caddyfile mirrors Octane's
+# stub, adding only num_threads/max_threads (FRANKENPHP_THREADS defaults to 8, must exceed workers).
 ENTRYPOINT []
-CMD ["sh", "-c", "php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache && php artisan migrate --force && (php artisan storage:link || true) && php artisan octane:frankenphp --host=0.0.0.0 --port=${PORT:-8000} --workers=auto --max-requests=500 --log-level=info"]
+CMD ["sh", "-c", "php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache && php artisan migrate --force && (php artisan storage:link || true) && php artisan octane:frankenphp --host=0.0.0.0 --port=${PORT:-8000} --workers=${OCTANE_WORKERS:-4} --max-requests=${OCTANE_MAX_REQUESTS:-500} --log-level=info --caddyfile=/app/Caddyfile.production"]

@@ -1,5 +1,28 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 16 November 2026*
+*Sesi terakhir: 17 November 2026*
+
+## HEMAT RAM 17 NOV 2026 — batas worker/thread Octane produksi (tanpa migrasi, commit lokal, JANGAN PUSH)
+
+Branch `fix/octane-worker-memory`. Tidak mengakses/mengubah prod. Railway memakai `railway.toml:6–8` → Dockerfile, bukan start Nixpacks (rollback `artisan serve` tetap utuh). Docker CMD tetap config/route/view/event cache → migrate --force → storage:link → Octane; port/host/log-level tidak berubah.
+
+**Start sebelum:**
+```sh
+php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache && php artisan migrate --force && (php artisan storage:link || true) && php artisan octane:frankenphp --host=0.0.0.0 --port=${PORT:-8000} --workers=auto --max-requests=500 --log-level=info
+```
+**Start sesudah:**
+```sh
+php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache && php artisan migrate --force && (php artisan storage:link || true) && php artisan octane:frankenphp --host=0.0.0.0 --port=${PORT:-8000} --workers=${OCTANE_WORKERS:-4} --max-requests=${OCTANE_MAX_REQUESTS:-500} --log-level=info --caddyfile=/app/Caddyfile.production
+```
+
+**Bukti default:** `vendor/laravel/octane/src/Commands/StartFrankenPhpCommand.php:287–291`: auto→0; `:105–106`: directive worker kosong; `stubs/Caddyfile:6–11`: tanpa num/thread limit. FrankenPHP image versi1.12 (Dockerfile:19), sumber upstream [v1.12.0/frankenphp.go:156–235](https://github.com/php/frankenphp/blob/v1.12.0/frankenphp.go#L156-L235): `maxProcs=2*runtime.GOMAXPROCS(0)`, worker num kosong→maxProcs (:157–167); thread default = worker+1 bila worker≥maxProcs, max_threads=jumlah thread awal (:214–221). **Jika GOMAXPROCS efektif48, berarti96 worker Laravel menetap +1 thread biasa =97 thread PHP** (bukan 48 proses OS). `nproc=48` saja bukan bukti GOMAXPROCS48: quota/cpuset/GOMAXPROCS env/runtime Go bisa menurunkannya. RAM0,4–0,65GB adalah laporan owner, bukan pengukuran sesi ini; penghematan belum diukur.
+
+**Setelah:** default **4 worker, 8 thread PHP total**, num_threads=max_threads=8 (tidak autoscale), max500request sebelum recycle. `Caddyfile.production` salinan stub Octane, hanya menambah kedua batas thread; env default native Caddy `{$FRANKENPHP_THREADS:8}`. Bukan sekadar set FRANKENPHP_CONFIG: stub Octane TIDAK menyisipkannya. Parser1.12 mendukung num_threads/max_threads (`caddy/app.go:211–237`); thread harus **lebih besar** dari worker (`frankenphp.go:196–200,226–233`). Sisanya4 thread reguler, BUKAN4 worker Laravel tambahan. Test unit membandingkan seluruh CMD dan Caddyfile setelah menghapus dua directive dengan stub vendor (mendeteksi drift saat upgrade).
+
+**Railway Variables (tanpa ubah kode):** `OCTANE_WORKERS=4`, `OCTANE_MAX_REQUESTS=500`, `FRANKENPHP_THREADS=8`. Default berlaku bila env tidak diset; workers/max-requests kosong juga pakai default shell. Untuk beban meningkat, contoh workers6 + threads10, tetap max_requests500; threads WAJIB integer positif >workers, jangan `auto`/0. Ubah Variables → redeploy/restart agar proses membaca nilai baru. `FRANKENPHP_THREADS` jangan diisi kosong. Lokal `artisan serve`, config Octane default, dan test tidak memakai Caddyfile ini. Setelah deploy periksa Railway Logs `FrankenPHP started` → num_threads8/max_threads8, `storage/logs/octane-server-state.json` → state.workers4 (default `OctaneServiceProvider.php:82–85`), lalu RAM saat idle + export/operator bersamaan; belum dibuktikan di Railway/FrankenPHP asli (Docker/FrankenPHP tidak tersedia di mesin ini).
+
+**Laporan Kedai:** Alpine menunggu `await $wire.advance()` baru jeda1detik lalu tick berikut (`resources/views/livewire/owner/kiosk-insight-downloads.blade.php:39–44`); lock per UUID lintas worker (`app/Support/KioskInsightExport.php:80–95`), bukan lock global. Satu export aktif = satu request PHP panjang/satu worker; 3 worker Laravel lain tetap tersedia untuk operator. Paralel10transfer foto adalah IO dalam request yang sama, tidak mengambil10worker. Deadline internal foto≤8,5dtk tetap utuh; bukan jaminan keras seluruh request (GD/disk/state IO dan render Excel/PDF di tick lain tidak preemptible). Dua export aktif dapat memakai2worker;4export/tab bersamaan bisa memenuhi4worker, jadi ini kapasitas wajar untuk±5pengguna, bukan jaminan bebas antrean semua keadaan.
+
+**Validasi:** dua test unit baru PASS (5 assertions), Pint dan diff-check PASS. Verifikasi shell nyata: default4/500/port8000, override6/250/port9000, envworkers/max-requests kosong→default; seluruh startup dibandingkan HEAD, hanya flag resource/path Caddy berubah. **Full suite SEKALI**, versi DB diperiksa sebelum run = **MySQL9.4.0**, `DB_HOST=127.0.0.1 DB_PORT=3399 DB_USERNAME=root DB_PASSWORD='' RUN_PHOTO_BENCHMARK=1 php artisan test --no-ansi`: **873 PASS, 2 SKIP, 0 FAIL, 5488 assertions, 276,98dtk**, exit0. Skip = dua invoice concurrency opt-in; warning metadata doc-comment PHPUnit lama tetap ada. Log gitignored `storage/perf/octane-worker-fullsuite.log`. Server existing `C:\Users\Qontas\mysql94-test\x\mysql-9.4.0-winx64\bin\mysqld.exe --defaults-file=C:\Users\Qontas\mysql94-test\my.ini --standalone` semula mati, dinyalakan kembali; datadir/config tidak diubah. Tidak ada migrasi baru/push.
 
 ## POLES LAPORAN KEDAI 16 NOV 2026 — "Mika di Kedai", subtotal/total, kolom Maps (tanpa migrasi)
 
