@@ -1,6 +1,17 @@
 # NEXT_SESSION.md — Dodol-App
 *Sesi terakhir: 18 November 2026*
 
+## 🟢 ALAMAT PETA OTOMATIS SAAT EXPORT LAPORAN KEDAI (18 Nov 2026) — tanpa migrasi
+
+Commit lokal, **BELUM PUSH**. Export (Excel, Excel+Foto, PDF) kini punya tahap PERTAMA `addresses` ("Melengkapi alamat 3/7…") yang mengisi `kiosks.maps_address` untuk kedai dalam snapshot export yang punya lat/lng valid tapi alamat kosong, memakai `ReverseGeocoder` apa adanya (Nominatim 1 req/dtk lintas proses via file lock, User-Agent+email, tanpa retry, 429 = berhenti).
+
+- **Batas:** `config/reverse_geocoding.php` → `export_per_tick` = 6 kedai/tick, `export_max` = 60 kedai/export (urut baris laporan; sisanya diisi di export berikutnya, sementara tampil alamat ketikan + link Maps). Tick juga berhenti bila sisa anggaran < min(3 dtk, budget/2); `reverse()` kini punya argumen opsional `$timeLimit` (batas total tunggu lock + jeda + request) supaya satu tick tak melewati ±8,5 dtk. CLI tak berubah.
+- **Tidak menggagalkan export:** exception/429/timeout/hasil null → tahap dihentikan, `Log::warning('KIOSK_INSIGHT_GEOCODE_SKIPPED reason=<KelasException> cursor=n/N')` (tanpa pesan/URL, key aman), export lanjut. Provider belum dikonfigurasi (`REVERSE_GEOCODING_CONTACT_EMAIL` kosong utk Nominatim / key Google kosong) → `ReverseGeocoder::isConfigured()` false → tahap tidak dibuat, warning `reason=not_configured`.
+- **Penulisan:** compare-and-set (`KioskInsightExport::storeMapsAddress`): id + lat/lng sama + cache masih kosong + cluster masih milik owner baris. Hasil juga masuk ke snapshot export yang sedang jalan. Simpan/edit kedai di web tetap hanya mengosongkan cache (tidak ada API call di request web lain).
+- **State:** `state.json` bertambah `after_addresses`, `geo` (dihapus saat tahap selesai). Export lama yang sudah berjalan tak terpengaruh (tak punya stage `addresses`).
+- **Test:** `tests/Feature/Owner/KioskInsightGeocodeStageTest.php` (7 test, HTTP palsu): terisi saat export + masuk Excel; batas per tick & total; 429 dan ConnectionException tak menggagalkan (dan log tanpa secret); tanpa email → dilewati tanpa request; owner lain/sudah beralamat/tanpa koordinat tak disentuh. Full suite MySQL 9.4 (DB_PORT=3399): 915 passed, 3 skipped.
+- **Prod:** set `REVERSE_GEOCODING_CONTACT_EMAIL` (kontak layanan publik, bukan email pribadi/billing) agar tahap aktif; tanpa itu export tetap jalan seperti sebelumnya.
+
 ## 🔴 POLES LAPORAN KEDAI v2 18 NOV 2026 — bahasa sederhana, kartu PDF rapi, alamat dari peta — ADA MIGRASI → **JANGAN PUSH SEBELUM OWNER BACKUP DB PRODUKSI**
 
 Branch `polish/kiosk-report-v2`, 1 commit atomik lokal. Angka/rumus metrik TIDAK berubah (hanya teks tampil, label, layout). Detail istilah/kartu/link/alamat: `docs/UI_INVENTORY.md` bagian "Pembaruan 18 November 2026".

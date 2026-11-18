@@ -1,7 +1,7 @@
 <?php
 
 return [
-    // Only the explicit CLI backfill calls a provider; web requests never do.
+    // Hanya CLI backfill dan tahap awal export Laporan Kedai yang memanggil provider; request web lain tidak.
     'provider' => env('REVERSE_GEOCODING_PROVIDER') ?: (env('GOOGLE_MAPS_API_KEY') ? 'google' : 'nominatim'),
 
     // Supply a public service contact you consent to send to OpenStreetMap.
@@ -13,6 +13,10 @@ return [
     // Hard ceilings in ReverseGeocoder: 2s connect, 5s total, no retries/redirects.
     'connect_timeout' => 2,
     'timeout' => 5,
+
+    // Tahap "Melengkapi alamat" pada export Laporan Kedai: maks kedai per tick polling dan maks total per export.
+    'export_per_tick' => 6,
+    'export_max' => 60,
 
     // One shared file, irrespective of provider/owner, across CLI processes on
     // this host. Multiple hosts must share this path or run only one backfill.

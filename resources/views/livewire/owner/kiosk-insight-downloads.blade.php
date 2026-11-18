@@ -22,7 +22,7 @@
             <button type="button" wire:click="generate('photos')" wire:loading.attr="disabled" class="rounded-md border border-amber-700 px-4 py-3 font-semibold text-amber-900 disabled:opacity-50">Export Excel + Foto</button>
             <button type="button" wire:click="generate('pdf')" wire:loading.attr="disabled" class="rounded-md border border-amber-700 px-4 py-3 font-semibold text-amber-900 disabled:opacity-50">Export PDF</button>
         </div>
-        <p class="text-sm text-slate-500">Excel tanpa foto disiapkan langsung. Export dengan foto diproses bertahap; biarkan halaman ini terbuka. Foto yang rusak tidak menggagalkan laporan.</p>
+        <p class="text-sm text-slate-500">Kedai yang belum punya alamat dari peta dilengkapi dulu (maks 60 per laporan; sisanya di laporan berikutnya), jadi laporan bisa diproses bertahap. Biarkan halaman ini terbuka. Foto yang rusak tidak menggagalkan laporan.</p>
         <p wire:loading class="text-sm text-slate-700" role="status">Sedang memproses bagian laporan…</p>
     </section>
     @if ($exportId)

@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Exports\KioskInsightsExport;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -12,7 +13,10 @@ use Maatwebsite\Excel\Facades\Excel;
 use setasign\Fpdi\Fpdi;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
-/** Request-driven state machine: no worker, no after-response work, no business writes. */
+/**
+ * Request-driven state machine: no worker, no after-response work. Satu-satunya tulisan ke tabel bisnis adalah
+ * cache alamat Maps (kiosks.maps_address*) pada tahap awal 'addresses'; angka bisnis tidak pernah diubah.
+ */
 class KioskInsightExport
 {
     public const TTL_HOURS = 24;
@@ -38,16 +42,20 @@ class KioskInsightExport
         $data = KioskInsights::build($ownerId);
         $id = (string) Str::uuid();
         File::ensureDirectoryExists(self::directory($id));
+        $first = $format === 'excel' ? 'write' : 'photos';
+        $geo = self::geocodePlan($data);
         self::save($id, [
             'creator_id' => $user->id,
             'owner_id' => $ownerId,
             'format' => $format,
             'created_at' => now()->toIso8601String(),
             'expires_at' => now()->addHours(self::TTL_HOURS)->toIso8601String(),
-            'stage' => $format === 'excel' ? 'write' : 'photos',
+            'stage' => $geo ? 'addresses' : $first,
+            'after_addresses' => $first,
+            'geo' => $geo,
             'cursor' => 0,
             'part' => 0,
-            'message' => $format === 'excel' ? 'Menyusun Excel…' : 'Menyiapkan foto 0/'.count($data['rows']).'…',
+            'message' => $geo ? 'Melengkapi alamat 0/'.count($geo['indexes']).'…' : self::firstMessage($first, count($data['rows'])),
             'data' => $data,
         ]);
 
@@ -88,7 +96,9 @@ class KioskInsightExport
                 return self::progress($state);
             }
             try {
-                if ($state['stage'] === 'photos') {
+                if ($state['stage'] === 'addresses') {
+                    self::geocodeTick($state, $tickStarted);
+                } elseif ($state['stage'] === 'photos') {
                     $count = count($state['data']['rows']);
                     // Includes time already spent loading state. Never bypass admission for a first wave;
                     // phase deadlines share this monotonic clock, leaving headroom for saving state.
@@ -172,6 +182,87 @@ class KioskInsightExport
 
             return self::progress($state);
         }) ?? ['stage' => 'busy', 'message' => 'Sedang memproses…', 'ready' => false, 'failed' => false];
+    }
+
+    private static function firstMessage(string $stage, int $rows): string
+    {
+        return $stage === 'write' ? 'Menyusun Excel…' : 'Menyiapkan foto 0/'.$rows.'…';
+    }
+
+    /**
+     * Kedai dalam snapshot yang punya koordinat valid tapi belum punya alamat peta (maks export_max, urut id).
+     * Provider belum dikonfigurasi (mis. REVERSE_GEOCODING_CONTACT_EMAIL kosong) → tahap dilewati, export tetap jalan.
+     *
+     * @return array{indexes: list<int>, cursor: int, filled: int}|null
+     */
+    private static function geocodePlan(array $data): ?array
+    {
+        $indexes = [];
+        foreach ($data['rows'] as $index => $row) {
+            $lat = $row['latitude'] ?? null;
+            $lng = $row['longitude'] ?? null;
+            if (is_numeric($lat) && is_numeric($lng) && abs((float) $lat) <= 90 && abs((float) $lng) <= 180
+                && trim((string) ($row['maps_address'] ?? '')) === '') {
+                $indexes[] = $index;
+            }
+        }
+        if ($indexes === []) {
+            return null;
+        }
+        if (! app(ReverseGeocoder::class)->isConfigured()) {
+            Log::warning('KIOSK_INSIGHT_GEOCODE_SKIPPED reason=not_configured missing='.count($indexes));
+
+            return null;
+        }
+
+        return ['indexes' => array_slice($indexes, 0, max(0, (int) config('reverse_geocoding.export_max', 60))), 'cursor' => 0, 'filled' => 0];
+    }
+
+    /** Satu tick tahap alamat: maks export_per_tick kedai dan tidak melewati anggaran waktu tick. Gagal apa pun = lewati tahap. */
+    private static function geocodeTick(array &$state, float $tickStarted): void
+    {
+        $geo = $state['geo'];
+        $total = count($geo['indexes']);
+        $budget = KioskInsightThumbnail::budgetSeconds();
+        $deadline = $tickStarted + $budget;
+        // Satu permintaan = jeda 1 dtk lintas proses + respons; jangan mulai bila sisa anggaran terlalu kecil.
+        $minimum = min(3.0, $budget / 2);
+        $perTick = max(1, (int) config('reverse_geocoding.export_per_tick', 6));
+        $geocoder = app(ReverseGeocoder::class);
+        try {
+            for ($done = 0; $geo['cursor'] < $total && $done < $perTick && $deadline - KioskInsightThumbnail::now() >= $minimum; $done++) {
+                $index = $geo['indexes'][$geo['cursor']];
+                $row = $state['data']['rows'][$index];
+                $result = $geocoder->reverse((float) $row['latitude'], (float) $row['longitude'], $deadline - KioskInsightThumbnail::now());
+                $geo['cursor']++;
+                if ($result !== null && self::storeMapsAddress($row, $result)) {
+                    $state['data']['rows'][$index]['maps_address'] = $result['address'];
+                    $geo['filled']++;
+                }
+            }
+        } catch (\Throwable $e) {
+            // Jangan log pesan/URL (bisa memuat key provider). Export tetap dibuat tanpa sisa alamat.
+            Log::warning(sprintf('KIOSK_INSIGHT_GEOCODE_SKIPPED reason=%s cursor=%d/%d', class_basename($e), $geo['cursor'], $total));
+            $geo['cursor'] = $total;
+        }
+        $state['geo'] = $geo;
+        if ($geo['cursor'] >= $total) {
+            $state['stage'] = $state['after_addresses'];
+            unset($state['geo']);
+            $state['message'] = self::firstMessage($state['stage'], count($state['data']['rows']));
+        } else {
+            $state['message'] = 'Melengkapi alamat '.$geo['cursor'].'/'.$total.'…';
+        }
+    }
+
+    /** Compare-and-set seperti kiosks:fill-maps-address: owner, koordinat dan cache kosong harus masih sama setelah IO jaringan. */
+    private static function storeMapsAddress(array $row, array $result): bool
+    {
+        return DB::table('kiosks')->where('id', $row['id'])
+            ->where('latitude', $row['latitude'])->where('longitude', $row['longitude'])
+            ->where(fn ($q) => $q->whereNull('maps_address')->orWhereRaw("TRIM(maps_address) = ''"))
+            ->whereExists(fn ($q) => $q->selectRaw('1')->from('clusters')->whereColumn('clusters.id', 'kiosks.cluster_id')->where('clusters.owner_id', $row['owner_id']))
+            ->update(['maps_address' => $result['address'], 'maps_address_at' => now(), 'maps_address_source' => $result['source']]) === 1;
     }
 
     private static function mergePdf(string $id, int $parts): void

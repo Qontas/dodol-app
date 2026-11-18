@@ -8,9 +8,28 @@ use RuntimeException;
 
 class ReverseGeocoder
 {
-    /** @return array{address: string, source: string}|null */
-    public function reverse(float $latitude, float $longitude): ?array
+    /** Cek murah tanpa jaringan: apakah konfigurasi provider cukup untuk reverse() (export melewati tahap alamat bila tidak). */
+    public function isConfigured(): bool
     {
+        $userAgent = trim((string) config('reverse_geocoding.user_agent'));
+        if ($userAgent === '' || preg_match('/[\r\n]/', $userAgent)) {
+            return false;
+        }
+
+        return match ((string) config('reverse_geocoding.provider', 'nominatim')) {
+            'nominatim' => (bool) filter_var(trim((string) config('reverse_geocoding.contact_email')), FILTER_VALIDATE_EMAIL),
+            'google' => trim((string) config('reverse_geocoding.google_api_key')) !== '',
+            default => false,
+        };
+    }
+
+    /** @return array{address: string, source: string}|null */
+    public function reverse(float $latitude, float $longitude, ?float $timeLimit = null): ?array
+    {
+        // $timeLimit (detik, opsional) = batas TOTAL tunggu lock + jeda 1 dtk + request. Dipakai export
+        // agar satu tick tidak melewati anggaran; tanpa nilai ini perilaku CLI tidak berubah.
+        $absoluteDeadline = $timeLimit === null ? null : microtime(true) + max(0.0, $timeLimit);
+
         if (! is_finite($latitude) || ! is_finite($longitude)
             || $latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
             throw new InvalidArgumentException('Koordinat tidak valid.');
@@ -40,11 +59,15 @@ class ReverseGeocoder
             throw new RuntimeException('REVERSE_GEOCODING_PROVIDER harus nominatim atau google.');
         }
 
-        return $this->throttled(function () use ($url, $query, $userAgent, $provider): ?array {
+        return $this->throttled(function () use ($url, $query, $userAgent, $provider, $absoluteDeadline): ?array {
+            $left = $absoluteDeadline === null ? INF : $absoluteDeadline - microtime(true);
+            if ($left < 0.3) {
+                throw new RuntimeException('Anggaran waktu reverse geocoding habis sebelum request dikirim.');
+            }
             // No retry(), no fallback request, no redirects (including 301/302).
             $response = Http::acceptJson()->withUserAgent($userAgent)
-                ->connectTimeout(max(0.1, min(2, (float) config('reverse_geocoding.connect_timeout', 2))))
-                ->timeout(max(0.1, min(5, (float) config('reverse_geocoding.timeout', 5))))
+                ->connectTimeout(max(0.1, min(2, $left, (float) config('reverse_geocoding.connect_timeout', 2))))
+                ->timeout(max(0.1, min(5, $left, (float) config('reverse_geocoding.timeout', 5))))
                 ->withoutRedirecting()->get($url, $query);
 
             if ($response->status() === 429) {
@@ -61,7 +84,7 @@ class ReverseGeocoder
                 : $this->nominatimAddress($response->json('address'));
 
             return $address === '' ? null : ['address' => $address, 'source' => $provider];
-        });
+        }, $absoluteDeadline);
     }
 
     private function nominatimAddress(mixed $address): string
@@ -137,14 +160,14 @@ class ReverseGeocoder
      * Held through HTTP completion so concurrent commands cannot burst requests.
      * Fail closed if the shared throttle is unavailable; never unlink this file.
      */
-    private function throttled(callable $request): mixed
+    private function throttled(callable $request, ?float $absoluteDeadline = null): mixed
     {
         $file = @fopen((string) config('reverse_geocoding.lock_path'), 'c+');
         if ($file === false) {
             throw new RuntimeException('Tidak dapat membuka lock reverse geocoding.');
         }
         try {
-            $deadline = microtime(true) + 10;
+            $deadline = min(microtime(true) + 10, $absoluteDeadline ?? INF);
             while (! flock($file, LOCK_EX | LOCK_NB)) {
                 if (microtime(true) >= $deadline) {
                     throw new RuntimeException('Reverse geocoding sedang dipakai proses lain. Coba lagi nanti.');
@@ -159,6 +182,9 @@ class ReverseGeocoder
             $wait = (float) $stored + 1 - microtime(true);
             if ($wait > 2) {
                 throw new RuntimeException('Jam sistem berubah; tunggu sebelum mengulang reverse geocoding.');
+            }
+            if ($absoluteDeadline !== null && microtime(true) + max(0.0, $wait) > $absoluteDeadline - 0.3) {
+                throw new RuntimeException('Anggaran waktu reverse geocoding habis saat menunggu jeda.');
             }
             while ($wait > 0) {
                 usleep((int) ceil($wait * 1_000_000));
