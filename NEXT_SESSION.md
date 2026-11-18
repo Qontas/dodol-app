@@ -1,5 +1,23 @@
 # NEXT_SESSION.md — Dodol-App
-*Sesi terakhir: 17 November 2026*
+*Sesi terakhir: 18 November 2026*
+
+## 🔴 POLES LAPORAN KEDAI v2 18 NOV 2026 — bahasa sederhana, kartu PDF rapi, alamat dari peta — ADA MIGRASI → **JANGAN PUSH SEBELUM OWNER BACKUP DB PRODUKSI**
+
+Branch `polish/kiosk-report-v2`, 1 commit atomik lokal. Angka/rumus metrik TIDAK berubah (hanya teks tampil, label, layout). Detail istilah/kartu/link/alamat: `docs/UI_INVENTORY.md` bagian "Pembaruan 18 November 2026".
+
+**Migrasi:** `2026_11_18_000001_add_maps_address_to_kiosks_table` (3 kolom nullable di `kiosks`: `maps_address` text, `maps_address_at` timestamp, `maps_address_source` varchar 32; tanpa generated column/FK). Bukti MySQL 9.4.0 (127.0.0.1:3399, DB disposable `cq_mig94_20261118121433`): `migrate:fresh` → kolom ada → `rollback --step=1` → kolom hilang → `migrate` → kolom kembali, semua DONE.
+
+**Akar link PDF tidak bisa diklik:** PDF akhir = hasil gabung FPDI, dan `importPage()` default `$importExternalLinks=false` membuang anotasi link. Fix: argumen ke-4 `true` di `KioskInsightExport::mergePdf`. Bukti: PDF gabungan contoh punya 8 anotasi `/Subtype /Link` + `/URI https://google.com/maps?q=3.5952,98.6722`.
+
+**Label:** "Bermasalah" → "Banyak rusak" (`bs`) / "Piutang lama" (`debt`); `label_key=problem` internal tetap; `display_label_key` baru; keduanya kena → Piutang lama + saran memuat keduanya. Kartu PDF kini 4 per halaman, tinggi mengikuti isi.
+
+**Alamat peta:** `kiosks:fill-maps-address --owner=N [--limit=] [--force]` (default dry-run, memang memanggil geocoder tapi tak menulis DB; `--force` menyimpan; idempoten). Env: `REVERSE_GEOCODING_PROVIDER` (kosong = Google bila `GOOGLE_MAPS_API_KEY` terisi, selain itu Nominatim), `REVERSE_GEOCODING_USER_AGENT`, **`REVERSE_GEOCODING_CONTACT_EMAIL` WAJIB untuk Nominatim** (kontak layanan publik; JANGAN pakai email pribadi/billing — lihat memori owner vs billing). Tanpa email → command menolak sebelum request jaringan. 1 req/detik lintas proses (lock file `storage/framework/cache/reverse-geocoding.lock`, per host), timeout 2s/5s, tanpa retry; HTTP 429 menghentikan command. Mengubah/membuat koordinat kedai mengosongkan ketiga kolom (hook `Kiosk::saving`), tanpa panggilan API di request web.
+
+**BELUM dilakukan:** dry-run command dengan koordinat Medan ASLI ke Nominatim (butuh email kontak layanan dari owner + request keluar nyata); belum dibuka di aplikasi Excel/Adobe sungguhan (bukti = XML/PhpSpreadsheet + anotasi PDF + render Windows.Data.Pdf).
+
+**Test:** fokus laporan+geocoder+command 113 PASS/1 SKIP. Full suite SEKALI, MySQL 9.4: 908 PASS, 2 SKIP, **1 FAIL** `RepricePendingDeliveriesCommandTest > excludes settlements…` (`UniqueConstraintViolation trips.idx_trip_owner_date_number`, fixture acak, tak menyentuh kode laporan); dijalankan ulang sendiri 4/4 PASS. Hijau-penuh dalam satu run belum terbukti. Template PDF sempat dirapikan (ukuran judul kartu) SETELAH full suite mulai; test laporan terkait dijalankan ulang terpisah dan PASS.
+
+**Sampel lokal (gitignored):** `storage/perf/kiosk-report-v2/Laporan-Kedai-contoh-v2.pdf` dan `.xlsx` (data fiktif Medan), render PNG di `png/`.
 
 ## HEMAT RAM 17 NOV 2026 — batas worker/thread Octane produksi (tanpa migrasi, commit lokal, JANGAN PUSH)
 

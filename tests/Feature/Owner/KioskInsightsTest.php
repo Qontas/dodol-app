@@ -180,7 +180,7 @@ class KioskInsightsTest extends TestCase
         $this->assertSame(46.67, $row['fresh_return_pct']);
         $this->assertSame(3.33, $row['bs_pct']);
         $this->assertSame('slow', $row['label_key']);
-        $this->assertStringNotContainsString('Cek BS', implode(' ', $row['suggestions']));
+        $this->assertStringNotContainsString('Banyak dodol rusak/kedaluwarsa', implode(' ', $row['suggestions']));
         config(['kiosk_insights.slow_sell_through_pct' => 50]);
         $this->assertSame('stable', $this->row($f)['label_key']);
         config(['kiosk_insights.problem_bs_pct' => 3]);
@@ -196,11 +196,21 @@ class KioskInsightsTest extends TestCase
         $row = $this->row($f);
         $this->assertSame(10.0, $row['bs_pct']);
         $this->assertSame('problem', $row['label_key']);
-        $this->assertContains('Cek BS (10,0%).', $row['suggestions']);
+        $this->assertSame('Banyak rusak', $row['label']);
+        $this->assertSame('bs', $row['display_label_key']);
+        $this->assertContains('Banyak dodol rusak/kedaluwarsa (10%). Cek tempat penyimpanan (panas/lembap) atau dodol terlalu lama di kedai.', $row['suggestions']);
         config(['kiosk_insights.problem_bs_pct' => 11]);
         $this->assertSame('fast', $this->row($f)['label_key']);
         $first['settlement']->update(['amount_paid' => 0]);
         $this->assertSame('problem', $this->row($f)['label_key']);
+        $this->assertSame('Piutang lama', $this->row($f)['label']);
+        $this->assertSame('debt', $this->row($f)['display_label_key']);
+        config(['kiosk_insights.problem_bs_pct' => 10]);
+        $both = $this->row($f);
+        $this->assertSame('Piutang lama', $both['label'], 'Piutang lama wins when both apply.');
+        $this->assertStringContainsString('Banyak dodol rusak/kedaluwarsa', implode(' ', $both['suggestions']));
+        $this->assertStringContainsString('Ada piutang Rp', implode(' ', $both['suggestions']));
+        config(['kiosk_insights.problem_bs_pct' => 11]);
         config(['kiosk_insights.debt_age_days' => 40]);
         $this->assertSame('fast', $this->row($f)['label_key']);
     }
@@ -215,15 +225,15 @@ class KioskInsightsTest extends TestCase
         $row = $this->row($f);
         $this->assertSame('stable', $row['label_key']);
         $this->assertSame(2, $row['recent_sold_out_count']);
-        $this->assertStringContainsString('Naikkan jatah ke 3 mika (sering habis;', implode(' ', $row['suggestions']));
+        $this->assertStringContainsString('Sering habis. Coba naikkan jatah dari 2 jadi 3 mika.', implode(' ', $row['suggestions']));
         $this->assertSame(2, $f['kiosk']->fresh()->default_qty_mika);
         config(['kiosk_insights.max_quota_increase' => 0]);
-        $this->assertStringNotContainsString('Naikkan', implode(' ', $this->row($f)['suggestions']));
+        $this->assertStringNotContainsString('naikkan', implode(' ', $this->row($f)['suggestions']));
         config(['kiosk_insights.max_quota_increase' => 2]);
         // Lifetime has 2 sold-out cycles, but only 1 of the last three now: no stale increase.
         $this->settled($f, '2026-10-25', '2026-11-01', 15);
         $this->assertSame(1, $this->row($f)['recent_sold_out_count']);
-        $this->assertStringNotContainsString('Naikkan', implode(' ', $this->row($f)['suggestions']));
+        $this->assertStringNotContainsString('naikkan', implode(' ', $this->row($f)['suggestions']));
     }
 
     public function test_sold_out_uses_95_percent_boundary_and_never_recommends_with_insufficient_history(): void
@@ -232,11 +242,11 @@ class KioskInsightsTest extends TestCase
         $this->settled($f, '2026-10-01', '2026-10-08', 57, ['qty_delivered' => 4]); // 95%
         $this->settled($f, '2026-10-09', '2026-10-16', 57, ['qty_delivered' => 4]);
         $this->assertSame('insufficient', $this->row($f)['label_key']);
-        $this->assertStringNotContainsString('Naikkan', implode(' ', $this->row($f)['suggestions']));
+        $this->assertStringNotContainsString('naikkan', implode(' ', $this->row($f)['suggestions']));
         $this->settled($f, '2026-10-17', '2026-10-24', 56, ['qty_delivered' => 4]); // below 95%
         $row = $this->row($f);
         $this->assertSame(2, $row['recent_sold_out_count']);
-        $this->assertStringContainsString('sering habis', implode(' ', $row['suggestions']));
+        $this->assertStringContainsString('Sering habis', implode(' ', $row['suggestions']));
     }
 
     public function test_bulk_query_count_constant_with_450_kiosks_and_builder_does_not_write(): void
@@ -270,10 +280,10 @@ class KioskInsightsTest extends TestCase
         }
         $row = $this->row($f);
         $this->assertSame('fast', $row['label_key']);
-        $this->assertStringContainsString('Naikkan jatah ke 4 mika', implode(' ', $row['suggestions']));
-        $this->assertStringNotContainsString('Naikkan jatah ke 5', implode(' ', $row['suggestions']));
+        $this->assertStringContainsString('naikkan jatah dari 2 jadi 4 mika', implode(' ', $row['suggestions']));
+        $this->assertStringNotContainsString('naikkan jatah dari 2 jadi 5', implode(' ', $row['suggestions']));
         config(['kiosk_insights.max_quota_increase' => 1]);
-        $this->assertStringContainsString('Naikkan jatah ke 3 mika', implode(' ', $this->row($f)['suggestions']));
+        $this->assertStringContainsString('naikkan jatah dari 2 jadi 3 mika', implode(' ', $this->row($f)['suggestions']));
         $this->assertSame(2, $f['kiosk']->fresh()->default_qty_mika);
     }
 
@@ -286,11 +296,11 @@ class KioskInsightsTest extends TestCase
         $text = implode(' ', $row['suggestions']);
         $this->assertStringContainsString('piutang', $text);
         $this->assertEquals(100.0, $row['bs_pct']);
-        $this->assertStringNotContainsString('Cek BS', $text);
+        $this->assertStringNotContainsString('Banyak dodol rusak/kedaluwarsa', $text);
         $this->assertStringNotContainsString('Cek retur', $text);
-        $this->assertStringContainsString('Kunjungi — sudah 39 hari', $text);
-        $this->assertStringNotContainsString('Turunkan jatah', $text);
-        $this->assertStringNotContainsString('Naikkan jatah', $text);
+        $this->assertStringContainsString('Sudah 39 hari belum dikunjungi', $text);
+        $this->assertStringNotContainsString('turunkan jatah', $text);
+        $this->assertStringNotContainsString('naikkan jatah', $text);
         $this->assertSame(1, $row['priority']);
         config(['kiosk_insights.inactive_days' => 30]);
         $this->assertSame('inactive', $this->row($f)['label_key']);
@@ -328,7 +338,7 @@ class KioskInsightsTest extends TestCase
         $this->assertSame(11, $row['days_since_visit']);
         $this->assertSame(7.0, (float) $row['avg_visit_gap_days']);
         // ambang = max(10, 1,5 × 7 = 10,5) = 10,5 → 11 >= 10,5 → disarankan walau < ambang tetap 14 hari.
-        $this->assertContains('Kunjungi — sudah 11 hari (biasanya tiap 7 hari).', $row['suggestions']);
+        $this->assertContains('Sudah 11 hari belum dikunjungi (biasanya tiap 7 hari). Jadwalkan kunjungan.', $row['suggestions']);
         $this->assertSame(2, $row['priority']);
     }
 
@@ -337,12 +347,12 @@ class KioskInsightsTest extends TestCase
         $f = $this->fixture();
         $this->weeklyRhythm($f, '2026-11-08'); // 8 hari sejak kunjungan; ambang max(10, 10,5) = 10,5
         $this->assertSame(8, $this->row($f)['days_since_visit']);
-        $this->assertStringNotContainsString('Kunjungi', implode(' ', $this->row($f)['suggestions']));
+        $this->assertStringNotContainsString('Jadwalkan kunjungan', implode(' ', $this->row($f)['suggestions']));
         // Ambang minimal 10 hari menahan kedai ber-ritme sangat rapat: multiplier kecil tak boleh menurunkan di bawah 10.
         config(['kiosk_insights.revisit_gap_multiplier' => 0.5]);
-        $this->assertStringNotContainsString('Kunjungi', implode(' ', $this->row($f)['suggestions']), '0,5×7=3,5 < lantai 10; 8 hari belum cukup.');
+        $this->assertStringNotContainsString('Jadwalkan kunjungan', implode(' ', $this->row($f)['suggestions']), '0,5×7=3,5 < lantai 10; 8 hari belum cukup.');
         config(['kiosk_insights.revisit_min_days' => 8]);
-        $this->assertStringContainsString('Kunjungi — sudah 8 hari (biasanya tiap 7 hari).', implode(' ', $this->row($f)['suggestions']));
+        $this->assertStringContainsString('Sudah 8 hari belum dikunjungi (biasanya tiap 7 hari). Jadwalkan kunjungan.', implode(' ', $this->row($f)['suggestions']));
     }
 
     public function test_slow_rhythm_kiosk_is_not_nagged_at_the_fixed_threshold(): void
@@ -355,7 +365,7 @@ class KioskInsightsTest extends TestCase
         $this->assertSame(20, $row['days_since_visit']);
         $this->assertGreaterThanOrEqual(14, $row['days_since_visit'], 'Sudah melewati ambang tetap 14 hari…');
         $this->assertGreaterThan(17, (float) $row['avg_visit_gap_days'], '…tetapi ritmenya jarang (rerata jarak > 17 hari).');
-        $this->assertStringNotContainsString('Kunjungi', implode(' ', $row['suggestions']), 'Ambang relatif ≥ 1,5 × rerata jarak, bukan 14 hari tetap.');
+        $this->assertStringNotContainsString('Jadwalkan kunjungan', implode(' ', $row['suggestions']), 'Ambang relatif ≥ 1,5 × rerata jarak, bukan 14 hari tetap.');
     }
 
     public function test_short_history_uses_fixed_threshold_without_rhythm_text(): void
@@ -365,13 +375,13 @@ class KioskInsightsTest extends TestCase
         $this->visitsOn($f, ['2026-10-08', '2026-10-15']);
         $row = $this->row($f);
         $this->assertSame(32, $row['days_since_visit'], '15 Okt → 16 Nov = 32 hari ≥ ambang tetap 14.');
-        $this->assertContains('Kunjungi — sudah 32 hari.', $row['suggestions']);
+        $this->assertContains('Sudah 32 hari belum dikunjungi. Jadwalkan kunjungan.', $row['suggestions']);
         foreach ($row['suggestions'] as $s) {
             $this->assertStringNotContainsString('biasanya', $s);
         }
         // Di bawah ambang tetap: tidak disarankan.
         config(['kiosk_insights.revisit_days' => 60]);
-        $this->assertStringNotContainsString('Kunjungi', implode(' ', $this->row($f)['suggestions']));
+        $this->assertStringNotContainsString('Jadwalkan kunjungan', implode(' ', $this->row($f)['suggestions']));
     }
 
     public function test_price_label_drops_decimals_when_per_unit_price_is_whole(): void

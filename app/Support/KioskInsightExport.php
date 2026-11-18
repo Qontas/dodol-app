@@ -183,7 +183,7 @@ class KioskInsightExport
         for ($part = 0; $part < $parts; $part++) {
             $pages = $pdf->setSourceFile(self::directory($id).'/part-'.$part.'.pdf');
             for ($page = 1; $page <= $pages; $page++) {
-                $templates[] = $pdf->importPage($page);
+                $templates[] = $pdf->importPage($page, \setasign\Fpdi\PdfReader\PageBoundaries::CROP_BOX, true, true);
             }
         }
         $total = count($templates);

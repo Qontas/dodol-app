@@ -95,7 +95,7 @@ class KioskInsightsRenderTest extends TestCase
         $this->assertSame('+628123', $catalog->getCell($column('Telepon').'8')->getValue());
         $this->assertEquals(16000, $catalog->getCell($column('Harga / Mika').'8')->getValue());
         $this->assertSame(DataType::TYPE_NUMERIC, $catalog->getCell($column('Harga / Mika').'8')->getDataType());
-        $this->assertEquals(0.812, $catalog->getCell($column('% Laku').'8')->getValue());
+        $this->assertEquals(0.812, $catalog->getCell($column('Terjual (%)').'8')->getValue());
         $this->assertIsNumeric($catalog->getCell($column('Titip Pertama').'8')->getValue());
         // URL bukan HTTPS Google Maps → tetap teks literal, tanpa hyperlink.
         $this->assertSame('', $catalog->getCell($column('Google Maps').'8')->getHyperlink()->getUrl());
@@ -169,16 +169,16 @@ class KioskInsightsRenderTest extends TestCase
         $book = $this->workbook($this->data([$this->row()]), true);
         $headings = $this->headings($book, 'Daftar Kedai');
 
-        // Urutan pembaca: Foto, Nama, Area, Google Maps, Alamat, Label, Saran, % Laku, Laju, Mika di Kedai, Nilai, Piutang…
-        $this->assertSame(['Foto', 'Nama Kedai', 'Area', 'Google Maps', 'Alamat', 'Label', 'Saran Tindakan', '% Laku',
-            'Laju Jual (biji/minggu)', 'Mika di Kedai Sekarang', 'Nilai Mika di Kedai', 'Piutang', 'Umur Piutang (hari)',
-            'Kunjungan Terakhir', 'Operator Terakhir', 'Hari Sejak Kunjungan'], array_slice($headings, 0, 16));
+        // Urutan pembaca: identitas dan alamat, kondisi penjualan, lalu stok dan tagihan.
+        $this->assertSame(['Foto', 'Nama Kedai', 'Area', 'Google Maps', 'Alamat', 'Alamat (dari Peta)', 'Label', 'Saran Tindakan', 'Terjual (%)',
+            'Laku per Minggu (biji)', 'Mika di Kedai Sekarang', 'Nilai Mika di Kedai', 'Piutang', 'Umur Piutang (hari)',
+            'Kunjungan Terakhir', 'Operator Terakhir', 'Hari Sejak Kunjungan'], array_slice($headings, 0, 17));
         // Lalu identitas (Pemilik, Telepon), lalu metrik detail.
-        $this->assertLessThan(array_search('Sisa Dibawa Pulang (%)', $headings, true), array_search('Pemilik Kedai', $headings, true));
+        $this->assertLessThan(array_search('Belum Laku, Dibawa Pulang (%)', $headings, true), array_search('Pemilik Kedai', $headings, true));
         $this->assertNotContains('Stok Titipan (mika)', $headings);
         $this->assertNotContains('Nilai Titipan', $headings);
         $actions = $this->headings($book, 'Perlu Tindakan');
-        $this->assertSame(['Nama Kedai', 'Area', 'Google Maps', 'Alamat', 'Label'], array_slice($actions, 0, 5), 'Perlu Tindakan memakai urutan yang sama.');
+        $this->assertSame(['Nama Kedai', 'Area', 'Google Maps', 'Alamat', 'Alamat (dari Peta)', 'Label'], array_slice($actions, 0, 6), 'Perlu Tindakan memakai urutan yang sama.');
         foreach (['Jenis Baris', 'ID Kedai', 'ID Owner', 'Kode Label', 'Prioritas', 'Status Foto', 'Biji Laku Konsinyasi',
             'Biji Titipan Selesai', 'Usaha', 'Sell-through'] as $removed) {
             $this->assertNotContains($removed, $headings, "Kolom '{$removed}' tidak boleh ada pada mode satu owner.");
@@ -370,7 +370,7 @@ class KioskInsightsRenderTest extends TestCase
         foreach (['Daftar Kedai', 'Perlu Tindakan'] as $name) {
             $sheet = $book->getSheetByName($name);
             $headings = $this->headings($book, $name);
-            $this->assertSame(['Nama Kedai', 'Area', 'Google Maps', 'Alamat', 'Label'], array_slice($headings, 0, 5), $name);
+            $this->assertSame(['Nama Kedai', 'Area', 'Google Maps', 'Alamat', 'Alamat (dari Peta)', 'Label'], array_slice($headings, 0, 6), $name);
             $found = [];
             foreach ($this->bodyRows($book, $name) as $r => $line) {
                 if (in_array($line[0], ['Ada Maps', 'Tanpa Maps', 'Maps Palsu'], true)) {
@@ -417,15 +417,17 @@ class KioskInsightsRenderTest extends TestCase
             $sheet = $book->getSheetByName($name);
             $headings = $this->headings($book, $name);
             $this->assertNotContains('Retur / BS', $headings);
-            foreach (['% BS' => 0.1, 'Sisa Dibawa Pulang (%)' => 0.4] as $heading => $value) {
+            foreach (['Rusak/Kedaluwarsa (%)' => 0.1, 'Belum Laku, Dibawa Pulang (%)' => 0.4] as $heading => $value) {
                 $cell = Coordinate::stringFromColumnIndex(array_search($heading, $headings, true) + 1).$row;
                 $this->assertEquals($value, $sheet->getCell($cell)->getValue());
                 $this->assertSame('0.0%', $sheet->getStyle($cell)->getNumberFormat()->getFormatCode());
             }
         }
         $text = json_encode($book->getSheetByName('Penjelasan')->toArray(), JSON_UNESCAPED_UNICODE);
-        $this->assertStringContainsString('KIOSK_INSIGHTS_BS_PCT', $text);
-        $this->assertStringContainsString('permintaan tersensor', $text);
+        $this->assertStringContainsString('Barang yang masih baik dan dibawa pulang tidak termasuk', $text);
+        $this->assertStringContainsString('barang mungkin keburu habis sebelum pembeli berikutnya datang', $text);
+        $this->assertStringNotContainsString('KIOSK_INSIGHTS_BS_PCT', $text);
+        $this->assertStringNotContainsString('tersensor', $text);
         $book->disconnectWorksheets();
     }
 
@@ -519,7 +521,7 @@ class KioskInsightsRenderTest extends TestCase
         ])->render();
         $this->assertDoesNotMatchRegularExpression('/>\s*·\s*</', $html, 'Tidak ada pemisah menggantung.');
         $this->assertStringContainsString('Tidak ada', $html);
-        $this->assertStringContainsString('5 mika · 7 hari', $html);
+        $this->assertStringContainsString('Sekarang di kedai: 5 mika (dititip 7 hari lalu)', $html);
         $this->assertStringContainsString('jatah 5 mika', $html);
         $this->assertStringContainsString('Rp 800/biji', $html);
         $this->assertStringNotContainsString('5,0 mika', $html);
@@ -541,7 +543,7 @@ class KioskInsightsRenderTest extends TestCase
         $this->assertStringContainsString('Cara membaca.', $html);
         $this->assertStringNotContainsString('<h2>Cara membaca laporan</h2>', $html);
         $this->assertStringContainsString('10 kedai paling laris', $html);
-        $this->assertStringContainsString('% Laku', $html);
+        $this->assertStringContainsString('Terjual (%)', $html);
         $this->assertStringNotContainsString('ell-through', $html);
         $this->assertSame(1, $pdf->getDomPDF()->getCanvas()->get_page_count(), 'Ringkasan + cara membaca muat satu halaman untuk data kecil.');
     }
@@ -597,7 +599,7 @@ class KioskInsightsRenderTest extends TestCase
         $this->assertSame('Laporan Kedai KualiStories 16 Nov 2026.pdf', KioskInsightsPdf::filename($data));
         $this->assertStringNotContainsString('/', KioskInsightsPdf::filename(array_replace($data, ['business_name' => '../../x'])));
         $fragment = KioskInsightsPdf::renderPart($this->data(array_slice($rows, 0, 6)));
-        $this->assertSame(1, $fragment->getDomPDF()->getCanvas()->get_page_count(), 'Six normal-length cards fit one A4 page.');
+        $this->assertSame(2, $fragment->getDomPDF()->getCanvas()->get_page_count(), 'Six expanded normal-length cards use two A4 pages at four cards per page.');
         $this->assertStringNotContainsString('Ringkasan usaha', $fragment->getDomPDF()->getDom()->saveHTML());
     }
 

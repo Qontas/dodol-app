@@ -5,6 +5,18 @@
 
 ---
 
+## Pembaruan 18 November 2026 — Laporan Kedai v2: bahasa sederhana, kartu PDF rapi, alamat dari peta
+
+**Istilah (sama di PDF, Excel, Ringkasan, Perlu Tindakan, Penjelasan):** Sudah Ditagih (kali), Habis Saat Ditagih (kali), Laku per Minggu (biji), Terjual (%), Rusak/Kedaluwarsa (%), Belum Laku, Dibawa Pulang (%). Kartu PDF: "Laku ±59 biji/minggu (±3 mika)" (mika = biji ÷ isi per mika, 1 desimal, disembunyikan bila < 0,5), "Terjual 95% dari yang dititip", "Rusak/kedaluwarsa 17% · Belum laku 22%", "Sekarang di kedai: 2 mika (dititip 1 hari lalu)". Data belum cukup → "— (baru ditagih N kali)". Angka & rumus tidak berubah.
+
+**Label:** "Bermasalah" dipecah → **Banyak rusak** (`display_label_key=bs`) dan **Piutang lama** (`debt`). Bila keduanya kena, label = Piutang lama dan saran memuat keduanya. Kunci internal `label_key=problem` tetap. Saran memakai kalimat lengkap (lihat `KioskInsights::classify`).
+
+**Kartu PDF:** tinggi mengikuti isi (tanpa `height` tetap), `page-break-inside: avoid`, 4 kartu per halaman. Alamat kosong → alamat peta, bila kosong "Alamat belum diisi" (nama kedai tidak lagi dipakai sebagai alamat). Ditambah "Omset 30 hari" dan "HP pemilik" (disembunyikan bila kosong).
+
+**Link Maps:** teks pendek `google.com/maps?q=lat,lng` + `<a href>` https absolut. **Akar link tidak bisa diklik:** PDF akhir digabung FPDI dan `importPage()` membuang anotasi link eksternal secara default (`$importExternalLinks=false`). Perbaikan: argumen keempat `true` di `KioskInsightExport::mergePdf`. Teruji pada PDF hasil gabung (`/Subtype /Link`, `/URI`). Excel: kolom "Google Maps" (hyperlink) + kolom baru "Alamat (dari Peta)".
+
+**Alamat dari peta (disimpan, bukan saat export):** kolom `kiosks.maps_address`, `maps_address_at`, `maps_address_source` (migrasi `2026_11_18_000001_add_maps_address_to_kiosks_table`). `php artisan kiosks:fill-maps-address --owner=N [--limit=] [--force]` — default dry-run, `--force` menyimpan; hanya kedai berkoordinat dan `maps_address` kosong. Koordinat dibuat/diubah → ketiga kolom dikosongkan (basi) lewat hook `Kiosk::saving`; tanpa panggilan API di request web. Provider Nominatim (default; wajib `REVERSE_GEOCODING_CONTACT_EMAIL` kontak layanan publik, UA dari `REVERSE_GEOCODING_USER_AGENT`, 1 request/detik lintas proses, timeout ketat, tanpa retry; HTTP 429 menghentikan command) atau Google bila `GOOGLE_MAPS_API_KEY` diisi. Format: jalan + nomor, kelurahan, kecamatan, kota (tanpa kode pos/negara).
+
 ## Pembaruan 16 November 2026 — Laporan Kedai (Excel & PDF)
 
 - **Manajemen Kios → "Unduh Laporan Kedai"** (`app/Filament/Resources/KioskResource/Pages/ListKiosks.php:16`) membuka `/kiosk-insights` untuk owner. **Super admin:** sidebar `/admin` → **"Laporan Kedai"** dekat Invoice Fee membuka `/admin/laporan-kedai` (`app/Filament/Pages/KioskInsightsPage.php`), dengan komponen unduh yang sama dan sidebar admin. `/kiosk-insights` mengalihkan super admin ke halaman panel admin. Link kembali **"← Manajemen Kios"** untuk owner ke `/owner-panel/kiosks`; **"← Dashboard"** untuk super admin ke `/admin` (bukan `/admin/kiosks` yang 404). Tombol **"Export Excel"**, **"Export Excel + Foto"**, **"Export PDF"**; owner otomatis hanya usahanya, super admin memilih satu owner atau **"Semua owner"** (`app/Livewire/Owner/KioskInsightDownloads.php`). Operator 403, termasuk pemanggilan Livewire langsung. Route laporan sengaja tidak memakai middleware auto-close trip: fitur tidak mengubah data bisnis.

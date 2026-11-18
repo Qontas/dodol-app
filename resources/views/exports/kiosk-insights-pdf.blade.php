@@ -20,7 +20,7 @@
             return 'Rp '.number_format($per, $per == floor($per) ? 0 : 2, ',', '.').'/biji';
         };
         $joinParts = fn (array $parts) => implode(' · ', array_filter(array_map(fn ($p) => trim((string) $p), $parts), fn ($p) => $p !== ''));
-        $labelNames = ['insufficient' => 'Data belum cukup', 'fast' => 'Laris', 'stable' => 'Stabil', 'slow' => 'Lambat', 'problem' => 'Bermasalah', 'inactive' => 'Tidak aktif'];
+        $labelNames = ['insufficient' => 'Data belum cukup', 'fast' => 'Laris', 'stable' => 'Stabil', 'slow' => 'Lambat', 'debt' => 'Piutang lama', 'bs' => 'Banyak rusak', 'inactive' => 'Tidak aktif'];
         $reportName = ($data['all_owners'] ?? false) ? 'Semua owner' : ($data['business_name'] ?? '');
     @endphp
     <style>
@@ -57,8 +57,10 @@
         .cards { width: 100%; table-layout: fixed; }
         .cards > tbody > tr > td { width: 50%; padding: 0 5pt 8pt 0; vertical-align: top; }
         .cards > tbody > tr > td + td { padding: 0 0 8pt 5pt; }
-        .card { border: .6pt solid #D9CFC2; padding: 8pt; height: 195pt; }
-        .card h3 { font-family: 'Fraunces', serif; font-size: 12pt; line-height: 1.1; margin: 0 0 4pt; }
+        .cards > tbody > tr, .card { page-break-inside: avoid; }
+        .card { border: .6pt solid #D9CFC2; padding: 6pt 7pt; }
+        .maps-link { font-size: 6.7pt; margin: 3pt 0; word-wrap: break-word; }
+        .card h3 { font-family: 'Fraunces', serif; font-size: 10pt; line-height: 1.1; margin: 0 0 3pt; }
         .photo { width: 63pt; height: 48pt; object-fit: contain; }
         .photo-empty { width: 63pt; height: 38pt; padding-top: 10pt; text-align: center; background: #F5ECDD; font-size: 6.8pt; }
         .identity { width: 100%; table-layout: fixed; }
@@ -67,9 +69,9 @@
         .badge { display: inline-block; font-size: 7pt; font-weight: bold; padding: 2pt 5pt; background: #F5ECDD; border-left: 2pt solid #7A6A5E; }
         .badge.fast { border-left-color: #1F5F3A; }
         .badge.slow { border-left-color: #A36813; }
-        .badge.problem { border-left-color: #8B1E1E; }
-        .metrics { width: 100%; margin-top: 3pt; font-size: 7.1pt; }
-        .metrics td { padding: 1.5pt 0; border-bottom: .3pt solid #E8E0D5; vertical-align: top; }
+        .badge.debt, .badge.bs { border-left-color: #8B1E1E; }
+        .metrics { width: 100%; margin-top: 2pt; font-size: 6.9pt; }
+        .metrics td { padding: 1pt 0; border-bottom: .3pt solid #E8E0D5; vertical-align: top; }
         .metrics td:first-child { color: #7A6A5E; width: 33%; }
         .suggest { margin-top: 5pt; padding-top: 4pt; border-top: .6pt solid #D98A2B; font-size: 7pt; }
         a { color: #3F2414; text-decoration: underline; }
@@ -91,7 +93,7 @@
         <tr>
             <td><div class="muted">Kedai aktif / total</div><div class="value">{{ $summary['totals']['active'] }} / {{ $summary['totals']['kiosks'] }}</div></td>
             <td><div class="muted">Omset 30 hari</div><div class="value">{{ $rp($summary['totals']['revenue_30']) }}</div></td>
-            <td><div class="muted">Rerata % laku</div><div class="value">{{ $pct($summary['avg_sell_through_pct']) }}</div></td>
+            <td><div class="muted">Rerata Terjual (%)</div><div class="value">{{ $pct($summary['avg_sell_through_pct']) }}</div></td>
         </tr>
         <tr>
             <td><div class="muted">Mika di kedai sekarang</div><div class="value">{{ $int($summary['totals']['pending_packs']) }} mika</div></td>
@@ -105,7 +107,9 @@
         @endforeach
     </div>
     {{-- Satu catatan "cara membaca" di halaman ringkasan (dulu terpisah di akhir sehingga memakan satu halaman hampir kosong). --}}
-    <div class="note"><b>Cara membaca.</b> Mika di kedai (titipan belum ditagih) adalah stok, bukan piutang. Stok, piutang, harga, jatah dan identitas adalah posisi saat laporan dibuat; omset dan kunjungan mengikuti periode. Kolom kosong bukan nol. Penilaian (% laku, laju, label, saran) hanya untuk kedai Konsinyasi dan menghitung titipan yang sudah ditagih, termasuk yang pembayarannya belum lunas; laju ditimbang durasi siklus dan siklus terjual nol ikut dihitung. Titipan awal/sentinel masuk stok, bukan kunjungan. % BS hanya kedaluwarsa/rusak; Sisa Dibawa Pulang (%) hanya retur segar, bukan kerugian atau pemicu label. Ambang: data minimum {{ $data['rules']['min_settlements'] ?? 3 }} siklus; lambat jika % laku &lt;{{ $data['rules']['slow_sell_through_pct'] ?? 60 }}%; laris jika % laku minimal {{ $data['rules']['fast_sell_through_pct'] ?? 80 }}% dan laju di persentil minimal {{ $data['rules']['fast_percentile'] ?? 75 }}; bermasalah hanya jika % BS minimal {{ $data['rules']['problem_bs_pct'] ?? 10 }}% atau piutang berumur minimal {{ $data['rules']['debt_age_days'] ?? 30 }} hari; tidak aktif jika nonaktif atau tidak dikunjungi >{{ $data['rules']['inactive_days'] ?? 30 }} hari. Saran "Kunjungi" muncul bila hari sejak kunjungan melewati maksimum {{ $data['rules']['revisit_min_days'] ?? 10 }} hari dan {{ $data['rules']['revisit_gap_multiplier'] ?? 1.5 }}× jarak kunjungan biasa kedai itu (riwayat pendek: {{ $data['rules']['revisit_days'] ?? 14 }} hari). Data belum cukup tidak mendapat saran BS/jatah. Habis (laku ≥95%) pada ≥2 dari 3 tagihan terakhir: saran minimal +1 mika (maks +2 sesuai batas), karena permintaan tersensor. Saran bukan perubahan jatah otomatis.</div>
+    <div class="note"><b>Cara membaca.</b> Mika di kedai adalah titipan yang belum ditagih, bukan piutang. Stok, piutang, harga dan jatah menunjukkan keadaan saat laporan dibuat. Omset dan kunjungan mengikuti periode laporan. Tanda — berarti belum ada data, bukan nol. <b>Sudah Ditagih (kali)</b> menghitung titipan konsinyasi yang sudah diperiksa, meski uangnya belum lunas. <b>Habis Saat Ditagih (kali)</b> berarti sedikitnya 95% titipan terjual. <b>Laku per Minggu (biji)</b> memperhitungkan lamanya setiap titipan di kedai; titipan yang tidak laku tetap dihitung. <b>Terjual (%)</b>, <b>Rusak/Kedaluwarsa (%)</b> dan <b>Belum Laku, Dibawa Pulang (%)</b> dibandingkan dengan jumlah biji yang dititip dan sudah ditagih. Dodol segar yang dibawa pulang bukan kerugian.<br>
+    Penilaian penjualan hanya untuk konsinyasi, setelah ditagih minimal {{ $data['rules']['min_settlements'] ?? 3 }} kali. Lambat berarti Terjual (%) di bawah {{ $data['rules']['slow_sell_through_pct'] ?? 60 }}%. Laris berarti Terjual (%) minimal {{ $data['rules']['fast_sell_through_pct'] ?? 80 }}% dan Laku per Minggu (biji) berada di kelompok atas usaha yang sama (batas {{ $data['rules']['fast_percentile'] ?? 75 }} dari 100). Banyak rusak berarti Rusak/Kedaluwarsa (%) minimal {{ $data['rules']['problem_bs_pct'] ?? 10 }}%; Piutang lama berarti belum lunas sejak minimal {{ $data['rules']['debt_age_days'] ?? 30 }} hari. Jika keduanya terjadi, labelnya Piutang lama dan sarannya menjelaskan keduanya. Urutan label: Tidak aktif, Data belum cukup, Piutang lama, Banyak rusak, Laris, Lambat, Stabil. Tidak aktif juga mencakup kedai yang tidak dikunjungi lebih dari {{ $data['rules']['inactive_days'] ?? 30 }} hari.<br>
+    Kunjungan disarankan setelah melewati waktu yang lebih panjang antara {{ $data['rules']['revisit_min_days'] ?? 10 }} hari dan {{ $data['rules']['revisit_gap_multiplier'] ?? 1.5 }} kali jarak kunjungan biasanya; bila riwayat masih pendek, patokannya {{ $data['rules']['revisit_days'] ?? 14 }} hari. Data belum cukup belum mendapat saran jatah atau kerusakan, tetapi piutang dan kunjungan tetap diperhatikan. Jika habis pada dua dari tiga tagihan terakhir, coba tambah minimal satu mika (maksimal dua sesuai batas), sebab barang mungkin habis sebelum kunjungan. Saran tidak mengubah jatah otomatis. Titipan awal dihitung sebagai stok, bukan kunjungan.</div>
     <h2>Ringkasan per area</h2>
     <table class="data"><thead><tr><th style="width: 28%">{{ $allOwners ? 'Usaha / Area' : 'Area' }}</th><th>Kedai / aktif</th><th class="right">Omset 30 hari</th><th class="right">Mika di kedai</th><th class="right">Nilai mika di kedai</th><th class="right">Piutang</th></tr></thead><tbody>
         @forelse ($summary['areas'] as $area)
@@ -116,8 +120,8 @@
     </tbody></table>
     @foreach (['top10' => '10 kedai paling laris', 'slow10' => '10 kedai paling lambat laku'] as $key => $heading)
         <h2>{{ $heading }}</h2>
-        <p class="muted small">Hanya konsinyasi dengan sedikitnya {{ $data['rules']['min_settlements'] ?? 3 }} siklus selesai, tanpa label Tidak aktif dan Data belum cukup. Urut laju biji per minggu, bukan omset.</p>
-        <table class="data"><thead><tr><th style="width: 41%">{{ $allOwners ? 'Kedai / Usaha / Area' : 'Kedai / Area' }}</th><th class="right">Biji / minggu</th><th class="right">% Laku</th><th class="right">Siklus</th><th>Label</th></tr></thead><tbody>
+        <p class="muted small">Hanya konsinyasi dengan sedikitnya {{ $data['rules']['min_settlements'] ?? 3 }} kali ditagih, tanpa label Tidak aktif dan Data belum cukup. Urut Laku per Minggu (biji), bukan omset.</p>
+        <table class="data"><thead><tr><th style="width: 41%">{{ $allOwners ? 'Kedai / Usaha / Area' : 'Kedai / Area' }}</th><th class="right">Laku per Minggu (biji)</th><th class="right">Terjual (%)</th><th class="right">Sudah Ditagih (kali)</th><th>Label</th></tr></thead><tbody>
             @forelse ($summary[$key] as $r)
                 <tr><td><b>{{ $clip($r['name'], 55) }}</b><br><span class="muted small">{{ $clip(($allOwners ? $r['business_name'].' / ' : '').$r['area'], 65) }}</span></td><td class="right">{{ $num($r['weekly_sales']) }}</td><td class="right">{{ $pct($r['sell_through_pct']) }}</td><td class="right">{{ $r['settled_count'] }}</td><td>{{ $clip($r['label'], 35) }}</td></tr>
             @empty
@@ -136,32 +140,41 @@
             @php
                 $photo = \App\Support\KioskInsightsSummary::thumbnail($r);
                 $photoStatus = \App\Support\KioskInsightsSummary::photoStatus($r);
-                $maps = \App\Support\KioskInsightsSummary::mapsUrl($r['maps_url'] ?? null);
-                $labelKey = in_array($r['label_key'] ?? '', array_keys($labelNames), true) ? $r['label_key'] : 'insufficient';
+                $maps = \App\Support\KioskInsightsSummary::coordinateMapsUrl($r['latitude'] ?? null, $r['longitude'] ?? null)
+                    ?? \App\Support\KioskInsightsSummary::mapsUrl($r['maps_url'] ?? null);
+                $labelKey = \App\Support\KioskInsightsSummary::displayLabelKey($r);
+                $enough = ($r['settled_count'] ?? 0) >= ($data['rules']['min_settlements'] ?? 3);
+                $missing = \App\Support\KioskInsightsSummary::missingMetric($r);
+                $plainNumber = fn ($v) => \App\Support\KioskInsightsSummary::number((float) $v);
             @endphp
             <td><div class="card">
                 <table class="identity"><tr><td>
-                    <h3>{{ $clip($r['name'], 52) }}</h3>
+                    <h3>{{ $clip($r['name'], 46) }}</h3>
                     <div class="badge {{ $labelKey }}">{{ $clip($r['label'], 32) }}</div>
                     <div class="small muted" style="margin-top: 4pt">{{ $text($r['type']) }} · {{ ($r['is_active'] ?? false) ? 'Aktif' : 'Nonaktif' }}</div>
                 </td><td class="image">
                     @if ($photo)<img class="photo" src="{{ $photo }}" alt="Foto kedai">@else<div class="photo-empty">{{ $photoStatus }}</div>@endif
                 </td></tr></table>
                 @php
-                    $contact = $joinParts([$clip($r['owner_name'] ?? '', 40), $clip($r['phone'] ?? '', 25)]);
+                    $contact = $clip($r['owner_name'] ?? '', 40);
+                    $address = trim((string) ($r['maps_address'] ?? '')) ?: trim((string) ($r['address'] ?? ''));
                     $hasReceivable = (float) ($r['receivable'] ?? 0) > 0;
                 @endphp
                 @if ($contact !== '')<div class="small" style="margin-top: 4pt">{{ $contact }}</div>@endif
-                @if (trim((string) ($r['address'] ?? '')) !== '' || $maps)<div class="small muted">{{ $clip($r['address'] ?? '', 100) }} @if ($maps)<a href="{{ $maps }}">Maps</a>@endif</div>@endif
+                @if (trim((string) ($r['phone'] ?? '')) !== '')<div class="small">HP pemilik: {{ $clip($r['phone'], 25) }}</div>@endif
+                <div class="small muted">{{ $clip($address ?: 'Alamat belum diisi', 130) }}</div>
+                @if ($maps)<div class="maps-link"><a href="{{ $maps }}">{{ preg_replace('~^https://(?:www\.)?~', '', $maps) }}</a></div>@endif
                 <table class="metrics">
                     <tr><td>Harga / Jatah</td><td>{{ $rp($r['price_per_pack'] ?? 0) }}/mika ({{ $unitPrice($r) }}) · jatah {{ $int($r['default_qty_mika'] ?? 0) }} mika</td></tr>
                     <tr><td>Kunjungan terakhir</td><td>{{ $joinParts([$date($r['last_visit_at'] ?? null), $clip($r['last_operator'] ?? '', 25)]) }}</td></tr>
-                    <tr><td>Laju / % Laku</td><td>{{ ($r['weekly_sales'] ?? null) === null ? '—' : $num($r['weekly_sales']).' biji/mgg' }} · {{ $pct($r['sell_through_pct'] ?? null) }}</td></tr>
-                    <tr><td>% BS / Sisa segar</td><td>{{ $pct($r['bs_pct'] ?? null) }} / {{ $pct($r['fresh_return_pct'] ?? null) }} dibawa pulang</td></tr>
-                    <tr><td>Mika di kedai</td><td>{{ $joinParts([$int($r['pending_packs'] ?? 0).' mika', ($r['pending_age_days'] ?? null) === null ? '' : $int($r['pending_age_days']).' hari']) }}</td></tr>
+                    <tr><td>Laku per Minggu (biji)</td><td>{{ $enough ? \App\Support\KioskInsightsSummary::weeklySalesText($r) : $missing }}</td></tr>
+                    <tr><td>Terjual (%)</td><td>{{ $enough && isset($r['sell_through_pct']) ? 'Terjual '.$plainNumber($r['sell_through_pct']).'% dari yang dititip' : $missing }}</td></tr>
+                    <tr><td>Rusak / belum laku</td><td>{{ $enough && isset($r['bs_pct'], $r['fresh_return_pct']) ? 'Rusak/kedaluwarsa '.$plainNumber($r['bs_pct']).'% · Belum laku '.$plainNumber($r['fresh_return_pct']).'%' : $missing }}</td></tr>
+                    <tr><td colspan="2">Sekarang di kedai: {{ $int($r['pending_packs'] ?? 0) }} mika{{ ($r['pending_age_days'] ?? null) === null ? '' : ' (dititip '.$int($r['pending_age_days']).' hari lalu)' }}</td></tr>
+                    <tr><td>Omset 30 hari:</td><td>{{ $rp($r['revenue_30'] ?? 0) }}</td></tr>
                     <tr><td>Piutang</td><td>{{ $hasReceivable ? $joinParts([$rp($r['receivable']), ($r['receivable_age_days'] ?? null) === null ? '' : $int($r['receivable_age_days']).' hari']) : 'Tidak ada' }}</td></tr>
                 </table>
-                <div class="suggest"><b>Saran:</b> {{ $clip(implode(' · ', $r['suggestions'] ?? []) ?: 'Belum ada saran khusus.', 175) }}</div>
+                <div class="suggest"><b>Saran:</b> {{ $text(implode(' ', $r['suggestions'] ?? []) ?: 'Belum ada saran khusus.') }}</div>
             </div></td>
         @endforeach
         @if (count($pair) === 1)<td></td>@endif

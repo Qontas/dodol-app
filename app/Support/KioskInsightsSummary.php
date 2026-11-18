@@ -10,13 +10,13 @@ class KioskInsightsSummary
     public static function summarize(array $data): array
     {
         $rows = $data['rows'] ?? [];
-        $labels = array_fill_keys(['insufficient', 'fast', 'stable', 'slow', 'problem', 'inactive'], 0);
+        $labels = array_fill_keys(['insufficient', 'fast', 'stable', 'slow', 'debt', 'bs', 'inactive'], 0);
         $areas = [];
         $totals = ['kiosks' => count($rows), 'active' => 0, 'visit_count' => 0, 'visits_30' => 0,
             'revenue_total' => 0, 'revenue_30' => 0, 'pending_packs' => 0, 'pending_value' => 0, 'receivable' => 0];
 
         foreach ($rows as $row) {
-            $label = $row['label_key'] ?? 'insufficient';
+            $label = self::displayLabelKey($row);
             $labels[array_key_exists($label, $labels) ? $label : 'insufficient']++;
             $totals['active'] += (int) ($row['is_active'] ?? false);
             foreach (['visit_count', 'visits_30', 'revenue_total', 'revenue_30', 'pending_packs', 'pending_value', 'receivable'] as $key) {
@@ -74,6 +74,45 @@ class KioskInsightsSummary
             'generated' => IdDate::waktu($data['generated_at'] ?? now(), $timezone),
             'period' => ($start ? IdDate::tanggalSingkat($start) : 'Seluruh riwayat').' – '.IdDate::tanggalSingkat($asOf),
         ];
+    }
+
+    public static function displayLabelKey(array $row): string
+    {
+        return $row['display_label_key'] ?? (($row['label_key'] ?? '') === 'problem'
+            ? (($row['label'] ?? '') === 'Piutang lama' ? 'debt' : 'bs') : ($row['label_key'] ?? 'insufficient'));
+    }
+
+    public static function number(float|int $value): string
+    {
+        return rtrim(rtrim(number_format($value, 1, ',', '.'), '0'), ',');
+    }
+
+    public static function missingMetric(array $row): string
+    {
+        return '— (baru ditagih '.(int) ($row['settled_count'] ?? 0).' kali)';
+    }
+
+    public static function weeklySalesText(array $row): string
+    {
+        if (($row['weekly_sales'] ?? null) === null || ($row['label_key'] ?? '') === 'insufficient') {
+            return self::missingMetric($row);
+        }
+        $sales = (float) $row['weekly_sales'];
+        $packs = $sales / max(1, (int) ($row['units_per_pack'] ?? 15));
+
+        return 'Laku ±'.number_format($sales, 0, ',', '.').' biji/minggu'
+            .($packs >= 0.5 ? ' (±'.self::number($packs).' mika)' : '');
+    }
+
+    public static function coordinateMapsUrl(mixed $latitude, mixed $longitude): ?string
+    {
+        if (! is_numeric($latitude) || ! is_numeric($longitude)
+            || abs((float) $latitude) > 90 || abs((float) $longitude) > 180) {
+            return null;
+        }
+
+        return 'https://google.com/maps?q='.rtrim(rtrim(sprintf('%.5F', $latitude), '0'), '.')
+            .','.rtrim(rtrim(sprintf('%.5F', $longitude), '0'), '.');
     }
 
     /** HTTPS maps links only; never execute spreadsheet formulas or arbitrary URL schemes. */

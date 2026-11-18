@@ -11,7 +11,7 @@ return [
     'problem_bs_pct' => (float) env('KIOSK_INSIGHTS_BS_PCT', 10),
     'debt_age_days' => (int) env('KIOSK_INSIGHTS_DEBT_DAYS', 30),
     'inactive_days' => (int) env('KIOSK_INSIGHTS_INACTIVE_DAYS', 30),
-    // Saran "Kunjungi": picu bila hari sejak kunjungan >= max(revisit_min_days, revisit_gap_multiplier × rerata jarak
+    // Saran "Kunjungi": picu bila hari sejak kunjungan >= max(revisit_min_days, revisit_gap_multiplier Ã— rerata jarak
     // kunjungan kedai itu). Kedai dengan riwayat jarak kurang dari revisit_min_gaps memakai ambang tetap revisit_days.
     'revisit_days' => (int) env('KIOSK_INSIGHTS_REVISIT_DAYS', 14),
     'revisit_min_days' => (int) env('KIOSK_INSIGHTS_REVISIT_MIN_DAYS', 10),
@@ -36,18 +36,20 @@ return [
         'fast' => env('KIOSK_INSIGHTS_LABEL_FAST', 'Laris'),
         'stable' => env('KIOSK_INSIGHTS_LABEL_STABLE', 'Stabil'),
         'slow' => env('KIOSK_INSIGHTS_LABEL_SLOW', 'Lambat'),
-        'problem' => env('KIOSK_INSIGHTS_LABEL_PROBLEM', 'Bermasalah'),
+        'problem' => 'Banyak rusak', // Compatibility for old snapshots; display uses debt/bs.
+        'debt' => 'Piutang lama',
+        'bs' => 'Banyak rusak',
         'inactive' => env('KIOSK_INSIGHTS_LABEL_INACTIVE', 'Tidak aktif'),
     ],
     'methodology' => [
-        'performance' => 'Konsinyasi saja; cash dan BS redistribusi tidak masuk persentase/laju/saran jatah. Minimal 3 titipan selesai dihitung meskipun pembayaran belum lunas.',
-        'weekly_sales' => '7 × jumlah biji laku / jumlah maksimum(hari siklus, 1), termasuk titipan laku nol. Hari awal: tanggal trip nyata; owner_placed created_at; migration first_titip_date atau created_at.',
-        'sales' => 'Laku dan omset termasuk cash serta BS redistribusi, dari delivery unik yang ditagih pada kunjungan aktif trip nyata, selesai, nonarsip; delivery asal arsip tetap mengikuti TripAggregator.',
-        'receivable' => 'Saldo piutang terkini, umur sejak visit_date settlement sampai as_of. Bukan rekonstruksi saldo historis atau arus kas berdasarkan tanggal cicilan.',
-        'visits' => 'Pasangan unik trip/kedai dari kunjungan aktif atau delivery tanpa kunjungan pada trip nyata; sentinel migrasi bukan kunjungan. Walk-in tidak dilaporkan sebagai kedai.',
-        'revisit' => 'Saran "Kunjungi" muncul bila hari sejak kunjungan terakhir minimal sebesar maksimum(revisit_min_days, revisit_gap_multiplier × rerata jarak kunjungan kedai itu). Kedai yang riwayat jaraknya kurang dari revisit_min_gaps jarak memakai ambang tetap revisit_days.',
-        'labels' => 'Satu label: nonaktif > data belum cukup > bermasalah > laris > lambat > stabil. Persentil laju relatif sesama kedai konsinyasi yang cukup data dalam usaha yang sama.',
-        'suggestions' => 'Saran saja, tidak mengubah jatah/data. Data belum cukup tidak mendapat saran BS/jatah, tetapi piutang/kunjungi tetap boleh. Habis = laku ≥95% pada minimal 2 dari 3 tagihan konsinyasi terakhir: permintaan tersensor, tawarkan minimal +1 mika; estimasi laju × jarak boleh menaikkan sampai +2, dibatasi max_quota_increase. Tidak menaikkan kedai bermasalah/nonaktif. Penurunan hanya jika laku rendah dan jeda terukur. Prioritas: piutang lama → lama tidak dikunjungi → BS tinggi → jatah.',
-        'returns' => '% BS = kedaluwarsa/rusak saja ÷ biji titipan ditagih ×100%. Sisa Dibawa Pulang (%) = retur segar saja ÷ basis sama; informasi, bukan kerugian atau pemicu label.',
+        'performance' => 'Penilaian penjualan hanya untuk konsinyasi, tidak termasuk penjualan tunai atau penjualan kembali barang rusak. Perlu sedikitnya 3 kali ditagih; uang yang belum lunas tetap dihitung.',
+        'weekly_sales' => 'Laku per Minggu (biji): jumlah biji terjual dibagi jumlah hari sejak dititipkan sampai ditagih, lalu dikali 7. Setiap titipan dihitung paling sedikit 1 hari; titipan yang tidak laku tetap dihitung. Tanggal awal memakai tanggal perjalanan pengiriman, tanggal pemilik mencatat titipan, atau tanggal titip pertama untuk data awal (jika tidak ada, tanggal pencatatannya).',
+        'sales' => 'Biji terjual dan omset termasuk penjualan tunai serta penjualan kembali barang rusak. Tiap titipan dihitung satu kali, saat ditagih pada kunjungan yang masih berlaku dalam perjalanan selesai dan tidak diarsipkan. Jika hanya perjalanan pengiriman asal yang diarsipkan, penagihan tetap dihitung agar sama dengan laporan perjalanan.',
+        'receivable' => 'Piutang adalah saldo yang belum dibayar saat laporan dibuat. Umurnya dihitung sejak tanggal penagihan sampai tanggal acuan. Bukan saldo pada tanggal lampau atau catatan uang masuk menurut tanggal cicilan.',
+        'visits' => 'Kedatangan ke satu kedai dihitung sekali dalam satu perjalanan, dari kunjungan yang masih berlaku atau pengiriman tanpa catatan kunjungan. Pencatatan titipan awal bukan kunjungan. Penjualan langsung tanpa kedai tidak dilaporkan sebagai kedai.',
+        'revisit' => 'Saran "Kunjungi" mengikuti jarak kunjungan biasanya, dikali pengali pengingat pada aturan aktif, dan tidak lebih cepat dari batas hari minimum. Jika riwayat jarak antarkunjungan belum cukup, gunakan batas hari tetap pada aturan aktif.',
+        'labels' => 'Satu label dengan urutan: Tidak aktif, Data belum cukup, Piutang lama atau Banyak rusak, Laris, Lambat, lalu Stabil. Jika piutang lama dan banyak barang rusak terjadi bersamaan, tampilkan Piutang lama; saran memuat keduanya. Peringkat Laku per Minggu dibandingkan dengan kedai konsinyasi yang cukup data dalam usaha yang sama.',
+        'suggestions' => 'Saran tidak otomatis mengubah jatah. Data belum cukup belum mendapat saran barang rusak atau jatah, tetapi tetap boleh diingatkan untuk ditagih dan dikunjungi. Jika sedikitnya 95% terjual pada 2 dari 3 penagihan terakhir, barang mungkin habis sebelum pembeli berikutnya datang: sarankan tambahan paling sedikit 1 mika. Perkiraan biji laku per hari dikali jarak kunjungan lalu dibagi isi per mika bisa memberi tambahan sampai 2 mika, mengikuti batas pada aturan aktif. Tidak menaikkan jatah kedai Piutang lama, Banyak rusak, atau Tidak aktif. Penurunan hanya disarankan jika penjualan rendah dan jarak kunjungan bisa dihitung. Dahulukan piutang lama, lama tidak dikunjungi, banyak barang rusak, lalu jatah.',
+        'returns' => 'Rusak/Kedaluwarsa (%) adalah biji rusak atau kedaluwarsa dibagi biji titipan konsinyasi yang sudah ditagih, lalu dikali 100. Belum Laku, Dibawa Pulang (%) memakai biji yang masih baik dan dibawa pulang, dibagi jumlah titipan yang sama, lalu dikali 100. Barang yang masih baik bukan kerugian dan tidak membuat label Banyak rusak.',
     ],
 ];

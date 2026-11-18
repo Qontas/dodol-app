@@ -99,13 +99,14 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
             'name' => ['Nama Kedai', 'text', 'Nama kedai saat laporan dibuat.', 28],
             'business_name' => ['Usaha', 'text', 'Usaha pemilik kedai (hanya tampil pada laporan semua owner).', 22],
             'area' => ['Area', 'text', 'Kelompok area kedai.', 14],
-            'maps_url' => ['Google Maps', 'text', 'Tautan "Buka Maps" yang dapat diklik; hanya tautan HTTPS Google Maps yang aktif.', 14],
-            'address' => ['Alamat', 'text', 'Alamat kedai.', 40],
-            'label' => ['Label', 'text', 'Label performa sesuai aturan di bagian "Aturan Aktif".', 16],
-            'suggestions' => ['Saran Tindakan', 'list', 'Saran operasional, bukan perubahan jatah otomatis. Baris tanpa saran tidak masuk "Perlu Tindakan".', 46],
-            'sell_through_pct' => ['% Laku', 'pct', 'Persentase biji terjual dari titipan yang sudah diselesaikan; hanya konsinyasi.', 10],
-            'weekly_sales' => ['Laju Jual (biji/minggu)', 'decimal', 'Laju tertimbang durasi siklus titip yang selesai, termasuk siklus terjual nol; bukan rerata persentase.', 13],
-            'pending_packs' => ['Mika di Kedai Sekarang', 'mika', 'Mika titipan yang masih berada di kedai (belum ditagih) saat laporan dibuat; termasuk titipan awal/sentinel. Bukan piutang.', 12],
+            'maps_url' => ['Google Maps', 'text', 'Klik "Buka Maps" untuk melihat lokasi kedai. Hanya tautan Google Maps yang aman (HTTPS) yang dapat diklik.', 14],
+            'address' => ['Alamat', 'text', 'Alamat atau petunjuk lokasi yang ditulis untuk kedai.', 40],
+            'maps_address' => ['Alamat (dari Peta)', 'text', 'Alamat dari peta yang tersimpan untuk kedai; bisa berbeda dari petunjuk pada kolom Alamat.', 40],
+            'label' => ['Label', 'text', 'Gambaran kondisi kedai. Piutang lama berarti ada tagihan lama yang belum dibayar; Banyak rusak berarti banyak barang rusak atau kedaluwarsa.', 18],
+            'suggestions' => ['Saran Tindakan', 'list', 'Saran untuk diperiksa sebelum bertindak, bukan perubahan jatah otomatis. Kedai tanpa saran tidak masuk "Perlu Tindakan".', 46],
+            'sell_through_pct' => ['Terjual (%)', 'pct', 'Dari titipan yang sudah ditagih, berapa persen bijinya terjual. Hanya untuk kedai konsinyasi.', 16],
+            'weekly_sales' => ['Laku per Minggu (biji)', 'decimal', 'Perkiraan biji laku dalam 7 hari: total biji terjual dibagi total hari sejak dititipkan sampai ditagih, lalu dikali 7. Titipan yang tidak laku tetap dihitung; setiap titipan dihitung paling sedikit 1 hari.', 20],
+            'pending_packs' => ['Mika di Kedai Sekarang', 'mika', 'Mika titipan yang belum ditagih saat laporan dibuat, termasuk titipan awal yang dicatat saat mulai memakai aplikasi. Bukan piutang.', 12],
             'pending_value' => ['Nilai Mika di Kedai', 'rp', 'Nilai mika yang masih berada di kedai saat laporan dibuat. Bukan uang yang sudah ditagih.', 15],
             'receivable' => ['Piutang', 'rp', 'Tagihan yang sudah timbul tetapi belum dibayar saat ini; terpisah dari mika di kedai.', 14],
             'receivable_age_days' => ['Umur Piutang (hari)', 'days', 'Umur piutang tertua yang masih terbuka saat ini.', 11],
@@ -125,25 +126,25 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
             'notes' => ['Catatan', 'text', 'Catatan kedai.', 30],
             'frequent_operator' => ['Operator Terbanyak', 'text', 'Operator yang paling sering berkunjung.', 16],
             // 3. Metrik detail
-            'visit_count' => ['Kunjungan', 'int', 'Kunjungan nyata dalam periode; trip sentinel bukan kunjungan.', 11],
+            'visit_count' => ['Kunjungan', 'int', 'Jumlah kedatangan ke kedai dalam periode laporan. Pencatatan titipan awal bukan kunjungan.', 11],
             'visits_30' => ['Kunjungan 30 Hari', 'int', 'Kunjungan dalam 30 hari terakhir sampai tanggal acuan.', 11],
             'avg_visit_gap_days' => ['Rerata Jarak Kunjungan (hari)', 'decimal', 'Rata-rata jarak hari antar kunjungan. Dipakai untuk menilai kapan kedai perlu dikunjungi lagi.', 13],
             'delivered_packs' => ['Mika Diantar', 'mika', 'Jumlah mika diantar dalam periode.', 11],
             'sold_units' => ['Biji Terjual', 'decimal', 'Jumlah biji terjual dalam periode (termasuk cash).', 11],
-            'bs_pct' => ['% BS', 'pct', 'Biji kedaluwarsa/rusak saja ÷ biji titipan konsinyasi yang sudah ditagih. Tidak termasuk retur segar.', 10],
-            'fresh_return_pct' => ['Sisa Dibawa Pulang (%)', 'pct', 'Biji retur segar saja ÷ biji titipan konsinyasi yang sudah ditagih. Informasi sisa belum laku, bukan kerugian atau pemicu label.', 14],
-            'revenue_total' => ['Omset Total', 'rp', 'amount_paid settlement pada trip penagih selesai sepanjang riwayat. Pembayaran berikutnya memperbarui nilai periode trip asal; bukan arus kas tanggal bayar.', 15],
-            'revenue_30' => ['Omset 30 Hari', 'rp', 'amount_paid pada trip penagih bertanggal dalam 30 hari terakhir; bukan tanggal pembayaran cicilan.', 15],
+            'bs_pct' => ['Rusak/Kedaluwarsa (%)', 'pct', 'Persentase biji yang rusak atau kedaluwarsa dari titipan konsinyasi yang sudah ditagih. Barang yang masih baik dan dibawa pulang tidak termasuk.', 22],
+            'fresh_return_pct' => ['Belum Laku, Dibawa Pulang (%)', 'pct', 'Persentase biji yang belum laku, masih baik, dan dibawa pulang dari titipan konsinyasi yang sudah ditagih. Bukan kerugian dan tidak membuat label Banyak rusak.', 26],
+            'revenue_total' => ['Omset Total', 'rp', 'Uang yang sudah diterima dari penagihan sepanjang riwayat pada perjalanan yang sudah selesai. Cicilan berikutnya menambah omset pada tanggal perjalanan penagihan asal, bukan tanggal cicilan dibayar.', 15],
+            'revenue_30' => ['Omset 30 Hari', 'rp', 'Uang yang sudah diterima dari penagihan pada perjalanan dalam 30 hari terakhir. Tanggal yang dipakai adalah tanggal perjalanan penagihan, bukan tanggal cicilan dibayar.', 15],
             'avg_revenue_per_visit' => ['Omset / Kunjungan', 'rp', 'Rata-rata uang diterima per kunjungan.', 15],
-            'sold_out_count' => ['Siklus Habis', 'int', 'Jumlah tagihan konsinyasi dengan laku ≥95% dari biji ditagih.', 10],
-            'settled_count' => ['Siklus Selesai', 'int', 'Jumlah settlement; termasuk settlement dengan pembayaran masih tertunda.', 10],
-            'pending_age_days' => ['Umur Titipan (hari)', 'days', 'Umur titipan tertua yang belum diselesaikan saat ini.', 11],
+            'sold_out_count' => ['Habis Saat Ditagih (kali)', 'int', 'Berapa kali titipan konsinyasi terjual sedikitnya 95% saat ditagih. Jadi hampir habis juga dihitung.', 22],
+            'settled_count' => ['Sudah Ditagih (kali)', 'int', 'Berapa kali titipan konsinyasi sudah diperiksa dan ditagih, termasuk yang uangnya belum lunas.', 20],
+            'pending_age_days' => ['Umur Titipan (hari)', 'days', 'Sudah berapa hari titipan tertua berada di kedai dan belum ditagih.', 11],
         ];
     }
 
     /** Subset kolom sheet "Perlu Tindakan" (urutan mengikuti columns()). */
     private const ACTION_COLUMNS = [
-        'name', 'business_name', 'area', 'maps_url', 'address', 'label', 'suggestions', 'sell_through_pct', 'weekly_sales',
+        'name', 'business_name', 'area', 'maps_url', 'address', 'maps_address', 'label', 'suggestions', 'sell_through_pct', 'weekly_sales',
         'pending_packs', 'pending_value', 'receivable', 'receivable_age_days', 'last_visit_at', 'last_operator', 'days_since_visit',
         'owner_name', 'phone', 'type', 'bs_pct', 'fresh_return_pct', 'settled_count', 'pending_age_days',
     ];
@@ -202,7 +203,7 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
                 $this->formats['B'.count($this->rows)] = '#,##0'; // bilangan bulat, tanpa desimal
             }
         }
-        $this->rows[] = ['Rerata % laku', $s['avg_sell_through_pct'] === null ? null : $s['avg_sell_through_pct'] / 100, 'Rerata persentase kedai konsinyasi yang memiliki data; bukan laju penjualan tertimbang.'];
+        $this->rows[] = ['Rerata Terjual (%)', $s['avg_sell_through_pct'] === null ? '—' : $s['avg_sell_through_pct'] / 100, 'Rata-rata Terjual (%) dari kedai konsinyasi yang memiliki data. Setiap kedai dihitung sama, bukan jumlah biji laku per minggu.'];
         $this->formats['B'.count($this->rows)] = '0.0%';
         $this->rows[] = [null];
         $this->section(['Usaha', 'Area', 'Kedai', 'Aktif', 'Omset 30 Hari', 'Mika di Kedai', 'Nilai Mika di Kedai', 'Piutang']);
@@ -220,8 +221,8 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
         }
         foreach (['top10' => '10 Kedai Paling Laris', 'slow10' => '10 Kedai Paling Lambat Laku'] as $key => $title) {
             $this->rows[] = [null];
-            $this->section([$title, 'Hanya konsinyasi dengan sedikitnya '.($this->data['rules']['min_settlements'] ?? 3).' siklus selesai, tidak termasuk label Tidak aktif dan Data belum cukup; urut laju biji/minggu.']);
-            $this->section(['Usaha', 'Area', 'Kedai', 'Biji / Minggu', '% Laku', 'Siklus Selesai', 'Label']);
+            $this->section([$title, 'Hanya kedai konsinyasi yang sudah ditagih sedikitnya '.($this->data['rules']['min_settlements'] ?? 3).' kali; tidak termasuk Tidak aktif dan Data belum cukup. Urut menurut Laku per Minggu (biji).']);
+            $this->section(['Usaha', 'Area', 'Kedai', 'Laku per Minggu (biji)', 'Terjual (%)', 'Sudah Ditagih (kali)', 'Label']);
             foreach ($s[$key] as $r) {
                 $this->rows[] = [$r['business_name'], $r['area'], $r['name'], $r['weekly_sales'], isset($r['sell_through_pct']) ? $r['sell_through_pct'] / 100 : null, $r['settled_count'], $r['label']];
                 $this->formats['D'.count($this->rows)] = '#,##0.0';
@@ -293,7 +294,7 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
                 $column = Coordinate::stringFromColumnIndex(count($row) + 1);
                 $cell = $column.$rowNumber;
                 if ($key === 'label') {
-                    $this->labelCells[$cell] = $r['label_key'] ?? 'insufficient';
+                    $this->labelCells[$cell] = $r['display_label_key'] ?? $r['label_key'] ?? 'insufficient';
                 }
                 if ($value !== null) {
                     $value = match ($type) {
@@ -312,6 +313,12 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
                 };
                 if ($format) {
                     $this->formats[$cell] = $format;
+                }
+                if ($value === null && in_array($key, ['sell_through_pct', 'weekly_sales', 'bs_pct', 'fresh_return_pct'], true)) {
+                    $count = (int) ($r['settled_count'] ?? 0);
+                    $value = ($r['type'] ?? '') === 'Konsinyasi' && $count < ($this->data['rules']['min_settlements'] ?? 3)
+                        ? KioskInsightsSummary::missingMetric($r)
+                        : '—';
                 }
                 if ($key === 'maps_url' && ($url = KioskInsightsSummary::mapsUrl($value))) {
                     // Tautan HTTPS Google Maps yang valid tampil sebagai teks "Buka Maps"; URL tak valid tetap teks literal tanpa tautan.
@@ -386,12 +393,24 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
         }
         $this->rows[] = [null];
         $this->section(['Aturan Aktif', 'Nilai']);
-        foreach ($this->data['rules'] ?? [] as $key => $value) {
-            $this->rows[] = [(string) $key, is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : (is_bool($value) ? ($value ? 'Ya' : 'Tidak') : $value)];
+        $rules = $this->data['rules'] ?? [];
+        foreach ([
+            ['Minimal sudah ditagih', ($rules['min_settlements'] ?? 3).' kali sebelum menilai penjualan kedai.'],
+            ['Lambat', 'Terjual kurang dari '.($rules['slow_sell_through_pct'] ?? 60).'%.'],
+            ['Laris', 'Terjual sedikitnya '.($rules['fast_sell_through_pct'] ?? 80).'% dan Laku per Minggu berada pada peringkat sedikitnya '.($rules['fast_percentile'] ?? 75).' dari 100 di antara kedai konsinyasi yang cukup data dalam usaha yang sama.'],
+            ['Banyak rusak', 'Rusak/Kedaluwarsa sedikitnya '.($rules['problem_bs_pct'] ?? 10).'%.'],
+            ['Piutang lama', 'Ada piutang yang belum dibayar selama sedikitnya '.($rules['debt_age_days'] ?? 30).' hari.'],
+            ['Tidak aktif', 'Kedai dinonaktifkan atau sudah lebih dari '.($rules['inactive_days'] ?? 30).' hari tidak dikunjungi.'],
+            ['Pengingat kunjungan', 'Setelah '.($rules['revisit_gap_multiplier'] ?? 1.5).' kali jarak kunjungan biasanya, paling cepat '.($rules['revisit_min_days'] ?? 10).' hari.'],
+            ['Kunjungan dengan sedikit riwayat', 'Jika belum ada '.($rules['revisit_min_gaps'] ?? 3).' jarak antarkunjungan yang bisa dihitung, ingatkan setelah '.($rules['revisit_days'] ?? 14).' hari.'],
+            ['Batas saran tambahan jatah', 'Paling banyak '.min(2, max(0, $rules['max_quota_increase'] ?? 2)).' mika; tidak mengubah jatah otomatis.'],
+            ['Zona waktu laporan', $rules['timezone'] ?? 'Asia/Jakarta'],
+        ] as $row) {
+            $this->rows[] = $row;
         }
         $this->rows[] = [null];
         $this->section(['Kolom', 'Arti']);
-        $this->rows[] = ['Foto', 'Opsional (Export Excel + Foto): thumbnail lokal 60 piksel. Kedai tanpa foto tertulis "Tidak ada foto"; foto yang gagal dimuat tertulis "Foto gagal dimuat" dan tidak menggagalkan laporan.'];
+        $this->rows[] = ['Foto', 'Tampil jika memilih Export Excel + Foto. Kedai tanpa foto tertulis "Tidak ada foto"; foto yang tidak bisa dibuka tertulis "Foto gagal dimuat" dan laporan tetap bisa digunakan.'];
         foreach (self::columns() as [$heading, , $definition]) {
             $this->rows[] = [$heading, $definition];
         }
@@ -402,21 +421,24 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
         $r = $data['rules'] ?? [];
 
         return [
-            'Cakupan' => 'Identitas, harga, jatah, status aktif, mika di kedai dan piutang adalah posisi saat laporan dibuat. Riwayat penjualan/kunjungan mengikuti periode laporan dan tanggal acuan.',
-            'Performa' => 'Hanya kedai Konsinyasi. Cash dan Booking tidak dibandingkan memakai % laku atau laju konsinyasi. Kolom kosong berarti tidak berlaku atau belum ada data; nol berarti nilai nol yang diketahui.',
-            '% Laku' => 'Biji terjual ÷ biji yang dititipkan pada titipan yang sudah ditagih, dalam persen. Hanya kedai konsinyasi.',
-            'Data minimum' => 'Sedikitnya '.($r['min_settlements'] ?? 3).' siklus selesai. Settlement dengan pembayaran tertunda tetap dihitung; titipan belum diselesaikan tidak masuk basis performa.',
-            'Laju penjualan' => 'Biji per minggu dihitung dari siklus titipan selesai, ditimbang berdasarkan durasinya. Siklus terjual nol tetap dihitung. Daftar "10 kedai paling laris" dan "10 kedai paling lambat laku" diurutkan menurut laju ini, bukan omset, dan tidak menyertakan kedai berlabel Tidak aktif atau Data belum cukup.',
-            '% BS / Sisa' => '% BS = biji kedaluwarsa/rusak saja ÷ biji titipan ditagih ×100%. Sisa Dibawa Pulang (%) = retur segar saja ÷ basis sama; hanya informasi belum laku, bukan kerugian dan tidak memicu Bermasalah.',
-            'Label' => 'Prioritas: Tidak aktif > Data belum cukup > Bermasalah > Laris > Lambat > Stabil. Bermasalah HANYA bila % BS ≥'.($r['problem_bs_pct'] ?? 10).'% atau ada piutang berumur ≥'.($r['debt_age_days'] ?? 30).' hari. Lambat: % laku <'.($r['slow_sell_through_pct'] ?? 60).'%. Laris: % laku ≥'.($r['fast_sell_through_pct'] ?? 80).'% dan laju mencapai persentil '.($r['fast_percentile'] ?? 75).'. Ambang dari config/kiosk_insights.php: KIOSK_INSIGHTS_BS_PCT (default 10), KIOSK_INSIGHTS_SLOW_PCT (default 60), KIOSK_INSIGHTS_DEBT_DAYS (default 30). Tidak aktif: status nonaktif atau kunjungan lewat '.($r['inactive_days'] ?? 30).' hari.',
-            'Kunjungan' => 'Trip sentinel/titipan awal tetap masuk stok, tetapi bukan kunjungan nyata.',
-            'Saran "Kunjungi"' => 'Muncul bila hari sejak kunjungan terakhir sudah melewati maksimum dari '.($r['revisit_min_days'] ?? 10).' hari dan '.($r['revisit_gap_multiplier'] ?? 1.5).' × rata-rata jarak kunjungan kedai itu sendiri (kedai yang biasa dikunjungi tiap 7 hari diingatkan lebih cepat daripada kedai yang biasa tiap 21 hari). Kedai dengan riwayat kurang dari '.($r['revisit_min_gaps'] ?? 3).' jarak kunjungan memakai ambang tetap '.($r['revisit_days'] ?? 14).' hari.',
-            'Subtotal dan total' => 'Di Daftar Kedai, tiap area ditutup baris SUBTOTAL (mika di kedai dan nilainya) dan baris TOTAL tebal ada di paling bawah, di luar rentang filter. Di Perlu Tindakan, subtotal per area ada di blok bawah daftar. Semuanya angka biasa (bukan rumus), hanya menjumlah kedai yang tampil di sheet itu, dan tidak berubah saat Anda memfilter. Baris SUBTOTAL/TOTAL bukan kedai: abaikan saat sort.',
-            'Titipan vs piutang' => 'Mika di kedai (titipan belum ditagih) adalah stok, bukan tagihan. Piutang adalah uang yang sudah ditagih tetapi belum dibayar. Jangan menjumlahkan keduanya sebagai omset.',
-            'Omset' => 'Jumlah amount_paid settlement mengikuti tanggal trip penagih nyata yang selesai, sama dengan laporan periode. Cicilan memperbarui settlement lama, sehingga bukan laporan arus kas berdasarkan tanggal bayar. Trip/kedai walk-in tidak masuk laporan per kedai ini.',
-            'Saran' => 'Saran bukan keputusan otomatis. Data belum cukup: tanpa saran performa BS/jatah; piutang dan kunjungi tetap boleh. Habis (laku ≥95%) pada ≥2 dari 3 tagihan konsinyasi terakhir berarti permintaan tersensor: tawarkan jatah saat ini +1 meski estimasi sama. Estimasi laju biji/hari × rerata jarak ÷ isi mika boleh memberi lebih, dibatasi maksimum '.min(2, max(0, $r['max_quota_increase'] ?? 2)).' mika. Tidak menaikkan kedai bermasalah/nonaktif. Kedai sehat tanpa saran tidak masuk Perlu Tindakan. Periksa keadaan kedai sebelum bertindak.',
-            'Filter Excel' => 'Daftar Kedai dikelompokkan per area dengan baris subjudul berwarna (bukan data kedai, tanpa angka). Kolom Area diulang pada setiap kedai, jadi filter/pivot cukup memakai kolom Area; abaikan baris subjudul. Urutan baris di "Perlu Tindakan" sudah mencerminkan prioritas: piutang lama, lama tidak dikunjungi, BS tinggi, lalu jatah.',
-            'Keamanan' => 'Semua teks disimpan sebagai teks literal, bukan formula. Hanya tautan HTTPS Google Maps yang aktif; foto hanya thumbnail JPEG lokal, tanpa unduh jaringan saat render.',
+            'Cakupan' => 'Nama, alamat, harga, jatah, status aktif, mika di kedai dan piutang menunjukkan keadaan saat laporan dibuat. Penjualan dan kunjungan mengikuti periode laporan sampai tanggal acuan.',
+            'Performa' => 'Penilaian penjualan hanya untuk kedai Konsinyasi, bukan Cash atau Booking. Tanda — berarti tidak berlaku atau belum ada data. Angka 0 berarti sudah ada data dan nilainya memang nol. Jika baru sedikit ditagih, angka yang sudah tersedia tetap ditampilkan, tetapi belum dipakai untuk menilai kedai.',
+            'Terjual (%)' => 'Dari titipan konsinyasi yang sudah ditagih, berapa persen bijinya terjual: jumlah biji terjual dibagi jumlah biji dititipkan, lalu dikali 100.',
+            'Sudah Ditagih (kali)' => 'Berapa kali titipan konsinyasi sudah diperiksa dan ditagih. Uangnya belum lunas pun tetap dihitung. Penilaian kedai perlu sedikitnya '.($r['min_settlements'] ?? 3).' kali ditagih; titipan yang belum ditagih tidak ikut dihitung.',
+            'Laku per Minggu (biji)' => 'Jumlah biji terjual dibagi jumlah hari dari dititipkan sampai ditagih, lalu dikali 7. Setiap titipan dihitung paling sedikit 1 hari; yang tidak laku tetap dihitung. Daftar 10 paling laris dan 10 paling lambat laku diurutkan menurut angka ini, bukan omset. Kedai Tidak aktif dan Data belum cukup tidak ikut peringkat.',
+            'Habis Saat Ditagih (kali)' => 'Berapa kali titipan konsinyasi terjual sedikitnya 95% saat ditagih. Hampir habis juga dihitung, bukan harus habis sama sekali.',
+            'Rusak/Kedaluwarsa (%)' => 'Biji yang rusak atau kedaluwarsa dibagi biji titipan konsinyasi yang sudah ditagih, lalu dikali 100. Barang yang masih baik dan dibawa pulang tidak termasuk.',
+            'Belum Laku, Dibawa Pulang (%)' => 'Biji yang belum laku, masih baik, dan dibawa pulang dibagi biji titipan konsinyasi yang sudah ditagih, lalu dikali 100. Ini bukan kerugian dan tidak membuat label Banyak rusak.',
+            'Label' => 'Urutan penilaian: Tidak aktif, Data belum cukup, Piutang lama atau Banyak rusak, Laris, Lambat, lalu Stabil. Piutang lama berarti ada uang belum dibayar selama sedikitnya '.($r['debt_age_days'] ?? 30).' hari. Banyak rusak berarti Rusak/Kedaluwarsa mencapai '.($r['problem_bs_pct'] ?? 10).'% atau lebih. Jika keduanya terjadi, label Piutang lama ditampilkan dan saran memuat keduanya. Lambat berarti Terjual kurang dari '.($r['slow_sell_through_pct'] ?? 60).'%. Laris berarti Terjual sedikitnya '.($r['fast_sell_through_pct'] ?? 80).'% dan Laku per Minggu berada pada peringkat sedikitnya '.($r['fast_percentile'] ?? 75).' dari 100 di antara kedai konsinyasi yang cukup data dalam usaha yang sama. Tidak aktif berarti dinonaktifkan atau sudah lebih dari '.($r['inactive_days'] ?? 30).' hari tidak dikunjungi.',
+            'Kunjungan' => 'Titipan awal yang dicatat saat mulai memakai aplikasi tetap masuk mika di kedai, tetapi pencatatannya bukan kunjungan ke kedai.',
+            'Saran "Kunjungi"' => 'Pengingat mengikuti kebiasaan kunjungan kedai: setelah '.($r['revisit_gap_multiplier'] ?? 1.5).' kali jarak kunjungan biasanya, paling cepat '.($r['revisit_min_days'] ?? 10).' hari. Kedai yang biasa dikunjungi lebih sering akan diingatkan lebih cepat. Jika belum ada '.($r['revisit_min_gaps'] ?? 3).' jarak antarkunjungan yang bisa dihitung, pengingat muncul setelah '.($r['revisit_days'] ?? 14).' hari.',
+            'Subtotal dan total' => 'Di Daftar Kedai, baris SUBTOTAL menjumlahkan mika dan nilainya untuk satu area. Baris TOTAL tebal ada paling bawah. Di Perlu Tindakan, subtotal per area berada di bawah daftar. Angka ini hanya menjumlahkan kedai yang tampil pada lembar tersebut dan tidak berubah saat disaring. Baris subjudul, SUBTOTAL dan TOTAL bukan kedai: jangan ikutkan saat mengurutkan data.',
+            'Titipan vs piutang' => 'Mika di kedai adalah barang yang belum ditagih, bukan uang yang harus dibayar. Piutang adalah uang yang sudah ditagih tetapi belum dibayar. Jangan menjumlahkan keduanya sebagai omset.',
+            'Omset' => 'Uang yang sudah diterima dicatat pada tanggal perjalanan penagihan yang sudah selesai. Jika ada cicilan berikutnya, omset pada tanggal penagihan asal bertambah. Jadi ini bukan daftar uang masuk menurut tanggal pembayaran. Penjualan langsung tanpa kedai tidak masuk laporan ini.',
+            'Saran' => 'Saran tidak otomatis mengubah jatah. Kedai Data belum cukup belum diberi saran terkait barang rusak atau jatah, tetapi tetap bisa diingatkan untuk ditagih atau dikunjungi. Jika sedikitnya 95% terjual pada 2 dari 3 penagihan terakhir, barang mungkin keburu habis sebelum pembeli berikutnya datang: saran tambahan dimulai dari 1 mika. Perkiraan biji laku per hari dikali jarak kunjungan, lalu dibagi isi per mika, bisa memberi tambahan lebih besar; batasnya '.min(2, max(0, $r['max_quota_increase'] ?? 2)).' mika. Tidak ada saran kenaikan untuk kedai Piutang lama, Banyak rusak, atau Tidak aktif. Kedai tanpa saran tidak masuk Perlu Tindakan. Periksa keadaan kedai sebelum bertindak.',
+            'Filter Excel' => 'Daftar Kedai dikelompokkan per area. Baris subjudul berwarna bukan data kedai. Untuk menyaring kedai, gunakan kolom Area yang diulang pada setiap baris kedai. Perlu Tindakan diurutkan dari piutang lama, lama tidak dikunjungi, banyak barang rusak, lalu saran jatah.',
+            'Alamat dan peta' => 'Alamat berisi petunjuk yang ditulis untuk kedai. Alamat (dari Peta) berisi alamat peta yang tersimpan. Klik Buka Maps untuk melihat lokasi; jika titik koordinat tersedia, lokasi mengarah ke titik tersebut.',
+            'Keamanan' => 'Teks ditampilkan apa adanya, bukan dijalankan sebagai rumus Excel. Hanya tautan Google Maps yang aman (HTTPS) yang dapat diklik. Foto memakai salinan kecil yang sudah disiapkan; foto gagal tidak membatalkan laporan.',
         ];
     }
 
@@ -526,7 +548,7 @@ class KioskInsightsSheet extends DefaultValueBinder implements FromArray, WithCu
                     $sheet->getRowDimension($row)->setRowHeight(52);
                 }
             }
-            $statusFills = ['fast' => 'E4F0E8', 'stable' => 'E7EEF3', 'slow' => 'FFF1D8', 'problem' => 'F8E3E0', 'inactive' => 'EAE7E3', 'insufficient' => 'F1EBF6'];
+            $statusFills = ['fast' => 'E4F0E8', 'stable' => 'E7EEF3', 'slow' => 'FFF1D8', 'problem' => 'F8E3E0', 'debt' => 'F8E3E0', 'bs' => 'F8E3E0', 'inactive' => 'EAE7E3', 'insufficient' => 'F1EBF6'];
             foreach ($this->labelCells as $cell => $key) {
                 $sheet->getStyle($cell)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($statusFills[$key] ?? 'F5ECDD');
                 $sheet->getStyle($cell)->getFont()->setBold(true);

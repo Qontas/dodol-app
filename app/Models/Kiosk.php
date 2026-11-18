@@ -26,6 +26,14 @@ class Kiosk extends Model
         static::addGlobalScope(new OwnerScope);
 
         static::saving(function (self $kiosk): void {
+            // Invalidate before the pricing guard's early return. Never geocode
+            // in a model/web lifecycle: the explicit CLI backfill owns network IO.
+            if (! $kiosk->exists || $kiosk->isDirty(['latitude', 'longitude'])) {
+                $kiosk->maps_address = null;
+                $kiosk->maps_address_at = null;
+                $kiosk->maps_address_source = null;
+            }
+
             if ($kiosk->price_tier_id === null) {
                 return;
             }
@@ -80,6 +88,7 @@ class Kiosk extends Model
     protected $casts = [
         'latitude' => 'decimal:7',
         'longitude' => 'decimal:7',
+        'maps_address_at' => 'datetime',
         'first_titip_date' => 'date',
         'is_active' => 'boolean',
         'is_cash_only' => 'boolean',

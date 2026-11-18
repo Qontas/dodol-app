@@ -117,7 +117,9 @@ class KioskInsights
             $rows[] = [
                 'id' => $id, 'owner_id' => $owner->id, 'business_name' => $owner->getBusinessNameValue(),
                 'area' => $kiosk->cluster->name, 'name' => $kiosk->name, 'owner_name' => $kiosk->owner_name, 'phone' => $kiosk->phone,
-                'address' => $kiosk->location_description, 'maps_url' => $kiosk->maps_url,
+                'address' => $kiosk->location_description, 'maps_address' => $kiosk->maps_address,
+                'latitude' => $kiosk->latitude, 'longitude' => $kiosk->longitude,
+                'maps_url' => KioskInsightsSummary::coordinateMapsUrl($kiosk->latitude, $kiosk->longitude) ?? $kiosk->maps_url,
                 'type' => $kiosk->is_cash_only ? 'Cash' : ($kiosk->isBooking() ? 'Booking' : 'Konsinyasi'),
                 'price_label' => $priceLabel, 'price_per_pack' => $price, 'units_per_pack' => $units,
                 'default_qty_mika' => $kiosk->default_qty_mika, 'is_active' => $kiosk->is_active, 'first_titip_date' => $kiosk->first_titip_date?->toDateString(),
@@ -199,7 +201,10 @@ class KioskInsights
         $inactive = ! $row['is_active'] || ($row['days_since_visit'] !== null && $row['days_since_visit'] > $rules['inactive_days']);
         $key = $inactive ? 'inactive' : (! $enough ? 'insufficient' : ($problem ? 'problem' : ($fast ? 'fast' : ($row['sell_through_pct'] < $rules['slow_sell_through_pct'] ? 'slow' : 'stable'))));
         $row['label_key'] = $key;
-        $row['label'] = $rules['labels'][$key];
+        $displayKey = $key === 'problem'
+            ? ($row['receivable'] > 0 && $row['receivable_age_days'] >= $rules['debt_age_days'] ? 'debt' : 'bs') : $key;
+        $row['display_label_key'] = $displayKey;
+        $row['label'] = $rules['labels'][$displayKey];
         // Ambang kunjungan relatif ke ritme kedai itu; tanpa cukup riwayat jarak → ambang tetap.
         // Jumlah jarak = jumlah kunjungan − 1 (avg_visit_gap_days dihitung dari jarak antar kunjungan berurutan).
         $rhythm = $row['avg_visit_gap_days'] !== null && ($row['visit_count'] - 1) >= $rules['revisit_min_gaps'] && $row['avg_visit_gap_days'] > 0;
@@ -215,15 +220,15 @@ class KioskInsights
             $suggestions[] = 'Konfirmasi status kedai nonaktif sebelum pengiriman berikutnya.';
         }
         if ($row['receivable'] > 0) {
-            $suggestions[] = 'Tagih piutang Rp '.number_format($row['receivable'], 0, ',', '.').' (umur '.$row['receivable_age_days'].' hari).';
+            $suggestions[] = 'Ada piutang Rp '.number_format($row['receivable'], 0, ',', '.').' sejak '.$row['receivable_age_days'].' hari. Tagih di kunjungan berikutnya.';
         }
         if ($needsVisit) {
             $suggestions[] = $row['days_since_visit'] === null
-                ? 'Kunjungi — belum ada kunjungan nyata tercatat.'
-                : 'Kunjungi — sudah '.$row['days_since_visit'].' hari'.($rhythm ? ' (biasanya tiap '.(int) round($row['avg_visit_gap_days']).' hari)' : '').'.';
+                ? 'Belum ada kunjungan tercatat. Jadwalkan kunjungan.'
+                : 'Sudah '.$row['days_since_visit'].' hari belum dikunjungi'.($rhythm ? ' (biasanya tiap '.(int) round($row['avg_visit_gap_days']).' hari)' : '').'. Jadwalkan kunjungan.';
         }
         if ($enough && ($row['bs_pct'] ?? 0) >= $rules['problem_bs_pct']) {
-            $suggestions[] = 'Cek BS ('.number_format($row['bs_pct'], 1, ',', '.').'%).';
+            $suggestions[] = 'Banyak dodol rusak/kedaluwarsa ('.KioskInsightsSummary::number($row['bs_pct']).'%). Cek tempat penyimpanan (panas/lembap) atau dodol terlalu lama di kedai.';
         }
         if ($row['days_since_visit'] !== null && $row['days_since_visit'] >= $rules['inactive_days']) {
             $suggestions[] = 'Konfirmasi apakah kedai masih beroperasi; lama tidak dikunjungi bukan bukti penjualan nol.';
@@ -238,10 +243,10 @@ class KioskInsights
                 // Keep the old estimate/cap, but offer at least +1 even when rounding equals current quota.
                 $target = min($current + min(2, max(0, $rules['max_quota_increase'])), max($current + 1, $estimated ?? $current));
                 if ($target > $current) {
-                    $suggestions[] = 'Naikkan jatah ke '.$target.' mika (sering habis; rekomendasi, jatah saat ini '.$current.').';
+                    $suggestions[] = 'Sering habis. Coba naikkan jatah dari '.$current.' jadi '.$target.' mika.';
                 }
             } elseif (! $oftenSoldOut && $row['sell_through_pct'] < $rules['slow_sell_through_pct'] && $estimated !== null && $estimated < $current) {
-                $suggestions[] = 'Turunkan jatah ke '.$estimated.' mika (rekomendasi; jatah saat ini '.$current.').';
+                $suggestions[] = 'Kurang laku. Coba turunkan jatah dari '.$current.' jadi '.$estimated.' mika.';
             }
         }
         $row['suggestions'] = $suggestions;

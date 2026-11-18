@@ -45,7 +45,7 @@ class KioskInsightsPdf
         $previous = null;
         foreach (($data['summary_only'] ?? false) ? [] : ($data['rows'] ?? []) as $row) {
             $key = json_encode([$row['owner_id'] ?? null, $row['area'] ?? '']);
-            if ($group && ($key !== $previous || count($group) === 6)) {
+            if ($group && ($key !== $previous || count($group) === 4)) {
                 $pages[] = $group;
                 $group = [];
             }
